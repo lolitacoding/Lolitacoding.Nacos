@@ -116,20 +116,16 @@ public sealed class PayloadCodecTests
     [Fact]
     public void Encode_ConfigBatchListenRequest_UsesUpstreamFieldNames()
     {
-        var request = new ConfigBatchListenRequest
-        {
-            Listen = true,
-            ConfigListenContexts =
-            [
-                new ConfigListenContext
-                {
-                    Group = "group",
-                    Md5 = "test_MD5",
-                    DataId = "test_data",
-                    Tenant = "test_tenant",
-                },
-            ],
-        };
+        var request = new ConfigBatchListenRequest { Listen = true };
+
+        request.ConfigListenContexts.Add(
+            new ConfigListenContext
+            {
+                Group = "group",
+                Md5 = "test_MD5",
+                DataId = "test_data",
+                Tenant = "test_tenant",
+            });
 
         Payload payload = PayloadCodec.Encode(request, ClientIp);
         using JsonDocument body = JsonDocument.Parse(PayloadCodec.ReadBodyBytes(payload));

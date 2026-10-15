@@ -96,4 +96,14 @@ internal static partial class NacosTransportLog
         Level = LogLevel.Error,
         Message = "A Nacos transport state observer threw: {Reason}")]
     public static partial void StateObserverFailed(ILogger logger, string reason);
+
+    /// <summary>Logs that a registered push handler threw.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="typeName">The payload type name.</param>
+    /// <param name="reason">The failure reason.</param>
+    [LoggerMessage(
+        EventId = 2003,
+        Level = LogLevel.Error,
+        Message = "A handler for the Nacos push '{TypeName}' threw and the push was dropped: {Reason}")]
+    public static partial void PushHandlerFailed(ILogger logger, string typeName, string reason);
 }

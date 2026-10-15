@@ -1,4 +1,36 @@
 #nullable enable
+Lolitacoding.Nacos.Config.INacosConfigClient
+Lolitacoding.Nacos.Config.INacosConfigClient.AddListenerAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Func<Lolitacoding.Nacos.Config.NacosConfigChange!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! onChange, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
+Lolitacoding.Nacos.Config.INacosConfigClient.GetConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Config.NacosConfigResult!>!
+Lolitacoding.Nacos.Config.INacosConfigClient.ListenAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Config.NacosConfigChange!>!
+Lolitacoding.Nacos.Config.INacosConfigClient.PublishConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, string! content, string? contentType = null, string? casMd5 = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Config.INacosConfigClient.RemoveConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Config.NacosConfigChange
+Lolitacoding.Nacos.Config.NacosConfigChange.<Clone>$() -> Lolitacoding.Nacos.Config.NacosConfigChange!
+Lolitacoding.Nacos.Config.NacosConfigChange.Content.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigChange.Equals(Lolitacoding.Nacos.Config.NacosConfigChange? other) -> bool
+Lolitacoding.Nacos.Config.NacosConfigChange.Key.get -> Lolitacoding.Nacos.Config.NacosConfigKey!
+Lolitacoding.Nacos.Config.NacosConfigChange.PreviousMd5.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigChange.PreviousMd5.init -> void
+Lolitacoding.Nacos.Config.NacosConfigChange.Result.get -> Lolitacoding.Nacos.Config.NacosConfigResult!
+Lolitacoding.Nacos.Config.NacosConfigKey
+Lolitacoding.Nacos.Config.NacosConfigKey.<Clone>$() -> Lolitacoding.Nacos.Config.NacosConfigKey!
+Lolitacoding.Nacos.Config.NacosConfigKey.DataId.get -> string!
+Lolitacoding.Nacos.Config.NacosConfigKey.Equals(Lolitacoding.Nacos.Config.NacosConfigKey? other) -> bool
+Lolitacoding.Nacos.Config.NacosConfigKey.Group.get -> string!
+Lolitacoding.Nacos.Config.NacosConfigKey.NacosConfigKey(string! dataId, string! group, string? namespace = null) -> void
+Lolitacoding.Nacos.Config.NacosConfigKey.Namespace.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigKey.Namespace.init -> void
+Lolitacoding.Nacos.Config.NacosConfigResult
+Lolitacoding.Nacos.Config.NacosConfigResult.<Clone>$() -> Lolitacoding.Nacos.Config.NacosConfigResult!
+Lolitacoding.Nacos.Config.NacosConfigResult.Content.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigResult.ContentType.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigResult.Equals(Lolitacoding.Nacos.Config.NacosConfigResult? other) -> bool
+Lolitacoding.Nacos.Config.NacosConfigResult.Exists.get -> bool
+Lolitacoding.Nacos.Config.NacosConfigResult.FromLocalCache.get -> bool
+Lolitacoding.Nacos.Config.NacosConfigResult.Key.get -> Lolitacoding.Nacos.Config.NacosConfigKey!
+Lolitacoding.Nacos.Config.NacosConfigResult.LastModified.get -> System.DateTimeOffset
+Lolitacoding.Nacos.Config.NacosConfigResult.Md5.get -> string?
 Lolitacoding.Nacos.NacosAuthException
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException() -> void
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException(int errorCode, string! message) -> void
@@ -14,6 +46,10 @@ Lolitacoding.Nacos.NacosConfigOptions.LongPollingTimeout.set -> void
 Lolitacoding.Nacos.NacosConfigOptions.NacosConfigOptions() -> void
 Lolitacoding.Nacos.NacosConfigOptions.VerifyMd5.get -> bool
 Lolitacoding.Nacos.NacosConfigOptions.VerifyMd5.set -> void
+Lolitacoding.Nacos.NacosConfigurationException
+Lolitacoding.Nacos.NacosConfigurationException.NacosConfigurationException() -> void
+Lolitacoding.Nacos.NacosConfigurationException.NacosConfigurationException(string! message) -> void
+Lolitacoding.Nacos.NacosConfigurationException.NacosConfigurationException(string! message, System.Exception? innerException) -> void
 Lolitacoding.Nacos.NacosConnectionException
 Lolitacoding.Nacos.NacosConnectionException.NacosConnectionException() -> void
 Lolitacoding.Nacos.NacosConnectionException.NacosConnectionException(string! message) -> void
@@ -101,3 +137,18 @@ const Lolitacoding.Nacos.NacosConstants.DefaultPort = 8848 -> int
 const Lolitacoding.Nacos.NacosConstants.DefaultTlsPort = 9848 -> int
 const Lolitacoding.Nacos.NacosConstants.GrpcPortOffset = 1000 -> int
 const Lolitacoding.Nacos.NacosConstants.GrpcTlsPortOffset = 1001 -> int
+override Lolitacoding.Nacos.Config.NacosConfigChange.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Config.NacosConfigChange.GetHashCode() -> int
+override Lolitacoding.Nacos.Config.NacosConfigChange.ToString() -> string!
+override Lolitacoding.Nacos.Config.NacosConfigKey.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Config.NacosConfigKey.GetHashCode() -> int
+override Lolitacoding.Nacos.Config.NacosConfigKey.ToString() -> string!
+override Lolitacoding.Nacos.Config.NacosConfigResult.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Config.NacosConfigResult.GetHashCode() -> int
+override Lolitacoding.Nacos.Config.NacosConfigResult.ToString() -> string!
+static Lolitacoding.Nacos.Config.NacosConfigChange.operator !=(Lolitacoding.Nacos.Config.NacosConfigChange? left, Lolitacoding.Nacos.Config.NacosConfigChange? right) -> bool
+static Lolitacoding.Nacos.Config.NacosConfigChange.operator ==(Lolitacoding.Nacos.Config.NacosConfigChange? left, Lolitacoding.Nacos.Config.NacosConfigChange? right) -> bool
+static Lolitacoding.Nacos.Config.NacosConfigKey.operator !=(Lolitacoding.Nacos.Config.NacosConfigKey? left, Lolitacoding.Nacos.Config.NacosConfigKey? right) -> bool
+static Lolitacoding.Nacos.Config.NacosConfigKey.operator ==(Lolitacoding.Nacos.Config.NacosConfigKey? left, Lolitacoding.Nacos.Config.NacosConfigKey? right) -> bool
+static Lolitacoding.Nacos.Config.NacosConfigResult.operator !=(Lolitacoding.Nacos.Config.NacosConfigResult? left, Lolitacoding.Nacos.Config.NacosConfigResult? right) -> bool
+static Lolitacoding.Nacos.Config.NacosConfigResult.operator ==(Lolitacoding.Nacos.Config.NacosConfigResult? left, Lolitacoding.Nacos.Config.NacosConfigResult? right) -> bool

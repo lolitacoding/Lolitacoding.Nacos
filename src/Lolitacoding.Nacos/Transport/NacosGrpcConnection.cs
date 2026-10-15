@@ -293,6 +293,23 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     }
 
     /// <summary>
+    /// Raised when the server pushes a request this connection does not handle itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Nacos multiplexes every feature over one bi-directional stream, so a push that arrives here
+    /// belongs to whichever domain client registered for it — a configuration change, a service
+    /// change, and so on. Returning a response lets the client answer the server; returning
+    /// <see langword="null"/> means no response is due.
+    /// </para>
+    /// <para>
+    /// Handlers run on the read loop, so they must return promptly and must not throw. Doing the
+    /// real work inline would stall every other message on the stream behind them.
+    /// </para>
+    /// </remarks>
+    internal event Func<NacosRequest, CancellationToken, Task<NacosResponse?>>? ServerRequestReceived;
+
+    /// <summary>
     /// Sends a response the client owes the server for a server-initiated push.
     /// </summary>
     /// <param name="response">The response to send.</param>
@@ -582,7 +599,10 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
                         break;
 
                     default:
-                        LogUnhandledPush(PayloadCodec.ReadTypeName(payload));
+                        // Anything else is a domain push. It is dispatched to the registered
+                        // handlers rather than handled here, because the transport has no
+                        // knowledge of configuration or naming semantics.
+                        await DispatchServerRequestAsync((NacosRequest)message, ct).ConfigureAwait(false);
                         break;
                 }
             }
@@ -608,6 +628,48 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             {
                 SetState(NacosTransportState.Disconnected);
                 await HandleConnectionLossAsync(_shutdown.Token).ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Routes a server-initiated request to the registered handlers.
+    /// </summary>
+    /// <param name="request">The request that arrived.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>A task that completes once every handler ran.</returns>
+    /// <remarks>
+    /// A handler that throws is isolated so that one broken feature cannot stop the read loop and
+    /// take every other feature on the connection down with it.
+    /// </remarks>
+    private async Task DispatchServerRequestAsync(NacosRequest request, CancellationToken ct)
+    {
+        Func<NacosRequest, CancellationToken, Task<NacosResponse?>>? handlers = ServerRequestReceived;
+
+        if (handlers is null)
+        {
+            LogUnhandledPush(PayloadTypeRegistry.GetTypeName(request));
+            return;
+        }
+
+        string typeName = PayloadTypeRegistry.GetTypeName(request);
+
+        foreach (Func<NacosRequest, CancellationToken, Task<NacosResponse?>> handler in
+            handlers.GetInvocationList().Cast<Func<NacosRequest, CancellationToken, Task<NacosResponse?>>>())
+        {
+            try
+            {
+                // Handing the work off rather than awaiting it inline keeps a slow feature from
+                // blocking the stream; ordering within the feature is preserved by its own queue.
+                await handler(request, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                LogPushHandlerFailed(typeName, ex.Message);
             }
         }
     }
@@ -844,6 +906,9 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
 
     private void LogUnhandledPush(string typeName) =>
         NacosTransportLog.UnhandledPush(_logger, typeName);
+
+    private void LogPushHandlerFailed(string typeName, string reason) =>
+        NacosTransportLog.PushHandlerFailed(_logger, typeName, reason);
 
     private void LogReconnecting(int attempt, double delayMs) =>
         NacosTransportLog.Reconnecting(_logger, attempt, delayMs);

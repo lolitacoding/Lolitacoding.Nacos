@@ -211,3 +211,41 @@ public sealed class NacosConnectionException : NacosException
     {
     }
 }
+
+/// <summary>
+/// Thrown when the client options are missing or contradictory.
+/// </summary>
+/// <remarks>
+/// This is deliberately distinct from the transport failures: it signals a mistake in the
+/// application's own configuration, and no amount of retrying or reconnecting will resolve it.
+/// Callers that catch this during startup should fail fast and report the offending setting
+/// rather than entering a degraded mode.
+/// </remarks>
+public sealed class NacosConfigurationException : NacosException
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NacosConfigurationException"/> class.
+    /// </summary>
+    public NacosConfigurationException()
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NacosConfigurationException"/> class.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    public NacosConfigurationException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NacosConfigurationException"/> class.
+    /// </summary>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="innerException">The exception that is the cause of the current exception.</param>
+    public NacosConfigurationException(string message, Exception? innerException)
+        : base(message, innerException)
+    {
+    }
+}

@@ -189,8 +189,14 @@ internal sealed class ConfigBatchListenRequest : ConfigRequest
     /// <summary>Gets or sets a value indicating whether this registers or removes listeners.</summary>
     public bool Listen { get; set; } = true;
 
-    /// <summary>Gets or sets the configurations to listen for.</summary>
-    public List<ConfigListenContext>? ConfigListenContexts { get; set; }
+    /// <summary>
+    /// Gets the configurations to register or remove.
+    /// </summary>
+    /// <remarks>
+    /// Always serialized, even when empty, matching the server's own request bean, which
+    /// initializes this list eagerly rather than leaving it null.
+    /// </remarks>
+    public List<ConfigListenContext> ConfigListenContexts { get; } = [];
 }
 
 /// <summary>

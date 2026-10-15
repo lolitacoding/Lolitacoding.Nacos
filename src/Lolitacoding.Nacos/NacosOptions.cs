@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Lolitacoding.Nacos.Internal;
 
 namespace Lolitacoding.Nacos;
 
@@ -131,6 +132,103 @@ public sealed class NacosOptions
     /// </summary>
     internal bool HasCredentials =>
         !string.IsNullOrEmpty(UserName) && !string.IsNullOrEmpty(Password);
+
+    /// <summary>
+    /// Validates the options and normalizes the values that have aliases.
+    /// </summary>
+    /// <exception cref="NacosConfigurationException">
+    /// The options are not usable, for example because no server address was supplied.
+    /// </exception>
+    /// <remarks>
+    /// Validation runs once when the clients are built rather than on every request. A
+    /// misconfigured client is a programming error that would otherwise surface as a confusing
+    /// connection failure long after startup, so it fails immediately and names the offending
+    /// setting.
+    /// </remarks>
+    internal void Validate()
+    {
+        if (ServerAddresses.Count == 0)
+        {
+            throw new NacosConfigurationException(
+                "At least one Nacos server address must be configured on NacosOptions.ServerAddresses.");
+        }
+
+        foreach (string address in ServerAddresses)
+        {
+            if (string.IsNullOrWhiteSpace(address))
+            {
+                throw new NacosConfigurationException(
+                    "NacosOptions.ServerAddresses contains an empty entry; every entry must be a host or URL such as 'http://127.0.0.1:8848'.");
+            }
+
+            // Parsing here turns a malformed address into a startup failure instead of a
+            // per-request one.
+            NacosServerAddress.Parse(address);
+        }
+
+        if (!string.IsNullOrEmpty(UserName) && string.IsNullOrEmpty(Password))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.UserName is set but NacosOptions.Password is empty; both are required to authenticate.");
+        }
+
+        if (!string.IsNullOrEmpty(Password) && string.IsNullOrEmpty(UserName))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.Password is set but NacosOptions.UserName is empty; both are required to authenticate.");
+        }
+
+        if (RequestTimeout <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.RequestTimeout must be greater than zero.");
+        }
+
+        if (ConnectionTimeout <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.ConnectionTimeout must be greater than zero.");
+        }
+
+        ValidateNamespace();
+        Config.Validate();
+        Naming.Validate();
+        Reconnect.Validate();
+    }
+
+    /// <summary>
+    /// Rejects a namespace id that cannot be used as one.
+    /// </summary>
+    /// <remarks>
+    /// A namespace is carried in gRPC metadata, so a value containing control characters or
+    /// non-ASCII text would be rejected by the transport at call time rather than at startup.
+    /// </remarks>
+    private void ValidateNamespace()
+    {
+        if (string.IsNullOrEmpty(Namespace))
+        {
+            // Nacos treats an empty namespace as the public default, so it is normalized rather
+            // than rejected.
+            Namespace = NacosConstants.DefaultNamespace;
+            return;
+        }
+
+        if (!string.Equals(Namespace, Namespace.Trim(), StringComparison.Ordinal))
+        {
+            Namespace = Namespace.Trim();
+        }
+
+        foreach (char character in Namespace)
+        {
+            if (char.IsControl(character) || character > 127)
+            {
+                throw new NacosConfigurationException(
+                    string.Concat(
+                        "NacosOptions.Namespace '", Namespace,
+                        "' contains characters that cannot be sent as request metadata; use an ASCII namespace id."));
+            }
+        }
+    }
 }
 
 /// <summary>
@@ -169,6 +267,45 @@ public sealed class NacosReconnectOptions
     /// </remarks>
     [Range(0.0, 1.0)]
     public double JitterFactor { get; set; } = 0.2;
+
+    /// <summary>
+    /// Validates the reconnect policy.
+    /// </summary>
+    /// <exception cref="NacosConfigurationException">A value is out of range.</exception>
+    internal void Validate()
+    {
+        if (InitialDelay < TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosReconnectOptions.InitialDelay cannot be negative.");
+        }
+
+        if (MaxDelay < InitialDelay)
+        {
+            throw new NacosConfigurationException(
+                "NacosReconnectOptions.MaxDelay must be greater than or equal to InitialDelay.");
+        }
+
+        if (Multiplier < 1.0)
+        {
+            // A multiplier below one would shrink the delay on every attempt, turning a reconnect
+            // into a hot retry loop against a server that is already struggling.
+            throw new NacosConfigurationException(
+                "NacosReconnectOptions.Multiplier must be at least 1.0 so that retry delays do not shrink.");
+        }
+
+        if (JitterFactor is < 0.0 or > 1.0)
+        {
+            throw new NacosConfigurationException(
+                "NacosReconnectOptions.JitterFactor must be between 0.0 and 1.0.");
+        }
+
+        if (MaxAttempts < 0)
+        {
+            throw new NacosConfigurationException(
+                "NacosReconnectOptions.MaxAttempts cannot be negative; use 0 to retry indefinitely.");
+        }
+    }
 }
 
 /// <summary>
@@ -202,6 +339,25 @@ public sealed class NacosConfigOptions
     /// type is provided.
     /// </summary>
     public string DefaultContentType { get; set; } = NacosConstants.DefaultConfigType;
+
+    /// <summary>
+    /// Validates the configuration options.
+    /// </summary>
+    /// <exception cref="NacosConfigurationException">A value is invalid.</exception>
+    internal void Validate()
+    {
+        if (LongPollingTimeout <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosConfigOptions.LongPollingTimeout must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(DefaultContentType))
+        {
+            throw new NacosConfigurationException(
+                "NacosConfigOptions.DefaultContentType cannot be empty.");
+        }
+    }
 }
 
 /// <summary>
@@ -233,4 +389,23 @@ public sealed class NacosNamingOptions
     /// Gets or sets a value indicating whether the local service list is cached for failover.
     /// </summary>
     public bool EnableLocalCache { get; set; } = true;
+
+    /// <summary>
+    /// Validates the naming options.
+    /// </summary>
+    /// <exception cref="NacosConfigurationException">A value is invalid.</exception>
+    internal void Validate()
+    {
+        if (HeartbeatInterval <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosNamingOptions.HeartbeatInterval must be greater than zero.");
+        }
+
+        if (string.IsNullOrWhiteSpace(DefaultCluster))
+        {
+            throw new NacosConfigurationException(
+                "NacosNamingOptions.DefaultCluster cannot be empty.");
+        }
+    }
 }
