@@ -35,4 +35,20 @@ internal static class ProtocolHeaders
 
     /// <summary>The namespace identifier.</summary>
     public const string NamespaceId = "namespaceId";
+
+    /// <summary>The connection source label, which separates SDK connections from cluster ones.</summary>
+    public const string Source = "source";
+
+    /// <summary>The <see cref="Source"/> value reported by an SDK client connection.</summary>
+    public const string SourceSdk = "sdk";
+
+    /// <summary>
+    /// The module label that routes a connection to the server-side manager that owns it.
+    /// </summary>
+    /// <remarks>
+    /// The value is one of the labels produced by
+    /// <see cref="Transport.NacosConnectionModuleExtensions.ToLabel"/>. Nacos reads it only from the
+    /// connection setup request, so it cannot be changed per request.
+    /// </remarks>
+    public const string Module = "module";
 }

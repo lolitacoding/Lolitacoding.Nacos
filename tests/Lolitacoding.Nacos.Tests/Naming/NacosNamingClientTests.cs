@@ -448,7 +448,13 @@ public sealed class NacosNamingClientTests
             };
 
             _connection = new NacosGrpcConnection(
-                options, [Server], factory, TimeProvider.System, NullLogger.Instance, new Random(1234));
+                options,
+                NacosConnectionModule.Naming,
+                [Server],
+                factory,
+                TimeProvider.System,
+                NullLogger.Instance,
+                new Random(1234));
 
             Client = new NacosNamingClient(
                 options, _connection, TimeProvider.System, NullLogger<NacosNamingClient>.Instance, Snapshots);

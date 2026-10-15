@@ -357,6 +357,7 @@ public sealed class NacosConfigClientTests
 
             var connection = new NacosGrpcConnection(
                 options,
+                NacosConnectionModule.Config,
                 [NacosServerAddress.Parse("127.0.0.1:8848")],
                 new FakeNacosChannelFactory(_ => _channel),
                 TimeProvider.System,

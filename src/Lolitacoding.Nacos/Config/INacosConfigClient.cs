@@ -98,7 +98,7 @@ public interface INacosConfigClient : IAsyncDisposable
     /// <remarks>
     /// The callback is invoked on a background thread and may overlap with itself, so it must be
     /// safe for concurrent use. Any exception it throws is logged and swallowed: a faulty listener
-    /// must not tear down the shared connection that other listeners depend on.
+    /// must not tear down the connection that other listeners depend on.
     /// </remarks>
     Task<IAsyncDisposable> AddListenerAsync(
         NacosConfigKey key,

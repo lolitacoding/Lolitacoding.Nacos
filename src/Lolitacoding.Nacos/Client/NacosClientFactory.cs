@@ -13,10 +13,11 @@ namespace Lolitacoding.Nacos.Client;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One connection is shared by every feature because that is what the protocol requires: Nacos
-/// multiplexes configuration, naming and every other concern over a single bi-directional stream,
-/// and a second stream would double the heartbeat and handshake load against the server for no
-/// benefit.
+/// Each module gets its own connection. Nacos routes a connection by the <c>module</c> label it
+/// declares during the handshake, and the naming, lock and AI servers discard connections that did
+/// not declare them, so the domains cannot share a single stream. Configuration and naming
+/// therefore talk over separate connections that each carry their own label, ability table and
+/// reconnect lifecycle.
 /// </para>
 /// <para>
 /// Assembling the graph is the only place that knows how the pieces fit together, which keeps the
@@ -26,7 +27,8 @@ namespace Lolitacoding.Nacos.Client;
 internal sealed class NacosClientFactory : IAsyncDisposable
 {
     private readonly NacosOptions _options;
-    private readonly NacosGrpcConnection _connection;
+    private readonly NacosGrpcConnection _configConnection;
+    private readonly NacosGrpcConnection _namingConnection;
     private readonly NacosConfigClient _config;
     private readonly NacosNamingClient _naming;
     private readonly ILogger<NacosClientFactory> _logger;
@@ -35,13 +37,15 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
     private NacosClientFactory(
         NacosOptions options,
-        NacosGrpcConnection connection,
+        NacosGrpcConnection configConnection,
+        NacosGrpcConnection namingConnection,
         NacosConfigClient config,
         NacosNamingClient naming,
         ILogger<NacosClientFactory> logger)
     {
         _options = options;
-        _connection = connection;
+        _configConnection = configConnection;
+        _namingConnection = namingConnection;
         _config = config;
         _naming = naming;
         _logger = logger;
@@ -54,7 +58,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     public INacosNamingClient Naming => _naming;
 
     /// <summary>
-    /// Creates the clients and their shared connection.
+    /// Creates the clients and their per-module connections.
     /// </summary>
     /// <param name="options">The client options.</param>
     /// <param name="httpClient">
@@ -90,10 +94,26 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         INacosAuthProvider authProvider = NacosAuthProviderFactory.Create(
             options, servers, client, clock, loggerFactory.CreateLogger("Lolitacoding.Nacos.Auth"), random);
 
-        var connection = new NacosGrpcConnection(
+        // One channel factory is shared so a test substitute sees every module, and one auth
+        // provider is shared so all connections present the same access token.
+        INacosChannelFactory channels =
+            channelFactory ?? new GrpcNacosChannelFactory(options.RequestTimeout, options.Tls);
+
+        var configConnection = new NacosGrpcConnection(
             options,
+            NacosConnectionModule.Config,
             servers,
-            channelFactory ?? new GrpcNacosChannelFactory(options.RequestTimeout, options.Tls),
+            channels,
+            clock,
+            loggerFactory.CreateLogger<NacosGrpcConnection>(),
+            random,
+            authProvider);
+
+        var namingConnection = new NacosGrpcConnection(
+            options,
+            NacosConnectionModule.Naming,
+            servers,
+            channels,
             clock,
             loggerFactory.CreateLogger<NacosGrpcConnection>(),
             random,
@@ -104,34 +124,42 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         var config = new NacosConfigClient(
             options,
-            connection,
+            configConnection,
             clock,
             loggerFactory.CreateLogger<NacosConfigClient>(),
             configSnapshots);
 
         var naming = new NacosNamingClient(
             options,
-            connection,
+            namingConnection,
             clock,
             loggerFactory.CreateLogger<NacosNamingClient>(),
             namingSnapshots);
 
         var factory = new NacosClientFactory(
-            options, connection, config, naming, loggerFactory.CreateLogger<NacosClientFactory>());
+            options, configConnection, namingConnection, config, naming,
+            loggerFactory.CreateLogger<NacosClientFactory>());
 
-        // Domain pushes arrive on the shared read loop; routing them here is what turns a
-        // transport-level stream into feature-level notifications.
-        connection.ServerRequestReceived += factory.OnServerRequestAsync;
+        // Domain pushes arrive on the connection of the module that owns them; routing them here
+        // is what turns a transport-level stream into feature-level notifications.
+        configConnection.ServerRequestReceived += factory.OnConfigServerRequestAsync;
+        namingConnection.ServerRequestReceived += factory.OnNamingServerRequestAsync;
 
         return factory;
     }
 
     /// <summary>
-    /// Connects the shared transport.
+    /// Connects every module's transport.
     /// </summary>
-    /// <param name="ct">A token that cancels the connection attempt.</param>
-    /// <returns>A task that completes once the handshake finished.</returns>
-    public Task ConnectAsync(CancellationToken ct = default) => _connection.ConnectAsync(ct);
+    /// <param name="ct">A token that cancels the connection attempts.</param>
+    /// <returns>A task that completes once every handshake finished.</returns>
+    /// <remarks>
+    /// The connections are attempted concurrently so one slow server cannot serialise startup
+    /// behind the other. With <see cref="NacosOptions.Optional"/> set, an unreachable server is
+    /// tolerated on every connection.
+    /// </remarks>
+    public Task ConnectAsync(CancellationToken ct = default) =>
+        Task.WhenAll(_configConnection.ConnectAsync(ct), _namingConnection.ConnectAsync(ct));
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
@@ -143,41 +171,54 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         _disposed = true;
 
-        _connection.ServerRequestReceived -= OnServerRequestAsync;
+        _configConnection.ServerRequestReceived -= OnConfigServerRequestAsync;
+        _namingConnection.ServerRequestReceived -= OnNamingServerRequestAsync;
 
         await _naming.DisposeAsync().ConfigureAwait(false);
         await _config.DisposeAsync().ConfigureAwait(false);
-        await _connection.DisposeAsync().ConfigureAwait(false);
+        await _namingConnection.DisposeAsync().ConfigureAwait(false);
+        await _configConnection.DisposeAsync().ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Routes a server push to the feature that owns it.
+    /// Routes a server push that arrived on the configuration connection.
     /// </summary>
     /// <param name="request">The pushed request.</param>
     /// <param name="ct">A token that cancels the work.</param>
     /// <returns>The response the server expects, or <see langword="null"/> when none is due.</returns>
-    private Task<NacosResponse?> OnServerRequestAsync(NacosRequest request, CancellationToken ct)
+    private Task<NacosResponse?> OnConfigServerRequestAsync(NacosRequest request, CancellationToken ct)
     {
-        switch (request)
+        if (request is not ConfigChangeNotifyRequest notification)
         {
-            case ConfigChangeNotifyRequest notification:
-                // The push is answered before the content is fetched. The server only needs to
-                // know the client received the notification, and holding the acknowledgement
-                // until after a round trip would delay every other message on the stream.
-                _ = FetchChangedConfigAsync(notification, ct);
-                return Task.FromResult<NacosResponse?>(
-                    new ConfigChangeNotifyResponse { RequestId = notification.RequestId });
-
-            case NotifySubscriberRequest notification:
-                // Unlike a configuration change this push carries the complete instance list, so
-                // it is applied directly and acknowledged.
-                _ = _naming.OnServiceChangedAsync(notification, ct);
-                return Task.FromResult<NacosResponse?>(
-                    new NotifySubscriberResponse { RequestId = notification.RequestId });
-
-            default:
-                return Task.FromResult<NacosResponse?>(null);
+            return Task.FromResult<NacosResponse?>(null);
         }
+
+        // The push is answered before the content is fetched. The server only needs to know the
+        // client received the notification, and holding the acknowledgement until after a round
+        // trip would delay every other message on the stream.
+        _ = FetchChangedConfigAsync(notification, ct);
+        return Task.FromResult<NacosResponse?>(
+            new ConfigChangeNotifyResponse { RequestId = notification.RequestId });
+    }
+
+    /// <summary>
+    /// Routes a server push that arrived on the naming connection.
+    /// </summary>
+    /// <param name="request">The pushed request.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>The response the server expects, or <see langword="null"/> when none is due.</returns>
+    private Task<NacosResponse?> OnNamingServerRequestAsync(NacosRequest request, CancellationToken ct)
+    {
+        if (request is not NotifySubscriberRequest notification)
+        {
+            return Task.FromResult<NacosResponse?>(null);
+        }
+
+        // Unlike a configuration change this push carries the complete instance list, so it is
+        // applied directly and acknowledged.
+        _ = _naming.OnServiceChangedAsync(notification, ct);
+        return Task.FromResult<NacosResponse?>(
+            new NotifySubscriberResponse { RequestId = notification.RequestId });
     }
 
     /// <summary>

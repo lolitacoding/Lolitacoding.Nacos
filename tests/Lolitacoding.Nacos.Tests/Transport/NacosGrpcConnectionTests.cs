@@ -59,6 +59,54 @@ public sealed class NacosGrpcConnectionTests
     }
 
     [Fact]
+    public async Task Connect_SendsTheModuleAndSourceLabels()
+    {
+        // Nacos routes a connection by the "module" label, and it reads that label only from the
+        // connection setup request. A connection that omits it, or sends another module's value,
+        // is treated as one the module does not own and its registrations are silently dropped.
+        var stream = new FakeNacosDuplexStream();
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(address, FakeServerCheck.Responding(), stream));
+
+        await using NacosGrpcConnection connection =
+            CreateConnection(factory, module: NacosConnectionModule.Lock);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        ConnectionSetupRequest setup =
+            PayloadCodec.Decode<ConnectionSetupRequest>(stream.Written[0])!;
+
+        setup.Labels![ProtocolHeaders.Module].ShouldBe("lock");
+        setup.Labels[ProtocolHeaders.Source].ShouldBe(ProtocolHeaders.SourceSdk);
+    }
+
+    [Fact]
+    public async Task Connect_MergesModuleExtraLabels()
+    {
+        // A module contributes labels the transport knows nothing about — the AI client's UUID, for
+        // instance — and those take precedence over the standard labels.
+        var stream = new FakeNacosDuplexStream();
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(address, FakeServerCheck.Responding(), stream));
+
+        var extraLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["aiClientUuid"] = "uuid-1",
+            [ProtocolHeaders.AppName] = "override",
+        };
+
+        await using NacosGrpcConnection connection =
+            CreateConnection(factory, module: NacosConnectionModule.Ai, extraLabels: extraLabels);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        ConnectionSetupRequest setup =
+            PayloadCodec.Decode<ConnectionSetupRequest>(stream.Written[0])!;
+
+        setup.Labels!["aiClientUuid"].ShouldBe("uuid-1");
+        setup.Labels[ProtocolHeaders.AppName].ShouldBe("override");
+        setup.Labels[ProtocolHeaders.Module].ShouldBe("ai");
+    }
+
+    [Fact]
     public async Task Connect_RecordsServerAbilitiesFromSetupAck()
     {
         var stream = new FakeNacosDuplexStream
@@ -384,6 +432,7 @@ public sealed class NacosGrpcConnectionTests
 
         await using var connection = new NacosGrpcConnection(
             options,
+            NacosConnectionModule.Config,
             [Server],
             factory,
             TimeProvider.System,
@@ -449,6 +498,7 @@ public sealed class NacosGrpcConnectionTests
 
         await using var connection = new NacosGrpcConnection(
             options,
+            NacosConnectionModule.Config,
             [Server],
             factory,
             timeProvider,
@@ -484,6 +534,7 @@ public sealed class NacosGrpcConnectionTests
 
         await using var connection = new NacosGrpcConnection(
             options,
+            NacosConnectionModule.Config,
             [Server],
             factory,
             timeProvider,
@@ -541,7 +592,9 @@ public sealed class NacosGrpcConnectionTests
     private static NacosGrpcConnection CreateConnection(
         FakeNacosChannelFactory factory,
         IReadOnlyList<NacosServerAddress>? servers = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        NacosConnectionModule module = NacosConnectionModule.Config,
+        IReadOnlyDictionary<string, string>? extraLabels = null)
     {
         var options = new NacosOptions
         {
@@ -559,11 +612,14 @@ public sealed class NacosGrpcConnectionTests
 
         return new NacosGrpcConnection(
             options,
+            module,
             servers ?? [Server],
             factory,
             timeProvider ?? TimeProvider.System,
             NullLogger.Instance,
-            new Random(1234));
+            new Random(1234),
+            null,
+            extraLabels);
     }
 
     private static async Task WaitForWriteCountAsync(

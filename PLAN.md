@@ -197,7 +197,7 @@ public sealed class NacosOptions
 
 v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire。v0.2 在此基础上扩展，按下列阶段推进，每个阶段独立提交并满足"验收标准"后再进入下一个。
 
-### 阶段 1 · Nacos 3.x only + TLS + gRPC 端口修正
+### 阶段 1 · Nacos 3.x only + TLS + gRPC 端口修正（✅ 已完成）
 
 - 移除对 2.x 的登录回退（`/v1/auth/users/login`），只使用 `/v3/auth/user/login`。
 - 修正 gRPC 端口推导：SDK gRPC 端口恒为 `main + 1000`；TLS 与明文在同一端口协商，`main + 1001` 是集群端口而非 TLS 端口。
@@ -205,7 +205,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 集成测试、CI、文档与包描述全部收敛到 3.x。
 - 验收：Release 构建零警告零错误；单元测试全绿；`https://` 地址推导出的 gRPC 端口为 `main + 1000`。
 
-### 阶段 2 · 传输基础：按模块独立连接与 `module` 标签
+### 阶段 2 · 传输基础：按模块独立连接与 `module` 标签（✅ 已完成）
 
 - Nacos 服务端按连接的 `module` 标签工作（`config` / `naming` / `lock` / `ai`）。当前实现未发送该标签，导致临时实例注册与清理、锁清理、AI 端点注册都无法正确工作。
 - 改为每个模块一条 gRPC 连接（各自携带 `module` 标签、能力表与重连生命周期），由 `NacosClient` 汇总对外暴露。

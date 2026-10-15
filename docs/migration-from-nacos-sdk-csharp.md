@@ -20,9 +20,10 @@ left-hand column as "the concept you are used to".
 | `AddNacosAspNet(...)` | `AddNacosServiceRegistration(...)` |
 | `IConfigurationBuilder.AddNacosConfiguration(...)` | `AddNacosConfiguration(...)` (same name, different options type) |
 
-## One client, one connection
+## One client, one connection per module
 
-The clearest structural change: there is a single entry point and a single gRPC connection.
+The clearest structural change: there is a single entry point, and the client manages the
+connections for you.
 
 ```csharp
 await using NacosClient client = NacosClient.Create(new NacosOptions
@@ -34,9 +35,12 @@ INacosConfigClient config = client.Config;
 INacosNamingClient naming = client.Naming;
 ```
 
-The official Java protocol multiplexes configuration and naming over one bi-directional stream, so
-a second connection only duplicates the handshake and heartbeat work. Construct with
-`NacosClient.Create(...)` — the constructor is private — and dispose it when the process exits.
+Under the hood the client opens one gRPC connection per module. Nacos routes a connection by the
+`module` label it declares during the handshake, and the naming, lock and AI servers discard
+connections that did not declare them, so configuration and naming cannot share a stream.
+
+Construct with `NacosClient.Create(...)` — the constructor is private — and dispose it when the
+process exits.
 
 ## Coordinates became records
 

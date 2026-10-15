@@ -10,10 +10,16 @@ using Microsoft.Extensions.Logging;
 namespace Lolitacoding.Nacos.Transport;
 
 /// <summary>
-/// Manages the gRPC connection that carries configuration and naming traffic to one Nacos server
-/// at a time, including the handshake, server-initiated pushes, health checking and reconnection.
+/// Manages the gRPC connection that carries the traffic of one Nacos module to one server at a
+/// time, including the handshake, server-initiated pushes, health checking and reconnection.
 /// </summary>
 /// <remarks>
+/// <para>
+/// A connection serves exactly one <see cref="NacosConnectionModule"/>. The module is sent as the
+/// <c>module</c> label of the connection setup request, and Nacos uses it to route the connection
+/// to the manager that owns it — the naming, lock and AI servers all discard connections that did
+/// not declare them. Features therefore get their own connection instead of sharing one.
+/// </para>
 /// <para>
 /// The handshake order is fixed by the protocol and is not negotiable: a unary
 /// <see cref="ServerCheckRequest"/>, then the bidirectional stream is opened, then
@@ -29,6 +35,8 @@ namespace Lolitacoding.Nacos.Transport;
 internal sealed class NacosGrpcConnection : IAsyncDisposable
 {
     private readonly NacosOptions _options;
+    private readonly NacosConnectionModule _module;
+    private readonly IReadOnlyDictionary<string, string>? _extraLabels;
     private readonly IReadOnlyList<NacosServerAddress> _servers;
     private readonly INacosChannelFactory _channelFactory;
     private readonly TimeProvider _timeProvider;
@@ -63,6 +71,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// Initializes a new instance of the <see cref="NacosGrpcConnection"/> class.
     /// </summary>
     /// <param name="options">The client options.</param>
+    /// <param name="module">The module this connection serves.</param>
     /// <param name="servers">The parsed server list to fail over across.</param>
     /// <param name="channelFactory">Creates channels; substituted in tests.</param>
     /// <param name="timeProvider">The clock and timer source.</param>
@@ -71,14 +80,20 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// <param name="authProvider">
     /// Supplies the access token presented on outgoing requests. Defaults to anonymous access.
     /// </param>
+    /// <param name="extraLabels">
+    /// Additional connection labels, or <see langword="null"/> for none. They are merged over the
+    /// standard labels, so a module can add its own without this transport knowing about it.
+    /// </param>
     public NacosGrpcConnection(
         NacosOptions options,
+        NacosConnectionModule module,
         IReadOnlyList<NacosServerAddress> servers,
         INacosChannelFactory channelFactory,
         TimeProvider timeProvider,
         ILogger logger,
         Random? random = null,
-        Auth.INacosAuthProvider? authProvider = null)
+        Auth.INacosAuthProvider? authProvider = null,
+        IReadOnlyDictionary<string, string>? extraLabels = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(servers);
@@ -93,6 +108,8 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         }
 
         _options = options;
+        _module = module;
+        _extraLabels = extraLabels;
         _servers = servers;
         _channelFactory = channelFactory;
         _timeProvider = timeProvider;
@@ -986,12 +1003,33 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// Builds the labels sent with the connection setup.
     /// </summary>
     /// <returns>The labels.</returns>
-    private Dictionary<string, string> BuildLabels() => new(StringComparer.Ordinal)
+    /// <remarks>
+    /// The <c>module</c> label is what routes this connection to the right server-side manager, and
+    /// the <c>source</c> label marks it as an SDK connection rather than a cluster one. Omitting
+    /// either makes the server treat the connection as one it does not own, so a feature that
+    /// registered state on it silently stops receiving pushes.
+    /// </remarks>
+    private Dictionary<string, string> BuildLabels()
     {
-        [ProtocolHeaders.AppName] = _options.AppName ?? "unknown",
-        [ProtocolHeaders.ClientVersion] = ClientVersion,
-        [ProtocolHeaders.NamespaceId] = _options.Namespace,
-    };
+        var labels = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [ProtocolHeaders.Source] = ProtocolHeaders.SourceSdk,
+            [ProtocolHeaders.Module] = _module.ToLabel(),
+            [ProtocolHeaders.AppName] = _options.AppName ?? "unknown",
+            [ProtocolHeaders.ClientVersion] = ClientVersion,
+            [ProtocolHeaders.NamespaceId] = _options.Namespace,
+        };
+
+        if (_extraLabels is not null)
+        {
+            foreach (KeyValuePair<string, string> label in _extraLabels)
+            {
+                labels[label.Key] = label.Value;
+            }
+        }
+
+        return labels;
+    }
 
     /// <summary>
     /// Builds the ability table advertised to the server.
@@ -1001,11 +1039,16 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// null table suppresses the server's handshake acknowledgement.
     /// </returns>
     /// <remarks>
-    /// Only abilities this client actually implements may be advertised. This transport restores
-    /// configuration listeners and naming subscriptions after a reconnect but implements neither
-    /// fuzzy watch nor the distributed lock, so it advertises them as unsupported rather than
-    /// claiming a capability it cannot honour. Keys are Nacos ability names, not Java enum
-    /// member names.
+    /// <para>
+    /// Only abilities this client actually implements may be advertised. The table is a property of
+    /// the client rather than of one module — the official client advertises the same SDK abilities
+    /// on every connection — so each module's connection reports the same values. Keys are Nacos
+    /// ability names, not Java enum member names.
+    /// </para>
+    /// <para>
+    /// This transport currently implements neither fuzzy watch nor the distributed lock, so both
+    /// are advertised as unsupported rather than claiming a capability it cannot honour.
+    /// </para>
     /// </remarks>
     private static Dictionary<string, bool> BuildAbilityTable() => new(StringComparer.Ordinal)
     {

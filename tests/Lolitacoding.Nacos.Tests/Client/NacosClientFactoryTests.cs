@@ -1,0 +1,94 @@
+using Lolitacoding.Nacos.Client;
+using Lolitacoding.Nacos.Protocol;
+using Lolitacoding.Nacos.Protocol.Messages;
+using Lolitacoding.Nacos.Tests.Transport;
+using Lolitacoding.Nacos.Transport;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Lolitacoding.Nacos.Tests.Client;
+
+/// <summary>
+/// Verifies how <see cref="NacosClientFactory"/> wires the clients to their connections.
+/// </summary>
+/// <remarks>
+/// The property that matters is that the domains do not share a connection: Nacos routes each
+/// connection by the module label it declares, and one connection cannot declare two modules.
+/// </remarks>
+public sealed class NacosClientFactoryTests
+{
+    [Fact]
+    public async Task Create_OpensOneConnectionPerModuleCarryingItsLabel()
+    {
+        var streams = new List<FakeNacosDuplexStream>();
+
+        var channels = new FakeNacosChannelFactory(address =>
+        {
+            var stream = new FakeNacosDuplexStream();
+            streams.Add(stream);
+            return new FakeNacosChannel(address, FakeServerCheck.Responding(), stream);
+        });
+
+        var options = new NacosOptions
+        {
+            ServerAddresses = ["127.0.0.1:8848"],
+            AppName = "factory-tests",
+            ConnectionTimeout = TimeSpan.FromSeconds(5),
+        };
+
+        await using NacosClientFactory client = NacosClientFactory.Create(
+            options,
+            httpClient: null,
+            channelFactory: channels,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance,
+            random: new Random(1234));
+
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        // A channel per module, and every connection declares the module it serves.
+        channels.RequestedAddresses.Count.ShouldBe(2);
+        streams.Count.ShouldBe(2);
+
+        string[] modules = streams
+            .Select(stream => PayloadCodec.Decode<ConnectionSetupRequest>(stream.Written[0])!)
+            .Select(setup => setup.Labels![ProtocolHeaders.Module])
+            .OrderBy(label => label, StringComparer.Ordinal)
+            .ToArray();
+
+        modules.ShouldBe(["config", "naming"]);
+    }
+
+    [Fact]
+    public async Task DisposeAsync_DisposesEveryConnection()
+    {
+        var streams = new List<FakeNacosDuplexStream>();
+
+        var channels = new FakeNacosChannelFactory(address =>
+        {
+            var stream = new FakeNacosDuplexStream();
+            streams.Add(stream);
+            return new FakeNacosChannel(address, FakeServerCheck.Responding(), stream);
+        });
+
+        var options = new NacosOptions
+        {
+            ServerAddresses = ["127.0.0.1:8848"],
+            ConnectionTimeout = TimeSpan.FromSeconds(5),
+        };
+
+        NacosClientFactory client = NacosClientFactory.Create(
+            options,
+            httpClient: null,
+            channelFactory: channels,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance,
+            random: new Random(1234));
+
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        await client.DisposeAsync();
+
+        // Every stream the module connections opened must be released, or a disposed client would
+        // keep its server-side registrations alive.
+        streams.ShouldAllBe(stream => stream.Disposed);
+    }
+}

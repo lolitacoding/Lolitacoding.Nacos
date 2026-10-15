@@ -341,6 +341,16 @@ Deserialize fixture:
 shape still accepted because `FAIL_ON_UNKNOWN_PROPERTIES` is disabled (the test asserts only that
 the known fields parse). **3.x carries `abilityTable`** (map<string,boolean>), not `abilities`.
 
+⚠️ **The body `module` is not the connection `module` label.** The body keeps `"internal"` for a
+transport message (`InternalRequest.getModule`, `api/.../remote/request/InternalRequest.java:30`) and
+the server ignores it. Routing uses the **`labels.module`** entry instead
+(`RemoteConstants.LABEL_MODULE`, `api/.../remote/RemoteConstants.java:36`), read in
+`core/.../remote/grpc/GrpcBiStreamRequestAcceptor.java:160-183`. The naming, lock and AI managers
+accept a connection **only** when that label matches theirs — `ConnectionBasedClientManager.java:60-62`
+(naming), `LockConnectionEventListener.java:54-55` (lock),
+`AiConnectionBasedClientManager.java:56-57` (ai) — so a client must open one connection per module
+and label it accordingly.
+
 **`InstanceRequest` body** (`InstanceRequestTest.java:41-46`):
 ```json
 {"headers":{},"namespace":"namespace","serviceName":"service","groupName":"group","type":"deregisterInstance","instance":{"port":0,"weight":1.0,"healthy":true,"enabled":true,"ephemeral":true,"metadata":{},"instanceIdGenerator":"simple","instanceHeartBeatInterval":5000,"instanceHeartBeatTimeOut":15000,"ipDeleteTimeout":30000},"module":"naming"}

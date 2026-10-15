@@ -10,10 +10,9 @@ namespace Lolitacoding.Nacos.Client;
 /// </summary>
 /// <remarks>
 /// <para>
-/// One client shares a single gRPC connection between the configuration centre and the naming
-/// service. That is not merely an optimisation: Nacos multiplexes both domains over one stream, so
-/// a second connection would duplicate the handshake and heartbeat work against the server for no
-/// benefit.
+/// The client owns one gRPC connection per module. Nacos routes each connection by the
+/// <c>module</c> label it declares, and the naming, lock and AI servers discard connections that
+/// did not declare them, so configuration and naming do not share a stream.
 /// </para>
 /// <para>
 /// A client is safe for concurrent use and is intended to live for the lifetime of the process.
@@ -71,10 +70,10 @@ public sealed class NacosClient : IAsyncDisposable, IDisposable
     }
 
     /// <summary>
-    /// Establishes the shared connection.
+    /// Establishes the connections.
     /// </summary>
     /// <param name="ct">A token that cancels the attempt.</param>
-    /// <returns>A task that completes once the connection is usable.</returns>
+    /// <returns>A task that completes once every connection is usable.</returns>
     /// <exception cref="NacosConnectionException">
     /// No configured server could be reached and
     /// <see cref="NacosOptions.Optional"/> was not set.

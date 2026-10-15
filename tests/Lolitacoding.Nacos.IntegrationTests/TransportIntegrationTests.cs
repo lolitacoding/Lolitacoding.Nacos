@@ -34,7 +34,7 @@ public sealed class TransportIntegrationTests
     [Fact]
     public async Task Connect_ReceivesServerAbilities()
     {
-        // Both 2.x and 3.x support ability negotiation, so the acknowledgement must arrive and
+        // A Nacos 3.x server supports ability negotiation, so the acknowledgement must arrive and
         // carry the server's capability table. An empty table here would mean the client failed
         // to advertise its own abilities and the server stayed silent.
         await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
@@ -155,6 +155,7 @@ public sealed class TransportIntegrationTests
 
         return new NacosGrpcConnection(
             options,
+            NacosConnectionModule.Config,
             servers,
             new GrpcNacosChannelFactory(options.RequestTimeout),
             TimeProvider.System,

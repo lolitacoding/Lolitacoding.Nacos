@@ -236,6 +236,7 @@ public sealed class NacosGrpcConnectionAuthTests
 
         return new NacosGrpcConnection(
             options,
+            NacosConnectionModule.Naming,
             [Server],
             factory,
             TimeProvider.System,

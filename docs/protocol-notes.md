@@ -72,9 +72,36 @@ the server would route the corresponding work to a client that drops it.
 
 See `NacosGrpcConnection.ConnectToAsync` and `BuildAbilityTable`.
 
+## Connection modules and labels
+
+`ConnectionSetupRequest` carries a `labels` map, and Nacos reads the **`module`** key from it to
+decide which server-side manager owns the connection. The naming, lock and AI servers each keep a
+registry of the connections that declared their module and **ignore every other connection**:
+`ConnectionBasedClientManager` (naming), `LockConnectionEventListener` and
+`AiConnectionBasedClientManager` all compare the label before they accept a client.
+
+A connection can therefore serve exactly one module, so this client opens **one gRPC connection per
+module** (`NacosConnectionModule`) rather than multiplexing every feature over a single stream. Each
+connection also sends `source = sdk`, which is how the server tells an SDK connection apart from a
+cluster-internal one.
+
+| Label | Value | Purpose |
+| --- | --- | --- |
+| `module` | `config` / `naming` / `lock` / `ai` | Routes the connection to the manager that owns it. |
+| `source` | `sdk` | Marks the connection as an SDK client rather than a cluster peer. |
+| `AppName` | the configured application name | Reported in the console and used by visibility plugins. |
+| `ClientVersion` | `Nacos-DotNet/<version>` | Diagnostic only. |
+| `namespaceId` | the configured namespace | Diagnostic; the namespace the server honours is `tenant`. |
+
+The body of the request still carries the redundant `module` field (`"internal"` for a transport
+message), which the server ignores because the labels are authoritative. A module may add its own
+labels, such as the AI client's UUID, through the `extraLabels` argument; they are merged over the
+standard ones.
+
 ## Server-initiated messages
 
-Nacos multiplexes every feature over one stream, so the read loop classifies each incoming frame.
+Within one module, Nacos multiplexes its messages over a single stream, so the read loop classifies
+each incoming frame.
 
 | Message | Handling |
 | --- | --- |

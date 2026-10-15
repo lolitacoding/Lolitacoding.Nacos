@@ -6,6 +6,11 @@ namespace Lolitacoding.Nacos.Protocol.Messages;
 /// <summary>
 /// Names of the <c>module</c> discriminator that Nacos embeds in every request body.
 /// </summary>
+/// <remarks>
+/// The same strings double as the <c>module</c> connection label, which Nacos uses to route a
+/// connection to the manager that owns it; see
+/// <see cref="Transport.NacosConnectionModuleExtensions.ToLabel"/>.
+/// </remarks>
 internal static class NacosModule
 {
     /// <summary>The configuration centre module.</summary>
@@ -13,6 +18,12 @@ internal static class NacosModule
 
     /// <summary>The naming (service discovery) module.</summary>
     public const string Naming = "naming";
+
+    /// <summary>The distributed lock module.</summary>
+    public const string Lock = "lock";
+
+    /// <summary>The AI registry module.</summary>
+    public const string Ai = "ai";
 
     /// <summary>The transport-internal module.</summary>
     public const string Internal = "internal";

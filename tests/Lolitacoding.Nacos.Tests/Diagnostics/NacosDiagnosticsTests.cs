@@ -368,6 +368,7 @@ public sealed class NacosDiagnosticsTests
                     JitterFactor = 0,
                 },
             },
+            NacosConnectionModule.Config,
             [Server],
             factory,
             TimeProvider.System,
