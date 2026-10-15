@@ -37,14 +37,22 @@ Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.set -> void
 Lolitacoding.Nacos.NacosNamingOptions.NacosNamingOptions() -> void
 Lolitacoding.Nacos.NacosOptions
+Lolitacoding.Nacos.NacosOptions.AppName.get -> string?
+Lolitacoding.Nacos.NacosOptions.AppName.set -> void
 Lolitacoding.Nacos.NacosOptions.Config.get -> Lolitacoding.Nacos.NacosConfigOptions!
 Lolitacoding.Nacos.NacosOptions.Config.set -> void
 Lolitacoding.Nacos.NacosOptions.ConnectionTimeout.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosOptions.ConnectionTimeout.set -> void
 Lolitacoding.Nacos.NacosOptions.ContextPath.get -> string!
 Lolitacoding.Nacos.NacosOptions.ContextPath.set -> void
+Lolitacoding.Nacos.NacosOptions.HealthCheckInterval.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosOptions.HealthCheckInterval.set -> void
+Lolitacoding.Nacos.NacosOptions.HealthCheckTimeout.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosOptions.HealthCheckTimeout.set -> void
 Lolitacoding.Nacos.NacosOptions.LocalCacheDirectory.get -> string?
 Lolitacoding.Nacos.NacosOptions.LocalCacheDirectory.set -> void
+Lolitacoding.Nacos.NacosOptions.LocalClientIp.get -> string?
+Lolitacoding.Nacos.NacosOptions.LocalClientIp.set -> void
 Lolitacoding.Nacos.NacosOptions.NacosOptions() -> void
 Lolitacoding.Nacos.NacosOptions.Namespace.get -> string!
 Lolitacoding.Nacos.NacosOptions.Namespace.set -> void

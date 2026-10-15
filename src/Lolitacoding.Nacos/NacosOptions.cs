@@ -52,6 +52,21 @@ public sealed class NacosOptions
     public TimeSpan ConnectionTimeout { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// Gets or sets how long a connection may sit idle before the client verifies it with a
+    /// health check.
+    /// </summary>
+    /// <remarks>
+    /// Nacos closes connections that stop responding, so an idle connection is probed rather
+    /// than assumed healthy. This mirrors the official client's keep-alive interval.
+    /// </remarks>
+    public TimeSpan HealthCheckInterval { get; set; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Gets or sets the timeout applied to a single health check request.
+    /// </summary>
+    public TimeSpan HealthCheckTimeout { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
     /// Gets or sets the directory used to store configuration snapshots and service list
     /// failover files.
     /// </summary>
@@ -66,6 +81,25 @@ public sealed class NacosOptions
     /// Gets or sets the HTTP context path of the Nacos server.
     /// </summary>
     public string ContextPath { get; set; } = NacosConstants.DefaultContextPath;
+
+    /// <summary>
+    /// Gets or sets the application name reported to the Nacos server.
+    /// </summary>
+    /// <remarks>
+    /// The server records this as the connection's application label and surfaces it in the
+    /// console, so it is worth setting in any environment where more than one service connects.
+    /// </remarks>
+    public string? AppName { get; set; }
+
+    /// <summary>
+    /// Gets or sets the local IP address reported to the Nacos server.
+    /// </summary>
+    /// <remarks>
+    /// Nacos treats this purely as a hint: the server derives the authoritative client address
+    /// from the connection, so a wrong value here cannot be used to impersonate another host.
+    /// When left unset the client reports no address at all rather than guessing one.
+    /// </remarks>
+    public string? LocalClientIp { get; set; }
 
     /// <summary>
     /// Gets or sets a value indicating whether the client tolerates the Nacos server being
