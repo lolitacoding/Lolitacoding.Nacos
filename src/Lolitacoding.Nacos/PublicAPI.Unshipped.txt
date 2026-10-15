@@ -1,0 +1,37 @@
+#nullable enable
+Lolitacoding.Nacos.NacosAuthException
+Lolitacoding.Nacos.NacosAuthException.NacosAuthException() -> void
+Lolitacoding.Nacos.NacosAuthException.NacosAuthException(int errorCode, string! message) -> void
+Lolitacoding.Nacos.NacosAuthException.NacosAuthException(string! message) -> void
+Lolitacoding.Nacos.NacosAuthException.NacosAuthException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosConnectionException
+Lolitacoding.Nacos.NacosConnectionException.NacosConnectionException() -> void
+Lolitacoding.Nacos.NacosConnectionException.NacosConnectionException(string! message) -> void
+Lolitacoding.Nacos.NacosConnectionException.NacosConnectionException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosConstants
+Lolitacoding.Nacos.NacosException
+Lolitacoding.Nacos.NacosException.ErrorCode.get -> int
+Lolitacoding.Nacos.NacosException.NacosException() -> void
+Lolitacoding.Nacos.NacosException.NacosException(int errorCode, string! message) -> void
+Lolitacoding.Nacos.NacosException.NacosException(int errorCode, string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosException.NacosException(string! message) -> void
+Lolitacoding.Nacos.NacosException.NacosException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosServerException
+Lolitacoding.Nacos.NacosServerException.NacosServerException() -> void
+Lolitacoding.Nacos.NacosServerException.NacosServerException(int errorCode, string! message) -> void
+Lolitacoding.Nacos.NacosServerException.NacosServerException(string! message) -> void
+Lolitacoding.Nacos.NacosServerException.NacosServerException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosTimeoutException
+Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException() -> void
+Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException(string! message) -> void
+Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException(string! message, System.Exception? innerException) -> void
+const Lolitacoding.Nacos.NacosConstants.Charset = "UTF-8" -> string!
+const Lolitacoding.Nacos.NacosConstants.DefaultCluster = "DEFAULT" -> string!
+const Lolitacoding.Nacos.NacosConstants.DefaultConfigType = "text" -> string!
+const Lolitacoding.Nacos.NacosConstants.DefaultContextPath = "/nacos" -> string!
+const Lolitacoding.Nacos.NacosConstants.DefaultGroup = "DEFAULT_GROUP" -> string!
+const Lolitacoding.Nacos.NacosConstants.DefaultNamespace = "public" -> string!
+const Lolitacoding.Nacos.NacosConstants.DefaultPort = 8848 -> int
+const Lolitacoding.Nacos.NacosConstants.DefaultTlsPort = 9848 -> int
+const Lolitacoding.Nacos.NacosConstants.GrpcPortOffset = 1000 -> int
+const Lolitacoding.Nacos.NacosConstants.GrpcTlsPortOffset = 1001 -> int

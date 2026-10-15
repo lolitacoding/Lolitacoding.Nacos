@@ -1,0 +1,68 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Target platform: .NET 10 only, with the newest language features. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Quality gates. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+
+    <!-- Every public member must carry XML documentation; the SDK emits CS1591
+         for undocumented members, which we enforce selectively instead. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+
+    <!-- Reproducible builds. -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Packaging. -->
+    <Authors>Lolitacoding</Authors>
+    <Company>Lolitacoding</Company>
+    <Product>Lolitacoding.Nacos</Product>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/lolitacoding/Lolitacoding.Nacos</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/lolitacoding/Lolitacoding.Nacos</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PackageTags>nacos;configuration;service-discovery;grpc;dotnet</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- MinVer derives the version from git tags; 0.1.0-preview.0 before the first tag. -->
+    <MinVerTagPrefix>v</MinVerTagPrefix>
+    <MinVerMinimumMajorMinor>0.1</MinVerMinimumMajorMinor>
+    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
+  </PropertyGroup>
+
+  <!-- Tests and samples: never packed, never documented, no public-API baseline. -->
+  <PropertyGroup Condition="$(MSBuildProjectName.EndsWith('.Tests')) Or $(MSBuildProjectName.EndsWith('.IntegrationTests')) Or $(MSBuildProjectName.StartsWith('Sample.'))">
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnablePublicApiAnalyzers>false</EnablePublicApiAnalyzers>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- Opt-out switch used by the test/sample block above. -->
+    <EnablePublicApiAnalyzers Condition="'$(EnablePublicApiAnalyzers)' == ''">true</EnablePublicApiAnalyzers>
+    <IsPackable Condition="'$(IsPackable)' == ''">true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <PackageReference Include="MinVer" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(EnablePublicApiAnalyzers)' == 'true'">
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

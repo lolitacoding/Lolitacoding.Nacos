@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Lolitacoding.Nacos</RootNamespace>
+    <AssemblyName>Lolitacoding.Nacos</AssemblyName>
+    <PackageId>Lolitacoding.Nacos</PackageId>
+    <Description>Modern .NET client SDK for Nacos 2.x/3.x: configuration center, service registration and discovery.</Description>
+    <!-- Core library is trim- and Native AOT-compatible; IL2xxx/IL3xxx warnings are errors. -->
+    <IsAotCompatible>true</IsAotCompatible>
+    <IsTrimmable>true</IsTrimmable>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup Label="Runtime dependencies">
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Primitives" />
+  </ItemGroup>
+
+  <ItemGroup Label="gRPC protocol code generation">
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+    <!-- Message types are generated from the official Nacos .proto. Service stubs are
+         written by hand in Protocol/ because the upstream RPC is literally named
+         "request", which collides with the generator's own "request" parameter name. -->
+    <Protobuf Include="Protocol\Proto\nacos_grpc_service.proto"
+              GrpcServices="None"
+              ProtoRoot="Protocol\Proto"
+              OutputOptions="internal_access" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup Label="Public API baseline">
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lolitacoding.Nacos.Tests" />
+    <InternalsVisibleTo Include="Lolitacoding.Nacos.IntegrationTests" />
+  </ItemGroup>
+
+</Project>
