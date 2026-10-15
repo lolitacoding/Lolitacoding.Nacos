@@ -109,6 +109,27 @@ the request. A bare `order-service` name resolves through Nacos by default; set
 `ResolveAllServices = false` to require the explicit scheme. Resolution reuses the naming client, so
 it benefits from the same in-memory and on-disk failover.
 
+## How do I run Nacos with Aspire for local development?
+
+Add `Lolitacoding.Aspire.Hosting.Nacos` to the AppHost and `Lolitacoding.Aspire.Nacos` to each
+service:
+
+```csharp
+// AppHost.
+builder.AddNacos("nacos").WithDataVolume();
+
+builder.AddProject<Projects.MyApi>("my-api")
+    .WithReference(nacos)
+    .WaitFor(nacos);
+
+// MyApi.
+builder.AddNacosClient(options => options.Optional = true);
+```
+
+The AppHost runs a standalone `nacos/nacos-server` container, waits for its readiness check, and
+injects `ConnectionStrings__nacos` into the referenced service. See the
+[Aspire orchestration guide](aspire.md) for ports, persistence and authentication.
+
 ## How do I use multiple namespaces?
 
 Each `NacosConfigKey` and `NacosServiceKey` takes an optional namespace. When it is omitted the

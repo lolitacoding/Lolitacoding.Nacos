@@ -1,6 +1,6 @@
+using Lolitacoding.Aspire.Nacos;
 using Lolitacoding.Nacos.AspNetCore;
 using Lolitacoding.Nacos.Extensions.Configuration;
-using Lolitacoding.Nacos.Extensions.DependencyInjection;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
@@ -8,12 +8,21 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Logging.ClearProviders();
 builder.Logging.AddSimpleConsole();
 
-string serverAddress = builder.Configuration["Nacos:ServerAddress"] ?? "http://127.0.0.1:8848";
+// Under Aspire the AppHost injects a "nacos" connection string. When the sample is run on its own,
+// fall back to a local server so the same code path is exercised either way.
+string serverAddress =
+    builder.Configuration.GetConnectionString(NacosClientHostApplicationBuilderExtensions.DefaultConnectionName)
+    ?? builder.Configuration["Nacos:ServerAddress"]
+    ?? "http://127.0.0.1:8848";
 
-// 1. Nacos clients for programmatic config and naming access.
-builder.Services.AddNacos(options =>
+builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
 {
-    options.ServerAddresses = [serverAddress];
+    ["ConnectionStrings:nacos"] = serverAddress,
+});
+
+// 1. Nacos clients for programmatic config and naming access, bound from the connection string.
+builder.AddNacosClient(configure: options =>
+{
     options.Namespace = "public";
     // Start even when Nacos is unreachable, so the sample can be run before the server is up.
     options.Optional = true;

@@ -23,6 +23,8 @@
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.Configuration\Lolitacoding.Nacos.Extensions.Configuration.csproj" />
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.ServiceDiscovery\Lolitacoding.Nacos.Extensions.ServiceDiscovery.csproj" />
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos.AspNetCore\Lolitacoding.Nacos.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\src\Lolitacoding.Aspire.Hosting.Nacos\Lolitacoding.Aspire.Hosting.Nacos.csproj" />
+    <ProjectReference Include="..\..\src\Lolitacoding.Aspire.Nacos\Lolitacoding.Aspire.Nacos.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Lolitacoding.Aspire.Hosting.Nacos</RootNamespace>
+    <AssemblyName>Lolitacoding.Aspire.Hosting.Nacos</AssemblyName>
+    <PackageId>Lolitacoding.Aspire.Hosting.Nacos</PackageId>
+    <Description>Aspire hosting integration for Nacos: orchestrate a Nacos server container from an Aspire AppHost.</Description>
+    <!-- The Aspire application model is reflection-heavy and is not modelled for trimming or AOT. -->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lolitacoding.Nacos.Tests" />
+  </ItemGroup>
+
+</Project>

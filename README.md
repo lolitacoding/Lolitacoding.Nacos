@@ -25,6 +25,8 @@ and service registration & discovery.
 | `Lolitacoding.Nacos.Extensions.Configuration` | `AddNacosConfiguration(...)` configuration provider with change tokens. |
 | `Lolitacoding.Nacos.Extensions.ServiceDiscovery` | `AddNacosServiceDiscovery()` integration for `Microsoft.Extensions.ServiceDiscovery`. |
 | `Lolitacoding.Nacos.AspNetCore` | Automatic instance registration and deregistration for ASP.NET Core apps. |
+| `Lolitacoding.Aspire.Hosting.Nacos` | Aspire hosting integration: orchestrate a Nacos server container from an AppHost. |
+| `Lolitacoding.Aspire.Nacos` | Aspire client integration: `AddNacosClient(...)` binds the Nacos clients to the injected connection string. |
 
 ## Quick start
 
@@ -116,6 +118,38 @@ instance address is substituted before the request is sent. A bare `order-servic
 through Nacos too; see the [quick start](docs/quickstart.md) and
 [configuration reference](docs/configuration.md) for the options that scope resolution.
 
+### Aspire orchestration
+
+Run a Nacos server for local development from an [Aspire](https://learn.microsoft.com/dotnet/aspire/)
+AppHost:
+
+```csharp
+// Sample.Aspire.AppHost/Program.cs
+using Lolitacoding.Aspire.Hosting.Nacos;
+
+IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(args);
+
+IResourceBuilder<NacosResource> nacos = builder.AddNacos("nacos")
+    .WithDataVolume();
+
+builder.AddProject<Projects.Sample_AspNetCore>("sample-api")
+    .WithReference(nacos)
+    .WaitFor(nacos);
+
+builder.Build().Run();
+```
+
+The referenced service consumes the injected connection string through the matching client helper:
+
+```csharp
+using Lolitacoding.Aspire.Nacos;
+
+builder.AddNacosClient(options => options.Optional = true);
+```
+
+`AddNacosClient` throws at startup when the connection string is missing, so a misconfigured
+reference fails fast. See the [Aspire guide](docs/aspire.md) for the options `AddNacos` exposes.
+
 ### Observability
 
 ```csharp
@@ -130,6 +164,7 @@ builder.Services.AddOpenTelemetry()
 
 - [Quick start](docs/quickstart.md)
 - [Configuration reference](docs/configuration.md)
+- [Aspire orchestration](docs/aspire.md)
 - [Migration from `nacos-sdk-csharp`](docs/migration-from-nacos-sdk-csharp.md)
 - [FAQ](docs/faq.md)
 - [Protocol notes](docs/protocol-notes.md) — upstream references for every protocol detail.

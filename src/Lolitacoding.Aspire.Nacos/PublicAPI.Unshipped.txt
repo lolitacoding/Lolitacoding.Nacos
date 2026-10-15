@@ -1,0 +1,4 @@
+#nullable enable
+Lolitacoding.Aspire.Nacos.NacosClientHostApplicationBuilderExtensions
+const Lolitacoding.Aspire.Nacos.NacosClientHostApplicationBuilderExtensions.DefaultConnectionName = "nacos" -> string!
+static Lolitacoding.Aspire.Nacos.NacosClientHostApplicationBuilderExtensions.AddNacosClient(this Microsoft.Extensions.Hosting.IHostApplicationBuilder! builder, string? connectionName = null, System.Action<Lolitacoding.Nacos.NacosOptions!>? configure = null) -> Microsoft.Extensions.Hosting.IHostApplicationBuilder!

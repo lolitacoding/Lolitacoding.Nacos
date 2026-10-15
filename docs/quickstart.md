@@ -14,6 +14,8 @@ Nacos, watches it for changes, and registers itself for service discovery.
 | `Lolitacoding.Nacos.Extensions.Configuration` | `builder.Configuration.AddNacosConfiguration(...)` with hot reload. |
 | `Lolitacoding.Nacos.Extensions.ServiceDiscovery` | `AddNacosServiceDiscovery()` for `Microsoft.Extensions.ServiceDiscovery`. |
 | `Lolitacoding.Nacos.AspNetCore` | Automatic instance registration and deregistration. |
+| `Lolitacoding.Aspire.Hosting.Nacos` | `AddNacos(...)` to orchestrate a Nacos server from an Aspire AppHost. |
+| `Lolitacoding.Aspire.Nacos` | `AddNacosClient(...)` to consume the AppHost's injected connection string. |
 
 ```bash
 dotnet add package Lolitacoding.Nacos
@@ -297,6 +299,7 @@ Spans: `Nacos.Client.Connect`, `Nacos.Client.Request`. Metrics:
 ## Next steps
 
 - [Configuration reference](configuration.md) — every option, with defaults.
+- [Aspire orchestration](aspire.md) — run Nacos with `Aspire.Hosting`.
 - [Migration from `nacos-sdk-csharp`](migration-from-nacos-sdk-csharp.md).
 - [FAQ](faq.md).
 - [Protocol notes](protocol-notes.md).

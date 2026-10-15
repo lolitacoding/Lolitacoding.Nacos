@@ -5,6 +5,8 @@
     <Project Path="src/Lolitacoding.Nacos.Extensions.Configuration/Lolitacoding.Nacos.Extensions.Configuration.csproj" />
     <Project Path="src/Lolitacoding.Nacos.Extensions.ServiceDiscovery/Lolitacoding.Nacos.Extensions.ServiceDiscovery.csproj" />
     <Project Path="src/Lolitacoding.Nacos.AspNetCore/Lolitacoding.Nacos.AspNetCore.csproj" />
+    <Project Path="src/Lolitacoding.Aspire.Hosting.Nacos/Lolitacoding.Aspire.Hosting.Nacos.csproj" />
+    <Project Path="src/Lolitacoding.Aspire.Nacos/Lolitacoding.Aspire.Nacos.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Lolitacoding.Nacos.Tests/Lolitacoding.Nacos.Tests.csproj" />
@@ -14,5 +16,6 @@
     <Project Path="samples/Sample.Aot/Sample.Aot.csproj" />
     <Project Path="samples/Sample.ConfigConsole/Sample.ConfigConsole.csproj" />
     <Project Path="samples/Sample.AspNetCore/Sample.AspNetCore.csproj" />
+    <Project Path="samples/Sample.Aspire.AppHost/Sample.Aspire.AppHost.csproj" />
   </Folder>
 </Solution>

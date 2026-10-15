@@ -45,6 +45,10 @@
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Abstractions" Version="10.11.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Aspire integration">
+    <PackageVersion Include="Aspire.Hosting" Version="13.5.3" />
+  </ItemGroup>
+
   <ItemGroup Label="Optional configuration parsers">
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
