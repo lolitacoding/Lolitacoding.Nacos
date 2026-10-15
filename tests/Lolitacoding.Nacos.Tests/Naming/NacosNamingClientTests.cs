@@ -219,6 +219,43 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
+    public async Task GetInstances_FailsOverToTheOnDiskSnapshotAfterARestart()
+    {
+        // The in-memory cache dies with the process, which is exactly when failover matters most:
+        // a rolling restart during a control-plane outage must not become an application outage.
+        string root = TestPaths.CreateScratchDirectory("naming-failover");
+        try
+        {
+            var snapshots = new NacosServiceSnapshotStore(root);
+
+            // A first process populates the snapshot through a successful query, then exits.
+            using (NamingHarness first = new(snapshots: snapshots))
+            {
+                await first.ConnectAsync(TestContext.Current.CancellationToken);
+                await first.Client.GetInstancesAsync(
+                    Service, ct: TestContext.Current.CancellationToken);
+            }
+
+            // A second process starts while the server is unreachable and has no in-process cache.
+            using NamingHarness restarted = new(
+                handler: _ => throw new NacosConnectionException("server is down"),
+                snapshots: snapshots);
+            await restarted.ConnectAsync(TestContext.Current.CancellationToken);
+
+            NacosServiceInfo info = await restarted.Client.GetInstancesAsync(
+                Service, ct: TestContext.Current.CancellationToken);
+
+            info.FromLocalCache.ShouldBeTrue();
+            info.Instances.Count.ShouldBe(2);
+            info.Instances[0].IpAddress.ShouldBe("10.0.0.1");
+        }
+        finally
+        {
+            TestPaths.TryDelete(root);
+        }
+    }
+
+    [Fact]
     public async Task Subscribe_DeliversTheInitialStateThenLaterPushes()
     {
         using NamingHarness harness = new();
@@ -374,9 +411,11 @@ public sealed class NacosNamingClientTests
         public NamingHarness(
             string @namespace = "public",
             string cluster = "DEFAULT",
-            Func<Payload, Payload>? handler = null)
+            Func<Payload, Payload>? handler = null,
+            NacosServiceSnapshotStore? snapshots = null)
         {
             Handler = handler ?? Fallback;
+            Snapshots = snapshots;
 
             // A generous supply of streams so tests can drop one and let a fresh one replace it.
             _streams = new Queue<FakeNacosDuplexStream>(
@@ -412,13 +451,16 @@ public sealed class NacosNamingClientTests
                 options, [Server], factory, TimeProvider.System, NullLogger.Instance, new Random(1234));
 
             Client = new NacosNamingClient(
-                options, _connection, TimeProvider.System, NullLogger<NacosNamingClient>.Instance);
+                options, _connection, TimeProvider.System, NullLogger<NacosNamingClient>.Instance, Snapshots);
         }
 
         /// <summary>Gets or sets the request handler, so a test can change behaviour midway.</summary>
         public Func<Payload, Payload> Handler { get; set; }
 
         public NacosNamingClient Client { get; }
+
+        /// <summary>Gets the snapshot store the client writes to, when the test supplied one.</summary>
+        public NacosServiceSnapshotStore? Snapshots { get; }
 
         /// <summary>
         /// Answers request types the test did not script with a successful response of the

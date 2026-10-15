@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Microsoft.Extensions.Logging;
@@ -29,6 +30,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 {
     private readonly NacosOptions _options;
     private readonly NacosGrpcConnection _connection;
+    private readonly NacosServiceSnapshotStore? _snapshots;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<NacosNamingClient> _logger;
 
@@ -53,11 +55,15 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     /// <param name="connection">The transport to use.</param>
     /// <param name="timeProvider">The clock.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="snapshots">
+    /// The service snapshot store, or <see langword="null"/> when local caching is disabled.
+    /// </param>
     public NacosNamingClient(
         NacosOptions options,
         NacosGrpcConnection connection,
         TimeProvider timeProvider,
-        ILogger<NacosNamingClient> logger)
+        ILogger<NacosNamingClient> logger,
+        NacosServiceSnapshotStore? snapshots)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(connection);
@@ -68,6 +74,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         _connection = connection;
         _timeProvider = timeProvider;
         _logger = logger;
+        _snapshots = snapshots;
 
         // The server discards every registration and subscription when the connection drops, so
         // they must be replayed or the service silently stops being discoverable.
@@ -165,6 +172,15 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             {
                 NacosNamingLog.ServedFromCache(_logger, resolved.ToString(), ex.Message);
                 return cached with { FromLocalCache = true };
+            }
+
+            // The in-process cache is empty (typically a fresh process, or a service that was
+            // never queried). The disk snapshot is what makes failover survive a restart.
+            NacosServiceInfo? snapshot = await ReadSnapshotAsync(resolved, ct).ConfigureAwait(false);
+            if (snapshot is not null)
+            {
+                NacosNamingLog.ServedFromSnapshot(_logger, resolved.ToString(), ex.Message);
+                return snapshot;
             }
 
             throw;
@@ -269,13 +285,13 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     /// Unlike a configuration change, this push carries the complete state, so no follow-up query
     /// is needed.
     /// </remarks>
-    internal Task OnServiceChangedAsync(NotifySubscriberRequest notification, CancellationToken ct = default)
+    internal async Task OnServiceChangedAsync(NotifySubscriberRequest notification, CancellationToken ct = default)
     {
         if (notification.ServiceInfo is null
             || string.IsNullOrEmpty(notification.ServiceName)
             || string.IsNullOrEmpty(notification.GroupName))
         {
-            return Task.CompletedTask;
+            return;
         }
 
         var key = new NacosServiceKey(
@@ -288,6 +304,10 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         // The cache is refreshed on every push, so a later outage has the freshest possible list
         // even if no query was ever issued.
         _cache[key.ToString()] = info;
+
+        // Persisting on the push keeps the on-disk snapshot current without waiting for a read,
+        // so a restart after a push still fails over to the pushed state.
+        await UpdateSnapshotAsync(key, info, ct).ConfigureAwait(false);
 
         foreach (Subscription subscription in _subscriptions.Values)
         {
@@ -314,8 +334,6 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 
             subscription.Publish(new NacosServiceChange(info, previous));
         }
-
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -350,8 +368,11 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 
         NacosServiceInfo info = Materialize(service, response.ServiceInfo, fromLocalCache: false);
 
-        // The answer is retained so a later outage can be served from the last known state.
+        // The answer is retained so a later outage can be served from the last known state, both
+        // in memory for this process and on disk for the next one.
         _cache[service.ToString()] = info;
+
+        await UpdateSnapshotAsync(service, info, ct).ConfigureAwait(false);
 
         return info;
     }
@@ -592,6 +613,58 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         string.IsNullOrEmpty(instance.ClusterName)
             ? instance with { ClusterName = _options.Naming.DefaultCluster }
             : instance;
+
+    /// <summary>
+    /// Writes the current service state to the failover store.
+    /// </summary>
+    /// <param name="service">The resolved service key.</param>
+    /// <param name="info">The state to persist.</param>
+    /// <param name="ct">A token that cancels the write.</param>
+    /// <returns>A task that completes once the attempt finished.</returns>
+    private async Task UpdateSnapshotAsync(
+        NacosServiceKey service,
+        NacosServiceInfo info,
+        CancellationToken ct)
+    {
+        if (_snapshots is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _snapshots.SaveAsync(service, info, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A failed snapshot write must not fail a lookup that already succeeded.
+            NacosNamingLog.SnapshotWriteFailed(_logger, service.ToString(), ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Reads the last known service state from the failover store.
+    /// </summary>
+    /// <param name="service">The resolved service key.</param>
+    /// <param name="ct">A token that cancels the read.</param>
+    /// <returns>The stored state, or <see langword="null"/> when there is none.</returns>
+    private async Task<NacosServiceInfo?> ReadSnapshotAsync(NacosServiceKey service, CancellationToken ct)
+    {
+        if (_snapshots is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _snapshots.LoadAsync(service, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            NacosNamingLog.SnapshotReadFailed(_logger, service.ToString(), ex.Message);
+            return null;
+        }
+    }
 
     private static string RegistrationId(NacosServiceKey service, NacosInstance instance) =>
         string.Concat(

@@ -89,4 +89,34 @@ internal static partial class NacosNamingLog
         Level = LogLevel.Debug,
         Message = "The Nacos server no longer knows {Instance} in {Service}; it will be re-registered on the next reconnect.")]
     public static partial void InstanceUnknown(ILogger logger, string service, string instance);
+
+    /// <summary>Logs that the instance list was served from the on-disk snapshot.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service name.</param>
+    /// <param name="reason">Why the server could not be used.</param>
+    [LoggerMessage(
+        EventId = 5009,
+        Level = LogLevel.Warning,
+        Message = "Serving the instance list of {Service} from the local snapshot: {Reason}")]
+    public static partial void ServedFromSnapshot(ILogger logger, string service, string reason);
+
+    /// <summary>Logs that writing a service snapshot failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service name.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 5010,
+        Level = LogLevel.Warning,
+        Message = "Failed to write the local snapshot for {Service}: {Reason}")]
+    public static partial void SnapshotWriteFailed(ILogger logger, string service, string reason);
+
+    /// <summary>Logs that reading a service snapshot failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service name.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 5011,
+        Level = LogLevel.Warning,
+        Message = "Failed to read the local snapshot for {Service}: {Reason}")]
+    public static partial void SnapshotReadFailed(ILogger logger, string service, string reason);
 }

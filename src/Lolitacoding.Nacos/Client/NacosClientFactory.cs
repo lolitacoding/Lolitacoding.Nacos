@@ -99,20 +99,22 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             random,
             authProvider);
 
-        NacosConfigSnapshotStore? snapshots = CreateSnapshotStore(options);
+        NacosConfigSnapshotStore? configSnapshots = CreateConfigSnapshotStore(options);
+        NacosServiceSnapshotStore? namingSnapshots = CreateServiceSnapshotStore(options);
 
         var config = new NacosConfigClient(
             options,
             connection,
             clock,
             loggerFactory.CreateLogger<NacosConfigClient>(),
-            snapshots);
+            configSnapshots);
 
         var naming = new NacosNamingClient(
             options,
             connection,
             clock,
-            loggerFactory.CreateLogger<NacosNamingClient>());
+            loggerFactory.CreateLogger<NacosNamingClient>(),
+            namingSnapshots);
 
         var factory = new NacosClientFactory(
             options, connection, config, naming, loggerFactory.CreateLogger<NacosClientFactory>());
@@ -206,30 +208,47 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     }
 
     /// <summary>
-    /// Creates the snapshot store when local caching is enabled.
+    /// Creates the configuration snapshot store when local caching is enabled.
     /// </summary>
     /// <param name="options">The client options.</param>
     /// <returns>The store, or <see langword="null"/> when caching is disabled.</returns>
-    private static NacosConfigSnapshotStore? CreateSnapshotStore(NacosOptions options)
-    {
-        if (!options.Config.EnableLocalCache)
-        {
-            return null;
-        }
+    private static NacosConfigSnapshotStore? CreateConfigSnapshotStore(NacosOptions options) =>
+        options.Config.EnableLocalCache
+            ? new NacosConfigSnapshotStore(ResolveCacheDirectory(options))
+            : null;
 
+    /// <summary>
+    /// Creates the service snapshot store when local caching is enabled.
+    /// </summary>
+    /// <param name="options">The client options.</param>
+    /// <returns>The store, or <see langword="null"/> when caching is disabled.</returns>
+    private static NacosServiceSnapshotStore? CreateServiceSnapshotStore(NacosOptions options) =>
+        options.Naming.EnableLocalCache
+            ? new NacosServiceSnapshotStore(ResolveCacheDirectory(options))
+            : null;
+
+    /// <summary>
+    /// Resolves the directory that holds local failover files.
+    /// </summary>
+    /// <param name="options">The client options.</param>
+    /// <returns>The directory.</returns>
+    /// <remarks>
+    /// The user profile is the only location that is reliably writable across platforms, and
+    /// per-user rather than per-machine so one user's snapshots cannot leak values into another's
+    /// application. The namespace is a path segment so two namespaces never overwrite each other.
+    /// </remarks>
+    private static string ResolveCacheDirectory(NacosOptions options)
+    {
         string directory = options.LocalCacheDirectory ?? string.Empty;
 
-        if (string.IsNullOrWhiteSpace(directory))
+        if (!string.IsNullOrWhiteSpace(directory))
         {
-            // The user profile is the only location that is reliably writable across platforms,
-            // and per-user rather than per-machine so one user's snapshots cannot leak values
-            // into another's application.
-            directory = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "Lolitacoding.Nacos",
-                options.Namespace);
+            return directory;
         }
 
-        return new NacosConfigSnapshotStore(directory);
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Lolitacoding.Nacos",
+            options.Namespace);
     }
 }
