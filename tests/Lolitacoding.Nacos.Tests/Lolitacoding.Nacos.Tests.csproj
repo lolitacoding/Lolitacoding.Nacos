@@ -4,33 +4,31 @@
     <RootNamespace>Lolitacoding.Nacos.Tests</RootNamespace>
     <AssemblyName>Lolitacoding.Nacos.Tests</AssemblyName>
     <IsPackable>false</IsPackable>
+    <!-- xUnit v3 tests are executable assemblies. -->
     <OutputType>Exe</OutputType>
-    <!-- Unit tests drive the transport through test doubles, so the trim analyzer
-         would only produce noise on that harness code. -->
+    <!-- Unit tests drive the transport through test doubles, so the trim analyzer would only
+         produce noise on harness code. -->
     <IsAotCompatible>false</IsAotCompatible>
     <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
     <EnableAotAnalyzer>false</EnableAotAnalyzer>
     <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+    <!-- .NET 10 removed the VSTest bridge; xUnit v3 runs on Microsoft.Testing.Platform. -->
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos\Lolitacoding.Nacos.csproj" />
-    <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.DependencyInjection\Lolitacoding.Nacos.Extensions.DependencyInjection.csproj" />
-    <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.Configuration\Lolitacoding.Nacos.Extensions.Configuration.csproj" />
-    <ProjectReference Include="..\..\src\Lolitacoding.Nacos.AspNetCore\Lolitacoding.Nacos.AspNetCore.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit.v3" />
-    <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Shouldly" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Logging" />
-    <PackageReference Include="Microsoft.AspNetCore.TestHost" />
   </ItemGroup>
 
 </Project>

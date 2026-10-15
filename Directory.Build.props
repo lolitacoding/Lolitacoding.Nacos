@@ -48,6 +48,9 @@
     <IsPackable>false</IsPackable>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <EnablePublicApiAnalyzers>false</EnablePublicApiAnalyzers>
+    <!-- IDE0005 (unnecessary using) can only be reported when a documentation file is
+         generated, which is deliberately off for these projects. -->
+    <NoWarn>$(NoWarn);IDE0005</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>

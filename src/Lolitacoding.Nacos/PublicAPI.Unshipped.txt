@@ -4,6 +4,16 @@ Lolitacoding.Nacos.NacosAuthException.NacosAuthException() -> void
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException(int errorCode, string! message) -> void
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException(string! message) -> void
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosConfigOptions
+Lolitacoding.Nacos.NacosConfigOptions.DefaultContentType.get -> string!
+Lolitacoding.Nacos.NacosConfigOptions.DefaultContentType.set -> void
+Lolitacoding.Nacos.NacosConfigOptions.EnableLocalCache.get -> bool
+Lolitacoding.Nacos.NacosConfigOptions.EnableLocalCache.set -> void
+Lolitacoding.Nacos.NacosConfigOptions.LongPollingTimeout.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosConfigOptions.LongPollingTimeout.set -> void
+Lolitacoding.Nacos.NacosConfigOptions.NacosConfigOptions() -> void
+Lolitacoding.Nacos.NacosConfigOptions.VerifyMd5.get -> bool
+Lolitacoding.Nacos.NacosConfigOptions.VerifyMd5.set -> void
 Lolitacoding.Nacos.NacosConnectionException
 Lolitacoding.Nacos.NacosConnectionException.NacosConnectionException() -> void
 Lolitacoding.Nacos.NacosConnectionException.NacosConnectionException(string! message) -> void
@@ -16,6 +26,54 @@ Lolitacoding.Nacos.NacosException.NacosException(int errorCode, string! message)
 Lolitacoding.Nacos.NacosException.NacosException(int errorCode, string! message, System.Exception? innerException) -> void
 Lolitacoding.Nacos.NacosException.NacosException(string! message) -> void
 Lolitacoding.Nacos.NacosException.NacosException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosNamingOptions
+Lolitacoding.Nacos.NacosNamingOptions.DefaultCluster.get -> string!
+Lolitacoding.Nacos.NacosNamingOptions.DefaultCluster.set -> void
+Lolitacoding.Nacos.NacosNamingOptions.EnableLocalCache.get -> bool
+Lolitacoding.Nacos.NacosNamingOptions.EnableLocalCache.set -> void
+Lolitacoding.Nacos.NacosNamingOptions.Ephemeral.get -> bool
+Lolitacoding.Nacos.NacosNamingOptions.Ephemeral.set -> void
+Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.set -> void
+Lolitacoding.Nacos.NacosNamingOptions.NacosNamingOptions() -> void
+Lolitacoding.Nacos.NacosOptions
+Lolitacoding.Nacos.NacosOptions.Config.get -> Lolitacoding.Nacos.NacosConfigOptions!
+Lolitacoding.Nacos.NacosOptions.Config.set -> void
+Lolitacoding.Nacos.NacosOptions.ConnectionTimeout.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosOptions.ConnectionTimeout.set -> void
+Lolitacoding.Nacos.NacosOptions.ContextPath.get -> string!
+Lolitacoding.Nacos.NacosOptions.ContextPath.set -> void
+Lolitacoding.Nacos.NacosOptions.LocalCacheDirectory.get -> string?
+Lolitacoding.Nacos.NacosOptions.LocalCacheDirectory.set -> void
+Lolitacoding.Nacos.NacosOptions.NacosOptions() -> void
+Lolitacoding.Nacos.NacosOptions.Namespace.get -> string!
+Lolitacoding.Nacos.NacosOptions.Namespace.set -> void
+Lolitacoding.Nacos.NacosOptions.Naming.get -> Lolitacoding.Nacos.NacosNamingOptions!
+Lolitacoding.Nacos.NacosOptions.Naming.set -> void
+Lolitacoding.Nacos.NacosOptions.Optional.get -> bool
+Lolitacoding.Nacos.NacosOptions.Optional.set -> void
+Lolitacoding.Nacos.NacosOptions.Password.get -> string?
+Lolitacoding.Nacos.NacosOptions.Password.set -> void
+Lolitacoding.Nacos.NacosOptions.Reconnect.get -> Lolitacoding.Nacos.NacosReconnectOptions!
+Lolitacoding.Nacos.NacosOptions.Reconnect.set -> void
+Lolitacoding.Nacos.NacosOptions.RequestTimeout.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosOptions.RequestTimeout.set -> void
+Lolitacoding.Nacos.NacosOptions.ServerAddresses.get -> System.Collections.Generic.IList<string!>!
+Lolitacoding.Nacos.NacosOptions.ServerAddresses.set -> void
+Lolitacoding.Nacos.NacosOptions.UserName.get -> string?
+Lolitacoding.Nacos.NacosOptions.UserName.set -> void
+Lolitacoding.Nacos.NacosReconnectOptions
+Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.set -> void
+Lolitacoding.Nacos.NacosReconnectOptions.JitterFactor.get -> double
+Lolitacoding.Nacos.NacosReconnectOptions.JitterFactor.set -> void
+Lolitacoding.Nacos.NacosReconnectOptions.MaxAttempts.get -> int
+Lolitacoding.Nacos.NacosReconnectOptions.MaxAttempts.set -> void
+Lolitacoding.Nacos.NacosReconnectOptions.MaxDelay.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosReconnectOptions.MaxDelay.set -> void
+Lolitacoding.Nacos.NacosReconnectOptions.Multiplier.get -> double
+Lolitacoding.Nacos.NacosReconnectOptions.Multiplier.set -> void
+Lolitacoding.Nacos.NacosReconnectOptions.NacosReconnectOptions() -> void
 Lolitacoding.Nacos.NacosServerException
 Lolitacoding.Nacos.NacosServerException.NacosServerException() -> void
 Lolitacoding.Nacos.NacosServerException.NacosServerException(int errorCode, string! message) -> void

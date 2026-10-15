@@ -37,3 +37,8 @@ Desktop.ini
 
 ## Local tool overrides
 .dotnet-home/
+
+## Local reference clone of the upstream Nacos repository, used to verify protocol
+## details. Present only in development workspaces; never committed.
+nacos-develop/
+.research/
