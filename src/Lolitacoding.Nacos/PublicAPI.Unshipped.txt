@@ -127,6 +127,72 @@ Lolitacoding.Nacos.NacosTimeoutException
 Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException() -> void
 Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException(string! message) -> void
 Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.Naming.INacosLoadBalancer
+Lolitacoding.Nacos.Naming.INacosLoadBalancer.Select(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances) -> Lolitacoding.Nacos.Naming.NacosInstance?
+Lolitacoding.Nacos.Naming.INacosNamingClient
+Lolitacoding.Nacos.Naming.INacosNamingClient.DeregisterInstanceAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, Lolitacoding.Nacos.Naming.NacosInstance! instance, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Naming.INacosNamingClient.GetInstancesAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, string? cluster = null, bool healthyOnly = true, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Naming.NacosServiceInfo!>!
+Lolitacoding.Nacos.Naming.INacosNamingClient.RegisterInstanceAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, Lolitacoding.Nacos.Naming.NacosInstance! instance, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Naming.INacosNamingClient.SubscribeAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, string? clusters = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Naming.NacosServiceChange!>!
+Lolitacoding.Nacos.Naming.NacosClusterAwareLoadBalancer
+Lolitacoding.Nacos.Naming.NacosClusterAwareLoadBalancer.NacosClusterAwareLoadBalancer(string! preferredCluster) -> void
+Lolitacoding.Nacos.Naming.NacosClusterAwareLoadBalancer.Select(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances) -> Lolitacoding.Nacos.Naming.NacosInstance?
+Lolitacoding.Nacos.Naming.NacosInstance
+Lolitacoding.Nacos.Naming.NacosInstance.<Clone>$() -> Lolitacoding.Nacos.Naming.NacosInstance!
+Lolitacoding.Nacos.Naming.NacosInstance.ClusterName.get -> string?
+Lolitacoding.Nacos.Naming.NacosInstance.ClusterName.init -> void
+Lolitacoding.Nacos.Naming.NacosInstance.Enabled.get -> bool
+Lolitacoding.Nacos.Naming.NacosInstance.Enabled.init -> void
+Lolitacoding.Nacos.Naming.NacosInstance.Endpoint.get -> string!
+Lolitacoding.Nacos.Naming.NacosInstance.Ephemeral.get -> bool
+Lolitacoding.Nacos.Naming.NacosInstance.Ephemeral.init -> void
+Lolitacoding.Nacos.Naming.NacosInstance.Equals(Lolitacoding.Nacos.Naming.NacosInstance? other) -> bool
+Lolitacoding.Nacos.Naming.NacosInstance.Healthy.get -> bool
+Lolitacoding.Nacos.Naming.NacosInstance.Healthy.init -> void
+Lolitacoding.Nacos.Naming.NacosInstance.InstanceId.get -> string?
+Lolitacoding.Nacos.Naming.NacosInstance.InstanceId.init -> void
+Lolitacoding.Nacos.Naming.NacosInstance.IpAddress.get -> string!
+Lolitacoding.Nacos.Naming.NacosInstance.IsSelectable.get -> bool
+Lolitacoding.Nacos.Naming.NacosInstance.Metadata.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+Lolitacoding.Nacos.Naming.NacosInstance.Metadata.init -> void
+Lolitacoding.Nacos.Naming.NacosInstance.NacosInstance(string! ipAddress, int port, double weight = 1, string? clusterName = null, bool healthy = true, bool enabled = true, bool ephemeral = true, System.Collections.Generic.IReadOnlyDictionary<string!, string!>? metadata = null) -> void
+Lolitacoding.Nacos.Naming.NacosInstance.Port.get -> int
+Lolitacoding.Nacos.Naming.NacosInstance.Weight.get -> double
+Lolitacoding.Nacos.Naming.NacosRoundRobinLoadBalancer
+Lolitacoding.Nacos.Naming.NacosRoundRobinLoadBalancer.NacosRoundRobinLoadBalancer() -> void
+Lolitacoding.Nacos.Naming.NacosRoundRobinLoadBalancer.Select(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances) -> Lolitacoding.Nacos.Naming.NacosInstance?
+Lolitacoding.Nacos.Naming.NacosServiceChange
+Lolitacoding.Nacos.Naming.NacosServiceChange.<Clone>$() -> Lolitacoding.Nacos.Naming.NacosServiceChange!
+Lolitacoding.Nacos.Naming.NacosServiceChange.Equals(Lolitacoding.Nacos.Naming.NacosServiceChange? other) -> bool
+Lolitacoding.Nacos.Naming.NacosServiceChange.Instances.get -> System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>!
+Lolitacoding.Nacos.Naming.NacosServiceChange.Key.get -> Lolitacoding.Nacos.Naming.NacosServiceKey!
+Lolitacoding.Nacos.Naming.NacosServiceChange.PreviousChecksum.get -> string?
+Lolitacoding.Nacos.Naming.NacosServiceChange.Service.get -> Lolitacoding.Nacos.Naming.NacosServiceInfo!
+Lolitacoding.Nacos.Naming.NacosServiceInfo
+Lolitacoding.Nacos.Naming.NacosServiceInfo.<Clone>$() -> Lolitacoding.Nacos.Naming.NacosServiceInfo!
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Checksum.get -> string?
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Checksum.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Clusters.get -> string?
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Clusters.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Equals(Lolitacoding.Nacos.Naming.NacosServiceInfo? other) -> bool
+Lolitacoding.Nacos.Naming.NacosServiceInfo.FromLocalCache.get -> bool
+Lolitacoding.Nacos.Naming.NacosServiceInfo.FromLocalCache.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceInfo.HealthyInstances.get -> System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>!
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Instances.get -> System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>!
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Instances.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Key.get -> Lolitacoding.Nacos.Naming.NacosServiceKey!
+Lolitacoding.Nacos.Naming.NacosServiceInfo.Key.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceKey
+Lolitacoding.Nacos.Naming.NacosServiceKey.<Clone>$() -> Lolitacoding.Nacos.Naming.NacosServiceKey!
+Lolitacoding.Nacos.Naming.NacosServiceKey.Equals(Lolitacoding.Nacos.Naming.NacosServiceKey? other) -> bool
+Lolitacoding.Nacos.Naming.NacosServiceKey.GroupName.get -> string!
+Lolitacoding.Nacos.Naming.NacosServiceKey.NacosServiceKey(string! serviceName, string! groupName, string? namespace = null) -> void
+Lolitacoding.Nacos.Naming.NacosServiceKey.Namespace.get -> string?
+Lolitacoding.Nacos.Naming.NacosServiceKey.Namespace.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceKey.ServiceName.get -> string!
+Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer
+Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.NacosWeightedRandomLoadBalancer(System.Random? random = null) -> void
+Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.Select(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances) -> Lolitacoding.Nacos.Naming.NacosInstance?
 const Lolitacoding.Nacos.NacosConstants.Charset = "UTF-8" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultCluster = "DEFAULT" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultConfigType = "text" -> string!
@@ -146,9 +212,29 @@ override Lolitacoding.Nacos.Config.NacosConfigKey.ToString() -> string!
 override Lolitacoding.Nacos.Config.NacosConfigResult.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Config.NacosConfigResult.GetHashCode() -> int
 override Lolitacoding.Nacos.Config.NacosConfigResult.ToString() -> string!
+override Lolitacoding.Nacos.Naming.NacosInstance.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Naming.NacosInstance.GetHashCode() -> int
+override Lolitacoding.Nacos.Naming.NacosInstance.ToString() -> string!
+override Lolitacoding.Nacos.Naming.NacosServiceChange.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Naming.NacosServiceChange.GetHashCode() -> int
+override Lolitacoding.Nacos.Naming.NacosServiceChange.ToString() -> string!
+override Lolitacoding.Nacos.Naming.NacosServiceInfo.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Naming.NacosServiceInfo.GetHashCode() -> int
+override Lolitacoding.Nacos.Naming.NacosServiceInfo.ToString() -> string!
+override Lolitacoding.Nacos.Naming.NacosServiceKey.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Naming.NacosServiceKey.GetHashCode() -> int
+override Lolitacoding.Nacos.Naming.NacosServiceKey.ToString() -> string!
 static Lolitacoding.Nacos.Config.NacosConfigChange.operator !=(Lolitacoding.Nacos.Config.NacosConfigChange? left, Lolitacoding.Nacos.Config.NacosConfigChange? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigChange.operator ==(Lolitacoding.Nacos.Config.NacosConfigChange? left, Lolitacoding.Nacos.Config.NacosConfigChange? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigKey.operator !=(Lolitacoding.Nacos.Config.NacosConfigKey? left, Lolitacoding.Nacos.Config.NacosConfigKey? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigKey.operator ==(Lolitacoding.Nacos.Config.NacosConfigKey? left, Lolitacoding.Nacos.Config.NacosConfigKey? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigResult.operator !=(Lolitacoding.Nacos.Config.NacosConfigResult? left, Lolitacoding.Nacos.Config.NacosConfigResult? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigResult.operator ==(Lolitacoding.Nacos.Config.NacosConfigResult? left, Lolitacoding.Nacos.Config.NacosConfigResult? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosInstance.operator !=(Lolitacoding.Nacos.Naming.NacosInstance? left, Lolitacoding.Nacos.Naming.NacosInstance? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosInstance.operator ==(Lolitacoding.Nacos.Naming.NacosInstance? left, Lolitacoding.Nacos.Naming.NacosInstance? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosServiceChange.operator !=(Lolitacoding.Nacos.Naming.NacosServiceChange? left, Lolitacoding.Nacos.Naming.NacosServiceChange? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosServiceChange.operator ==(Lolitacoding.Nacos.Naming.NacosServiceChange? left, Lolitacoding.Nacos.Naming.NacosServiceChange? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosServiceInfo.operator !=(Lolitacoding.Nacos.Naming.NacosServiceInfo? left, Lolitacoding.Nacos.Naming.NacosServiceInfo? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosServiceInfo.operator ==(Lolitacoding.Nacos.Naming.NacosServiceInfo? left, Lolitacoding.Nacos.Naming.NacosServiceInfo? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosServiceKey.operator !=(Lolitacoding.Nacos.Naming.NacosServiceKey? left, Lolitacoding.Nacos.Naming.NacosServiceKey? right) -> bool
+static Lolitacoding.Nacos.Naming.NacosServiceKey.operator ==(Lolitacoding.Nacos.Naming.NacosServiceKey? left, Lolitacoding.Nacos.Naming.NacosServiceKey? right) -> bool

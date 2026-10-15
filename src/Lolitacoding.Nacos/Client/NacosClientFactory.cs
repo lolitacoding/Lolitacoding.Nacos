@@ -1,6 +1,7 @@
 using Lolitacoding.Nacos.Auth;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Internal;
+using Lolitacoding.Nacos.Naming;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Microsoft.Extensions.Logging;
@@ -27,6 +28,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     private readonly NacosOptions _options;
     private readonly NacosGrpcConnection _connection;
     private readonly NacosConfigClient _config;
+    private readonly NacosNamingClient _naming;
     private readonly ILogger<NacosClientFactory> _logger;
 
     private bool _disposed;
@@ -35,16 +37,21 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         NacosOptions options,
         NacosGrpcConnection connection,
         NacosConfigClient config,
+        NacosNamingClient naming,
         ILogger<NacosClientFactory> logger)
     {
         _options = options;
         _connection = connection;
         _config = config;
+        _naming = naming;
         _logger = logger;
     }
 
     /// <summary>Gets the configuration client.</summary>
     public INacosConfigClient Config => _config;
+
+    /// <summary>Gets the naming client.</summary>
+    public INacosNamingClient Naming => _naming;
 
     /// <summary>
     /// Creates the clients and their shared connection.
@@ -101,8 +108,14 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             loggerFactory.CreateLogger<NacosConfigClient>(),
             snapshots);
 
+        var naming = new NacosNamingClient(
+            options,
+            connection,
+            clock,
+            loggerFactory.CreateLogger<NacosNamingClient>());
+
         var factory = new NacosClientFactory(
-            options, connection, config, loggerFactory.CreateLogger<NacosClientFactory>());
+            options, connection, config, naming, loggerFactory.CreateLogger<NacosClientFactory>());
 
         // Domain pushes arrive on the shared read loop; routing them here is what turns a
         // transport-level stream into feature-level notifications.
@@ -130,6 +143,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         _connection.ServerRequestReceived -= OnServerRequestAsync;
 
+        await _naming.DisposeAsync().ConfigureAwait(false);
         await _config.DisposeAsync().ConfigureAwait(false);
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
@@ -151,6 +165,13 @@ internal sealed class NacosClientFactory : IAsyncDisposable
                 _ = FetchChangedConfigAsync(notification, ct);
                 return Task.FromResult<NacosResponse?>(
                     new ConfigChangeNotifyResponse { RequestId = notification.RequestId });
+
+            case NotifySubscriberRequest notification:
+                // Unlike a configuration change this push carries the complete instance list, so
+                // it is applied directly and acknowledged.
+                _ = _naming.OnServiceChangedAsync(notification, ct);
+                return Task.FromResult<NacosResponse?>(
+                    new NotifySubscriberResponse { RequestId = notification.RequestId });
 
             default:
                 return Task.FromResult<NacosResponse?>(null);
