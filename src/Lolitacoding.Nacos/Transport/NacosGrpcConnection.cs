@@ -1,3 +1,4 @@
+using Lolitacoding.Nacos.Auth;
 using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Generated;
@@ -31,6 +32,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
     private readonly NacosBackoffPolicy _backoff;
+    private readonly Auth.INacosAuthProvider? _authProvider;
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private readonly SemaphoreSlim _reconnectGate = new(1, 1);
     private readonly CancellationTokenSource _shutdown = new();
@@ -64,13 +66,17 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// <param name="timeProvider">The clock and timer source.</param>
     /// <param name="logger">The logger for connection diagnostics.</param>
     /// <param name="random">The random source used for reconnect jitter.</param>
+    /// <param name="authProvider">
+    /// Supplies the access token presented on outgoing requests. Defaults to anonymous access.
+    /// </param>
     public NacosGrpcConnection(
         NacosOptions options,
         IReadOnlyList<NacosServerAddress> servers,
         INacosChannelFactory channelFactory,
         TimeProvider timeProvider,
         ILogger logger,
-        Random? random = null)
+        Random? random = null,
+        Auth.INacosAuthProvider? authProvider = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(servers);
@@ -90,6 +96,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         _timeProvider = timeProvider;
         _logger = logger;
         _backoff = new NacosBackoffPolicy(options.Reconnect, timeProvider, random ?? new Random());
+        _authProvider = authProvider;
         ClientVersion = BuildClientVersion();
     }
 
@@ -163,6 +170,73 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(request);
 
         request.RequestId ??= Guid.NewGuid().ToString("N");
+
+        try
+        {
+            return await SendAsync<TResponse>(request, ct).ConfigureAwait(false);
+        }
+        catch (NacosServerException ex) when (IsTokenRejection(ex.ErrorCode) && _authProvider is not null)
+        {
+            // The server rejected the token. That has two causes worth distinguishing: it simply
+            // expired, or it was signed by a different key after a cluster node restarted. Both
+            // are fixed by obtaining a fresh token, so one retry covers them — and only one, so
+            // a genuinely unauthorized identity fails fast instead of looping.
+            NacosAuthLog.TokenRejected(_logger, CurrentServer?.Original ?? "unknown", ex.Message);
+            _authProvider.Invalidate();
+
+            return await SendAsync<TResponse>(request, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Determines whether an error code means the access token was not accepted.
+    /// </summary>
+    /// <param name="errorCode">The code the server reported.</param>
+    /// <returns><see langword="true"/> when the token should be refreshed and the request retried.</returns>
+    /// <remarks>
+    /// Two codes must be recognized because the gRPC and HTTP layers of Nacos report the same
+    /// condition differently: the gRPC path propagates <c>NacosException.NO_RIGHT</c> (403), while
+    /// the OpenAPI envelope carries <c>ErrorCode.ACCESS_DENIED</c> (10001). A missing token and an
+    /// expired token produce the same codes, so both are treated as "obtain a fresh token".
+    /// </remarks>
+    private static bool IsTokenRejection(int errorCode) => errorCode is UnauthorizedErrorCode or AccessDeniedErrorCode;
+
+    /// <summary>
+    /// The gRPC error code Nacos returns when the caller is not permitted to perform an operation.
+    /// </summary>
+    private const int UnauthorizedErrorCode = 403;
+
+    /// <summary>
+    /// The OpenAPI error code Nacos returns when access is denied.
+    /// </summary>
+    private const int AccessDeniedErrorCode = 10001;
+
+    /// <summary>
+    /// Sends one attempt of a request, attaching the current access token.
+    /// </summary>
+    /// <typeparam name="TResponse">The expected response type.</typeparam>
+    /// <param name="request">The request to send.</param>
+    /// <param name="ct">A token that cancels the call.</param>
+    /// <returns>The decoded response.</returns>
+    private async Task<TResponse> SendAsync<TResponse>(NacosRequest request, CancellationToken ct)
+        where TResponse : NacosResponse
+    {
+        if (_authProvider is not null)
+        {
+            string? token = await _authProvider.GetAccessTokenAsync(ct).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(token))
+            {
+                // Nacos reads the token from a header named literally "accessToken", not from an
+                // Authorization bearer header, on both the gRPC and the HTTP paths.
+                request.SetHeader(ProtocolHeaders.AccessToken, token);
+            }
+            else
+            {
+                // A previous attempt may have attached a token that has since been invalidated, so
+                // the header is cleared rather than left to be re-sent.
+                request.RemoveHeader(ProtocolHeaders.AccessToken);
+            }
+        }
 
         INacosChannel channel = _channel
             ?? throw new NacosConnectionException("The Nacos connection has not been established yet.");

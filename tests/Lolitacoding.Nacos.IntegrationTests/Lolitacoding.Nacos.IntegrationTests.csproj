@@ -4,6 +4,8 @@
     <RootNamespace>Lolitacoding.Nacos.IntegrationTests</RootNamespace>
     <AssemblyName>Lolitacoding.Nacos.IntegrationTests</AssemblyName>
     <IsPackable>false</IsPackable>
+    <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
+    <UseMicrosoftTestingPlatformRunner>true</UseMicrosoftTestingPlatformRunner>
     <OutputType>Exe</OutputType>
     <IsAotCompatible>false</IsAotCompatible>
     <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
@@ -27,3 +29,4 @@
   </ItemGroup>
 
 </Project>
+

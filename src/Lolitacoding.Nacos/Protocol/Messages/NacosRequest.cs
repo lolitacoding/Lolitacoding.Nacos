@@ -115,4 +115,35 @@ internal abstract class NacosRequest
             Headers[name] = value;
         }
     }
+
+    /// <summary>
+    /// Removes a header without regard to case.
+    /// </summary>
+    /// <param name="name">The header name.</param>
+    /// <remarks>
+    /// Needed when a credential is invalidated: a request object that is retried would otherwise
+    /// re-send the token that was just rejected.
+    /// </remarks>
+    public void RemoveHeader(string name)
+    {
+        List<string>? matches = null;
+
+        foreach (string key in Headers.Keys)
+        {
+            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                (matches ??= []).Add(key);
+            }
+        }
+
+        if (matches is null)
+        {
+            return;
+        }
+
+        foreach (string key in matches)
+        {
+            Headers.Remove(key);
+        }
+    }
 }
