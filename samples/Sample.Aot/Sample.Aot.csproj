@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Sample.Aot</RootNamespace>
+    <AssemblyName>Sample.Aot</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <!-- This sample exists to prove the core client survives Native AOT compilation. The
+         analyzers are the gate: every IL2xxx/IL3xxx warning is an error in this repository, so
+         a clean build means the code is trim- and AOT-safe. -->
+    <PublishAot>true</PublishAot>
+    <IsAotCompatible>true</IsAotCompatible>
+    <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>true</EnableAotAnalyzer>
+    <EnableSingleFileAnalyzer>true</EnableSingleFileAnalyzer>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <StackTraceSupport>false</StackTraceSupport>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Deliberately the core library only: the DI and configuration packages pull in
+         reflection-based binding that is out of scope for an AOT proof. -->
+    <ProjectReference Include="..\..\src\Lolitacoding.Nacos\Lolitacoding.Nacos.csproj" />
+  </ItemGroup>
+
+</Project>

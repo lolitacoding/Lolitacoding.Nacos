@@ -1,0 +1,130 @@
+# Migration from `nacos-sdk-csharp`
+
+`Lolitacoding.Nacos` is a clean re-implementation, not a fork. The concepts transfer directly, but
+the shape of the API is deliberately different in a few places, and those differences are the ones
+worth reading this page for. Exact type names in other clients vary by version, so treat the
+left-hand column as "the concept you are used to".
+
+| You used (`nacos-sdk-csharp`) | You use now (`Lolitacoding.Nacos`) |
+| --- | --- |
+| `NacosFactory.CreateConfigService(...)` | `NacosClient.Create(options).Config` |
+| `NacosFactory.CreateNamingService(...)` | `NacosClient.Create(options).Naming` |
+| `INacosConfigService.GetConfigAsync(dataId, group, ct)` | `INacosConfigClient.GetConfigAsync(NacosConfigKey, ct)` |
+| `PublishConfigAsync(dataId, content, group, type, ct)` | `PublishConfigAsync(NacosConfigKey, content, contentType, casMd5, ct)` |
+| `RemoveConfigAsync(dataId, group, ct)` | `RemoveConfigAsync(NacosConfigKey, ct)` |
+| `AddListener(dataId, group, callback)` | `AddListenerAsync(NacosConfigKey, callback, ct)` or `ListenAsync(NacosConfigKey, ct)` |
+| `INamingService.RegisterInstanceAsync(serviceName, ip, port)` | `RegisterInstanceAsync(NacosServiceKey, NacosInstance)` |
+| `GetAllInstancesAsync(serviceName, group, ct)` | `GetInstancesAsync(NacosServiceKey, cluster, healthyOnly, ct)` |
+| `SubscribeAsync(serviceName, callback)` | `SubscribeAsync(NacosServiceKey, clusters, ct)` returning an `IAsyncEnumerable<NacosServiceChange>` |
+| `NacosSdkOptions` / `NacosOptions` | `NacosOptions` |
+| `AddNacosAspNet(...)` | `AddNacosServiceRegistration(...)` |
+| `IConfigurationBuilder.AddNacosConfiguration(...)` | `AddNacosConfiguration(...)` (same name, different options type) |
+
+## One client, one connection
+
+The clearest structural change: there is a single entry point and a single gRPC connection.
+
+```csharp
+await using NacosClient client = NacosClient.Create(new NacosOptions
+{
+    ServerAddresses = ["http://127.0.0.1:8848"],
+});
+
+INacosConfigClient config = client.Config;
+INacosNamingClient naming = client.Naming;
+```
+
+The official Java protocol multiplexes configuration and naming over one bi-directional stream, so
+a second connection only duplicates the handshake and heartbeat work. Construct with
+`NacosClient.Create(...)` — the constructor is private — and dispose it when the process exits.
+
+## Coordinates became records
+
+Data ids, groups and namespaces are grouped into an immutable `NacosConfigKey`, and service names,
+groups and namespaces into a `NacosServiceKey`. The namespace is optional on both, so the common
+single-namespace deployment does not repeat the configured default on every call:
+
+```csharp
+var configKey = new NacosConfigKey("my-service.json", NacosConstants.DefaultGroup);
+var serviceKey = new NacosServiceKey("order-service", NacosConstants.DefaultGroup);
+```
+
+Instances are an immutable `NacosInstance` rather than a mutable object with a service name and an
+address. The service name lives on the key, not on the instance:
+
+```csharp
+var instance = new NacosInstance(
+    ipAddress: "10.0.0.5",
+    port: 8080,
+    weight: 1.0,
+    clusterName: "zone-a",
+    metadata: new Dictionary<string, string> { ["version"] = "1.2.3" });
+```
+
+## Results instead of exceptions for "not found"
+
+`GetConfigAsync` returns a `NacosConfigResult`, not a `string?`. A configuration that does not exist
+sets `Exists` to `false` and `Content` to `null`; it is not reported as an error.
+
+```csharp
+NacosConfigResult result = await client.Config.GetConfigAsync(configKey);
+if (result.Exists)
+{
+    Console.WriteLine(result.Content);
+}
+```
+
+`result.FromLocalCache` tells you whether the value came from the failover snapshot because the
+server was unreachable. In `nacos-sdk-csharp` that fallback was controlled separately and was easy
+to miss.
+
+## Listeners are async and disposable
+
+The callback API returns an `IAsyncDisposable` handle, and the streaming API is an
+`IAsyncEnumerable`:
+
+```csharp
+// Callback; dispose to stop.
+await using IAsyncDisposable handle = await client.Config.AddListenerAsync(
+    configKey, (change, ct) => { /* ... */ return Task.CompletedTask; });
+
+// Stream.
+await foreach (NacosConfigChange change in client.Config.ListenAsync(configKey, ct))
+{
+    Console.WriteLine(change.Content);
+}
+```
+
+Change objects carry the whole result plus `PreviousMd5`. Duplicate notifications are suppressed by
+comparing MD5 values, so a listener only runs when the value actually changed.
+
+## Options are validated up front
+
+Options are validated when the client is built, so a missing server address or a half-supplied
+credential pair fails immediately with a `NacosConfigurationException` and a message that names the
+setting. There is no "it connects and then behaves strangely" mode.
+
+## Startup tolerance is one switch
+
+`NacosOptions.Optional` is the single control for tolerating an unreachable server at startup. The
+same switch exists on `NacosConfigurationSourceOptions`, where it decides whether a failed read
+aborts host building. When it is `false` (the default), the client fails fast.
+
+## Observability and AOT
+
+Two capabilities that the older client does not offer in the same form:
+
+- Traces and metrics are published under `Lolitacoding.Nacos` via `NacosDiagnostics`
+  (`ActivitySource` + `Meter`). See the [quick start](quickstart.md#9-observability).
+- The core library is `IsAotCompatible` and free of reflection-based serialization or runtime code
+  generation, so it can be published with Native AOT.
+
+## What is intentionally not implemented (v1)
+
+- The Nacos **admin/console API** (creating namespaces, managing users).
+- **AI / MCP registry** features.
+- **Address-server (endpoint) discovery.** Supply `ServerAddresses` explicitly.
+- **Aliyun MSE AccessKey/SecretKey** authentication. The auth layer leaves room for it, but only
+  user name / password is supported today.
+- **TLS / mTLS.** The transport speaks plaintext gRPC.
+- Multi-targeting to `netstandard` / .NET 8 and below.

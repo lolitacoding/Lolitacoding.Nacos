@@ -31,45 +31,50 @@ and service registration & discovery.
 
 ```csharp
 using Lolitacoding.Nacos;
+using Lolitacoding.Nacos.Client;
+using Lolitacoding.Nacos.Config;
 
-await using var client = new NacosClient(new NacosOptions
+var options = new NacosOptions
 {
     ServerAddresses = ["http://127.0.0.1:8848"],
-    Namespace = "public",
-});
+    Namespace = NacosConstants.DefaultNamespace,   // "public"
+    AppName = "my-service",
+};
 
-// Read a value.
-string? content = await client.Config.GetConfigAsync("appsettings.json", "DEFAULT_GROUP");
+// Construction does not connect; call ConnectAsync before issuing requests.
+await using NacosClient client = NacosClient.Create(options);
+await client.ConnectAsync();
+
+var key = new NacosConfigKey("appsettings.json", NacosConstants.DefaultGroup);
+
+// Read a value. A missing configuration is not an error: check result.Exists.
+NacosConfigResult result = await client.Config.GetConfigAsync(key);
+Console.WriteLine(result.Exists ? result.Content : "(not set)");
 
 // Publish a value.
-await client.Config.PublishConfigAsync("appsettings.json", """{"Logging":{"LogLevel":"Debug"}}""");
+await client.Config.PublishConfigAsync(
+    key, """{"Logging":{"LogLevel":"Debug"}}""", contentType: "json");
 
 // React to changes. The sequence never completes unless the CancellationToken fires.
-await foreach (ConfigChange change in client.Config.ListenAsync("appsettings.json", "DEFAULT_GROUP"))
+await foreach (NacosConfigChange change in client.Config.ListenAsync(key))
 {
-    Console.WriteLine($"{change.DataId}/{change.Group}: {change.NewContent}");
+    Console.WriteLine($"{change.Key} (previous md5 {change.PreviousMd5}): {change.Content}");
 }
 ```
 
 ### Service registration and discovery
 
 ```csharp
-using Lolitacoding.Nacos;
+using Lolitacoding.Nacos.Naming;
 
-await using var client = new NacosClient(new NacosOptions
-{
-    ServerAddresses = ["http://127.0.0.1:8848"],
-});
+var service = new NacosServiceKey("order-service", NacosConstants.DefaultGroup);
 
-await client.Naming.RegisterInstanceAsync(new NacosInstance
-{
-    ServiceName = "order-service",
-    Ip = "10.0.0.5",
-    Port = 8080,
-});
+await client.Naming.RegisterInstanceAsync(
+    service,
+    new NacosInstance(ipAddress: "10.0.0.5", port: 8080, weight: 1.0));
 
-IReadOnlyList<NacosInstance> instances =
-    await client.Naming.GetInstancesAsync("order-service", healthyOnly: true);
+NacosServiceInfo info = await client.Naming.GetInstancesAsync(service);
+IReadOnlyList<NacosInstance> instances = info.HealthyInstances;
 ```
 
 ### Dependency injection
@@ -91,6 +96,16 @@ builder.Configuration.AddNacosConfiguration(options =>
     options.DataIds = ["appsettings.json"];
     options.Optional = true;
 });
+```
+
+### Observability
+
+```csharp
+using Lolitacoding.Nacos.Diagnostics;
+
+builder.Services.AddOpenTelemetry()
+    .WithTracing(tracing => tracing.AddSource(NacosDiagnostics.ActivitySourceName))
+    .WithMetrics(metrics => metrics.AddMeter(NacosDiagnostics.MeterName));
 ```
 
 ## Documentation

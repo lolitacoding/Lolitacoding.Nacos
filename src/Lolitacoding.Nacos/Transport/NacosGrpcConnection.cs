@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using Lolitacoding.Nacos.Auth;
+using Lolitacoding.Nacos.Diagnostics;
 using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Generated;
@@ -252,56 +254,123 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         INacosChannel channel = _channel
             ?? throw new NacosConnectionException("The Nacos connection has not been established yet.");
 
-        Payload payload = PayloadCodec.Encode(request, _options.LocalClientIp);
+        string requestType = PayloadTypeRegistry.GetTypeName(request);
+        long startTimestamp = _timeProvider.GetTimestamp();
 
-        Payload responsePayload;
+        using Activity? activity = NacosDiagnostics.ActivitySource.StartActivity(
+            NacosDiagnostics.RequestActivityName, ActivityKind.Client);
+        activity?.SetTag(NacosDiagnostics.RequestTypeTag, requestType);
+
         try
         {
-            responsePayload = await channel.UnaryAsync(payload, ct).ConfigureAwait(false);
-        }
-        catch (NacosConnectionException)
-        {
-            // A dropped connection must not leave the caller without recovery: hand off to the
-            // reconnect path, then let the caller observe the failure and retry.
-            await HandleConnectionLossAsync(_shutdown.Token).ConfigureAwait(false);
-            throw;
-        }
+            activity?.SetTag(NacosDiagnostics.ServerAddressTag, CurrentServer?.Original);
 
-        // Mark the connection as recently used so the health checker does not probe a connection
-        // that is demonstrably serving traffic.
-        Touch();
+            Payload payload = PayloadCodec.Encode(request, _options.LocalClientIp);
 
-        TResponse? response = PayloadCodec.Decode<TResponse>(responsePayload);
-
-        if (response is null)
-        {
-            // The server reports transport-level failures as ErrorResponse regardless of the
-            // request type, so surface that as a server exception rather than a decode failure.
-            ErrorResponse? error = PayloadCodec.Decode<ErrorResponse>(responsePayload);
-            if (error is not null && !error.Success)
+            Payload responsePayload;
+            try
             {
-                throw new NacosServerException(
-                    error.ErrorCode,
-                    error.Message ?? "The Nacos server returned an unspecified error.");
+                responsePayload = await channel.UnaryAsync(payload, ct).ConfigureAwait(false);
+            }
+            catch (NacosConnectionException)
+            {
+                // A dropped connection must not leave the caller without recovery: hand off to the
+                // reconnect path, then let the caller observe the failure and retry.
+                await HandleConnectionLossAsync(_shutdown.Token).ConfigureAwait(false);
+                throw;
             }
 
-            throw new NacosServerException(
-                string.Concat(
-                    "Expected a '", typeof(TResponse).Name, "' response but the server sent '",
-                    PayloadCodec.ReadTypeName(responsePayload), "'."));
+            // Mark the connection as recently used so the health checker does not probe a
+            // connection that is demonstrably serving traffic.
+            Touch();
+
+            TResponse? response = PayloadCodec.Decode<TResponse>(responsePayload);
+
+            if (response is null)
+            {
+                // The server reports transport-level failures as ErrorResponse regardless of the
+                // request type, so surface that as a server exception rather than a decode failure.
+                ErrorResponse? error = PayloadCodec.Decode<ErrorResponse>(responsePayload);
+                if (error is not null && !error.Success)
+                {
+                    throw new NacosServerException(
+                        error.ErrorCode,
+                        error.Message ?? "The Nacos server returned an unspecified error.");
+                }
+
+                throw new NacosServerException(
+                    string.Concat(
+                        "Expected a '", typeof(TResponse).Name, "' response but the server sent '",
+                        PayloadCodec.ReadTypeName(responsePayload), "'."));
+            }
+
+            response.RequestId ??= request.RequestId;
+
+            if (!response.Success)
+            {
+                throw new NacosServerException(
+                    response.ErrorCode,
+                    response.Message ?? "The Nacos server reported a failure without a message.");
+            }
+
+            RecordRequest(requestType, NacosDiagnostics.OutcomeSuccess, startTimestamp);
+            activity?.SetStatus(ActivityStatusCode.Ok);
+
+            return response;
         }
-
-        response.RequestId ??= request.RequestId;
-
-        if (!response.Success)
+        catch (Exception ex)
         {
-            throw new NacosServerException(
-                response.ErrorCode,
-                response.Message ?? "The Nacos server reported a failure without a message.");
-        }
+            RecordRequest(requestType, NacosDiagnostics.OutcomeError, startTimestamp);
 
-        return response;
+            if (ex is not OperationCanceledException)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            }
+
+            throw;
+        }
     }
+
+    /// <summary>
+    /// Records the request count and duration of one completed send attempt.
+    /// </summary>
+    /// <param name="requestType">The wire type name of the request.</param>
+    /// <param name="outcome">Whether the attempt succeeded or failed.</param>
+    /// <param name="startTimestamp">The timestamp the attempt started at.</param>
+    /// <remarks>
+    /// Both instruments share the request type tag so a consumer can correlate a spike in failures
+    /// with a change in latency. The tags are built into a <see cref="TagList"/> to avoid a heap
+    /// allocation on every request.
+    /// </remarks>
+    private void RecordRequest(string requestType, string outcome, long startTimestamp)
+    {
+        NacosMetrics.Requests.Add(
+            1,
+            new TagList
+            {
+                { NacosDiagnostics.RequestTypeTag, requestType },
+                { NacosDiagnostics.OutcomeTag, outcome },
+            });
+
+        NacosMetrics.RequestDuration.Record(
+            _timeProvider.GetElapsedTime(startTimestamp).TotalMilliseconds,
+            new TagList
+            {
+                { NacosDiagnostics.RequestTypeTag, requestType },
+            });
+    }
+
+    /// <summary>
+    /// Records one server-initiated push.
+    /// </summary>
+    /// <param name="typeName">The wire type name of the pushed request.</param>
+    private static void RecordPush(string typeName) =>
+        NacosMetrics.Pushes.Add(
+            1,
+            new TagList
+            {
+                { NacosDiagnostics.PushTypeTag, typeName },
+            });
 
     /// <summary>
     /// Raised when the server pushes a request this connection does not handle itself.
@@ -405,12 +474,44 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     }
 
     /// <summary>
+    /// Establishes a connection, recording a span for the attempt.
+    /// </summary>
+    /// <param name="isReconnect">Whether this attempt follows a lost connection.</param>
+    /// <param name="ct">A token that cancels the attempt.</param>
+    /// <returns>A task that completes once connected.</returns>
+    /// <remarks>
+    /// The span covers failover across every configured server, so its duration is the time the
+    /// caller actually waited for a usable connection rather than the time spent on one server.
+    /// </remarks>
+    private async Task EstablishAsync(bool isReconnect, CancellationToken ct)
+    {
+        using Activity? activity = NacosDiagnostics.ActivitySource.StartActivity(
+            NacosDiagnostics.ConnectActivityName, ActivityKind.Client);
+        activity?.SetTag(NacosDiagnostics.ReconnectTag, isReconnect);
+
+        try
+        {
+            await EstablishCoreAsync(isReconnect, ct).ConfigureAwait(false);
+            activity?.SetStatus(ActivityStatusCode.Ok);
+        }
+        catch (Exception ex)
+        {
+            if (ex is not OperationCanceledException)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Establishes a connection, trying each configured server in turn.
     /// </summary>
     /// <param name="isReconnect">Whether this attempt follows a lost connection.</param>
     /// <param name="ct">A token that cancels the attempt.</param>
     /// <returns>A task that completes once connected.</returns>
-    private async Task EstablishAsync(bool isReconnect, CancellationToken ct)
+    private async Task EstablishCoreAsync(bool isReconnect, CancellationToken ct)
     {
         await _connectGate.WaitAsync(ct).ConfigureAwait(false);
         try
@@ -659,11 +760,14 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
 
         if (handlers is null)
         {
-            LogUnhandledPush(PayloadTypeRegistry.GetTypeName(request));
+            string droppedTypeName = PayloadTypeRegistry.GetTypeName(request);
+            RecordPush(droppedTypeName);
+            LogUnhandledPush(droppedTypeName);
             return;
         }
 
         string typeName = PayloadTypeRegistry.GetTypeName(request);
+        RecordPush(typeName);
 
         foreach (Func<NacosRequest, CancellationToken, Task<NacosResponse?>> handler in
             handlers.GetInvocationList().Cast<Func<NacosRequest, CancellationToken, Task<NacosResponse?>>>())
@@ -774,6 +878,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
                 {
                     await EstablishAsync(isReconnect: true, ct).ConfigureAwait(false);
                     LogReconnected(attempt);
+                    NacosMetrics.Reconnects.Add(1);
                     return;
                 }
                 catch (NacosConnectionException)
@@ -853,7 +958,18 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         }
 
         _state = state;
-        LogStateChanged(previous.ToString(), state.ToString());
+
+        string previousName = previous.ToString();
+        string currentName = state.ToString();
+
+        LogStateChanged(previousName, currentName);
+
+        NacosMetrics.StateChanges.Add(
+            1,
+            new TagList
+            {
+                { NacosDiagnostics.ConnectionStateTag, currentName },
+            });
 
         try
         {

@@ -50,6 +50,25 @@ jobs:
           path: ./TestResults/*.trx
           if-no-files-found: ignore
 
+  aot:
+    name: Native AOT publish
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      # The Windows runner ships the MSVC toolchain AOT needs. Every IL2xxx/IL3xxx warning is an
+      # error in this repository, so this job fails if the sample stops being trim- or AOT-safe.
+      - name: Publish the Native AOT sample
+        run: dotnet publish samples/Sample.Aot/Sample.Aot.csproj -c Release -r win-x64
+
   integration:
     name: Integration tests (Nacos ${{ matrix.nacos }})
     runs-on: ubuntu-latest

@@ -36,6 +36,7 @@ Lolitacoding.Nacos.Config.NacosConfigResult.FromLocalCache.get -> bool
 Lolitacoding.Nacos.Config.NacosConfigResult.Key.get -> Lolitacoding.Nacos.Config.NacosConfigKey!
 Lolitacoding.Nacos.Config.NacosConfigResult.LastModified.get -> System.DateTimeOffset
 Lolitacoding.Nacos.Config.NacosConfigResult.Md5.get -> string?
+Lolitacoding.Nacos.Diagnostics.NacosDiagnostics
 Lolitacoding.Nacos.NacosAuthException
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException() -> void
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException(int errorCode, string! message) -> void
@@ -201,6 +202,8 @@ Lolitacoding.Nacos.Naming.NacosServiceKey.ServiceName.get -> string!
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.NacosWeightedRandomLoadBalancer(System.Random? random = null) -> void
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.Select(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances) -> Lolitacoding.Nacos.Naming.NacosInstance?
+const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.ActivitySourceName = "Lolitacoding.Nacos" -> string!
+const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.MeterName = "Lolitacoding.Nacos" -> string!
 const Lolitacoding.Nacos.NacosConstants.Charset = "UTF-8" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultCluster = "DEFAULT" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultConfigType = "text" -> string!
@@ -239,6 +242,8 @@ static Lolitacoding.Nacos.Config.NacosConfigKey.operator !=(Lolitacoding.Nacos.C
 static Lolitacoding.Nacos.Config.NacosConfigKey.operator ==(Lolitacoding.Nacos.Config.NacosConfigKey? left, Lolitacoding.Nacos.Config.NacosConfigKey? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigResult.operator !=(Lolitacoding.Nacos.Config.NacosConfigResult? left, Lolitacoding.Nacos.Config.NacosConfigResult? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigResult.operator ==(Lolitacoding.Nacos.Config.NacosConfigResult? left, Lolitacoding.Nacos.Config.NacosConfigResult? right) -> bool
+static Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.ActivitySource.get -> System.Diagnostics.ActivitySource!
+static Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.Meter.get -> System.Diagnostics.Metrics.Meter!
 static Lolitacoding.Nacos.Naming.NacosInstance.operator !=(Lolitacoding.Nacos.Naming.NacosInstance? left, Lolitacoding.Nacos.Naming.NacosInstance? right) -> bool
 static Lolitacoding.Nacos.Naming.NacosInstance.operator ==(Lolitacoding.Nacos.Naming.NacosInstance? left, Lolitacoding.Nacos.Naming.NacosInstance? right) -> bool
 static Lolitacoding.Nacos.Naming.NacosServiceChange.operator !=(Lolitacoding.Nacos.Naming.NacosServiceChange? left, Lolitacoding.Nacos.Naming.NacosServiceChange? right) -> bool
