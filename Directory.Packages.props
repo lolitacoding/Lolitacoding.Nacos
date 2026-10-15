@@ -40,6 +40,11 @@
     <PackageVersion Include="Microsoft.AspNetCore.Hosting.Abstractions" Version="2.3.0" />
   </ItemGroup>
 
+  <ItemGroup Label="Service discovery integration">
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery.Abstractions" Version="10.11.0" />
+  </ItemGroup>
+
   <ItemGroup Label="Optional configuration parsers">
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>

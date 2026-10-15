@@ -21,6 +21,7 @@
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos\Lolitacoding.Nacos.csproj" />
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.DependencyInjection\Lolitacoding.Nacos.Extensions.DependencyInjection.csproj" />
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.Configuration\Lolitacoding.Nacos.Extensions.Configuration.csproj" />
+    <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.ServiceDiscovery\Lolitacoding.Nacos.Extensions.ServiceDiscovery.csproj" />
     <ProjectReference Include="..\..\src\Lolitacoding.Nacos.AspNetCore\Lolitacoding.Nacos.AspNetCore.csproj" />
   </ItemGroup>
 

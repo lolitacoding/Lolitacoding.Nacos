@@ -9,7 +9,7 @@
 - 仅面向 **.NET 10**（`net10.0`），充分使用新语言特性（C# 14、`System.Text.Json` 源生成、`Span`、`Channel<T>`、`TimeProvider`、`IAsyncEnumerable` 等）。
 - 同时支持 **Nacos 2.x 与 3.x** 服务端（见第 6 节"待核对事项"）。
 - 覆盖两大核心能力：**配置中心（Config）** 与 **服务注册发现（Naming）**。
-- 提供与 .NET 生态的一等集成：`IConfiguration`、`Microsoft.Extensions.DependencyInjection`、`IHostedService`、`HttpClientFactory`、`Microsoft.Extensions.ServiceDiscovery`（可选，后期）。
+- 提供与 .NET 生态的一等集成：`IConfiguration`、`Microsoft.Extensions.DependencyInjection`、`IHostedService`、`HttpClientFactory`、`Microsoft.Extensions.ServiceDiscovery`（可选依赖）。
 - 对 **Native AOT / 裁剪友好**：不使用反射式 JSON 序列化，不使用运行时代码生成。
 
 非目标（v1 不做）：Nacos 服务端管理 API、AI/MCP 注册中心相关功能、.NET 8 及以下的多目标。
@@ -29,6 +29,7 @@ Lolitacoding.Nacos/
 │  ├─ Lolitacoding.Nacos/                                      # 核心：协议、传输、Config/Naming 客户端
 │  ├─ Lolitacoding.Nacos.Extensions.DependencyInjection/       # DI 注册、Options
 │  ├─ Lolitacoding.Nacos.Extensions.Configuration/             # IConfigurationProvider（配置热更新）
+│  ├─ Lolitacoding.Nacos.Extensions.ServiceDiscovery/          # Microsoft.Extensions.ServiceDiscovery 集成
 │  └─ Lolitacoding.Nacos.AspNetCore/                           # 服务自动注册/注销 HostedService
 ├─ tests/
 │  ├─ Lolitacoding.Nacos.Tests/                # 单元测试
@@ -39,7 +40,7 @@ Lolitacoding.Nacos/
 └─ docs/
 ```
 
-依赖方向：`Core` ← `Extensions.DependencyInjection` ← (`Extensions.Configuration`, `AspNetCore`)。核心库**不得**依赖 ASP.NET Core 或 DI 抽象以外的框架包。
+依赖方向：`Core` ← `Extensions.DependencyInjection` ← (`Extensions.Configuration`, `Extensions.ServiceDiscovery`, `AspNetCore`)。核心库**不得**依赖 ASP.NET Core 或 DI 抽象以外的框架包。
 
 ## 3. 全局约定（AI 必须遵守）
 
@@ -127,6 +128,8 @@ INacosClientFactory / NacosClient
 - [ ] **T4.1** `Extensions.DependencyInjection`：`services.AddNacos(options => ...)` / 绑定 `IConfiguration` 节；Options 校验；`IHostedService` 管理客户端生命周期（启动连接、优雅关闭）。
 - [ ] **T4.2** `Extensions.Configuration`：`builder.Configuration.AddNacosConfiguration(...)`，支持 JSON/YAML/Properties 解析（YAML 可选依赖单独包）、多 dataId 叠加、变更触发 `IChangeToken`（支持 `IOptionsMonitor` 热更新）。
 - [ ] **T4.3** `AspNetCore`：`app.UseNacosRegistration()` 或 `AddNacosServiceRegistration()`，启动后自动注册（地址从 `IServer` 绑定地址推断，可手动覆盖），关闭时注销；健康检查元数据。
+- [ ] **T4.4** `Extensions.ServiceDiscovery`：`services.AddNacosServiceDiscovery()` 注册 `IServiceEndpointProvider`，使 `Microsoft.Extensions.ServiceDiscovery` 的 `ServiceEndpointResolver` / `HttpClient` 能解析 Nacos 服务名（`nacos://service` 或裸名）；订阅服务变更触发端点重新解析。
+  - 验收：`AddNacosServiceDiscovery` 后 `http://nacos://service/` 可解析为 Nacos 实例；服务上下线推送能在无需轮询下刷新端点。
   - M4 验收：`samples/Sample.AspNetCore` 可运行，修改 Nacos 配置后应用内 `IOptionsMonitor` 值实时变化。
 
 ### M5 · 发布前打磨
@@ -136,7 +139,6 @@ INacosClientFactory / NacosClient
 - [ ] **T5.4** 发布 `0.1.0-preview` 到 NuGet，申请保留前缀 `Lolitacoding.*`。
 
 ### 后续（v1 之后）
-- `Microsoft.Extensions.ServiceDiscovery` 集成（Aspire / `HttpClient` 解析 Nacos 服务名）。
 - 阿里云 MSE AccessKey 认证；地址服务器发现；TLS / mTLS。
 - 以同样的结构扩展其他国内生态组件（独立仓库）。
 

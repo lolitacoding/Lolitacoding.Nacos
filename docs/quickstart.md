@@ -12,12 +12,14 @@ Nacos, watches it for changes, and registers itself for service discovery.
 | `Lolitacoding.Nacos` | Programmatic config and naming clients. No framework dependencies beyond `Microsoft.Extensions.*` abstractions. |
 | `Lolitacoding.Nacos.Extensions.DependencyInjection` | `services.AddNacos(...)`, options binding and lifetime management. |
 | `Lolitacoding.Nacos.Extensions.Configuration` | `builder.Configuration.AddNacosConfiguration(...)` with hot reload. |
+| `Lolitacoding.Nacos.Extensions.ServiceDiscovery` | `AddNacosServiceDiscovery()` for `Microsoft.Extensions.ServiceDiscovery`. |
 | `Lolitacoding.Nacos.AspNetCore` | Automatic instance registration and deregistration. |
 
 ```bash
 dotnet add package Lolitacoding.Nacos
 dotnet add package Lolitacoding.Nacos.Extensions.DependencyInjection
 dotnet add package Lolitacoding.Nacos.Extensions.Configuration
+dotnet add package Lolitacoding.Nacos.Extensions.ServiceDiscovery
 dotnet add package Lolitacoding.Nacos.AspNetCore
 ```
 
@@ -162,6 +164,47 @@ services.AddNacos(options => { /* configure in code */ });   // delegate
 services.AddNacos(configuration.GetSection("Nacos"));       // bind a section
 services.AddNacos();                                        // configured elsewhere
 ```
+
+### Service discovery with `Microsoft.Extensions.ServiceDiscovery`
+
+`AddNacosServiceDiscovery()` registers a Nacos endpoint provider alongside the providers
+`AddServiceDiscovery()` installs. A request URI names the service, and the provider replaces its
+host and port with a healthy instance before the request is sent:
+
+```csharp
+using Lolitacoding.Nacos.Extensions.ServiceDiscovery;
+
+builder.Services.AddNacos(options => options.ServerAddresses = ["http://127.0.0.1:8848"]);
+builder.Services.AddNacosServiceDiscovery();
+
+builder.Services.AddHttpClient("orders", client => client.BaseAddress = new Uri("http+nacos://order-service"))
+    .AddServiceDiscovery();
+
+// Later, anywhere:
+public sealed class OrderClient(IHttpClientFactory factory)
+{
+    public Task<HttpResponseMessage> GetAsync(CancellationToken ct) =>
+        factory.CreateClient("orders").GetAsync("/orders/1", ct);
+}
+```
+
+A URI may combine a transport scheme with `nacos` using `+`; the leading scheme decides the
+protocol of the request and `nacos` selects the provider. A bare name such as `order-service`
+resolves through Nacos as well, which is the default for an application whose services all live in
+Nacos. Set `ResolveAllServices = false` to require an explicit scheme:
+
+```csharp
+builder.Services.AddNacosServiceDiscovery(options =>
+{
+    options.GroupName = "DEFAULT_GROUP";   // services carry no group in the URI
+    // options.Cluster = "zone-a";         // restrict resolution to one cluster
+    // options.ResolveAllServices = false; // only claim names with an explicit scheme
+});
+```
+
+Resolution reuses the naming client, so it inherits its in-memory and on-disk failover: a service
+that was resolved once still resolves after a restart during a control-plane outage, with
+`NacosServiceInfo.FromLocalCache` set on the snapshot.
 
 ## 6. Use Nacos as an `IConfiguration` source
 

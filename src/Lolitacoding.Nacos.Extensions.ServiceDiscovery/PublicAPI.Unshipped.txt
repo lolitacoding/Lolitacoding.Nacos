@@ -1,0 +1,16 @@
+#nullable enable
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.Cluster.get -> string?
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.Cluster.set -> void
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.GroupName.get -> string!
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.GroupName.set -> void
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.HealthyOnly.get -> bool
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.HealthyOnly.set -> void
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.NacosServiceDiscoveryOptions() -> void
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.ResolveAllServices.get -> bool
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.ResolveAllServices.set -> void
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.Schemes.get -> System.Collections.Generic.IList<string!>!
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions.Schemes.set -> void
+Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryServiceCollectionExtensions
+static Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryServiceCollectionExtensions.AddNacosServiceDiscovery(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryServiceCollectionExtensions.AddNacosServiceDiscovery(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Lolitacoding.Nacos.Extensions.ServiceDiscovery.NacosServiceDiscoveryOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

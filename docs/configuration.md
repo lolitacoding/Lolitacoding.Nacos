@@ -62,7 +62,7 @@ drops.
 | `HeartbeatInterval` | `TimeSpan` | 5 s | Heartbeat interval for ephemeral instances. Must be positive. |
 | `DefaultCluster` | `string` | `"DEFAULT"` | Cluster attached to registered instances when none is given. Cannot be empty. |
 | `Ephemeral` | `bool` | `true` | Register instances as ephemeral by default. |
-| `EnableLocalCache` | `bool` | `true` | Cache the local service list for failover. |
+| `EnableLocalCache` | `bool` | `true` | Write the last known service list to disk so a restart during an outage can still resolve it. |
 
 ## `NacosConfigurationSourceOptions`
 
@@ -123,6 +123,29 @@ builder.Services.Configure<NacosServiceRegistrationOptions>(
     builder.Configuration.GetSection("Nacos:Registration"));
 builder.Services.AddNacosServiceRegistration();
 ```
+
+## `NacosServiceDiscoveryOptions`
+
+Used by `services.AddNacosServiceDiscovery(...)`. Controls which service names resolve through
+Nacos and how the instances are looked up.
+
+| Property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `Schemes` | `IList<string>` | `[ "nacos" ]` | URI schemes that select the Nacos provider. A name carrying one of these schemes is always claimed. |
+| `ResolveAllServices` | `bool` | `true` | When `true`, a name with no scheme at all resolves through Nacos. Set to `false` to require an explicit scheme. |
+| `GroupName` | `string` | `"DEFAULT_GROUP"` | Group the resolved services belong to. Cannot be empty. |
+| `Cluster` | `string?` | `null` | Restrict resolution to one cluster. Must not be whitespace when set. |
+| `HealthyOnly` | `bool` | `true` | When `true`, only healthy, enabled instances become endpoints. |
+
+A service discovery URI may combine a transport scheme with a discovery scheme using `+`, as in
+`http+nacos://order-service`. The leading scheme decides the protocol of the resulting request; the
+`nacos` segment is what makes this provider responsible for it. Naming a transport scheme in
+`Schemes` instead — for example `[ "http" ]` — lets a caller write `http://order-service` directly.
+
+Only a name with **no** scheme is affected by `ResolveAllServices`: an explicit scheme is always
+matched against `Schemes` and never claimed by accident. This is deliberate, because claiming a name
+promises to resolve it, and a name the registry does not know would otherwise have been handled by
+the pass-through provider.
 
 ## Binding from configuration
 

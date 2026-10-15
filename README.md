@@ -23,6 +23,7 @@ and service registration & discovery.
 | `Lolitacoding.Nacos` | Core: protocol, transport, Config and Naming clients. |
 | `Lolitacoding.Nacos.Extensions.DependencyInjection` | `AddNacos(...)`, options binding and validation, lifetime management. |
 | `Lolitacoding.Nacos.Extensions.Configuration` | `AddNacosConfiguration(...)` configuration provider with change tokens. |
+| `Lolitacoding.Nacos.Extensions.ServiceDiscovery` | `AddNacosServiceDiscovery()` integration for `Microsoft.Extensions.ServiceDiscovery`. |
 | `Lolitacoding.Nacos.AspNetCore` | Automatic instance registration and deregistration for ASP.NET Core apps. |
 
 ## Quick start
@@ -97,6 +98,23 @@ builder.Configuration.AddNacosConfiguration(options =>
     options.Optional = true;
 });
 ```
+
+### Service discovery for `HttpClient`
+
+```csharp
+using Lolitacoding.Nacos.Extensions.ServiceDiscovery;
+
+builder.Services.AddNacos(options => options.ServerAddresses = ["http://127.0.0.1:8848"]);
+builder.Services.AddNacosServiceDiscovery();
+
+builder.Services.AddHttpClient("orders", client => client.BaseAddress = new Uri("http+nacos://order-service"))
+    .AddServiceDiscovery();
+```
+
+The `+nacos` suffix selects the Nacos provider while `http` remains the protocol, and the resolved
+instance address is substituted before the request is sent. A bare `order-service` URI resolves
+through Nacos too; see the [quick start](docs/quickstart.md) and
+[configuration reference](docs/configuration.md) for the options that scope resolution.
 
 ### Observability
 

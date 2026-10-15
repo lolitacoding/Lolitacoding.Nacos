@@ -84,6 +84,31 @@ Set `Config.EnableLocalCache = false` or `Naming.EnableLocalCache = false` to di
 Cached values are only used when the server is unreachable; `NacosConfigResult.FromLocalCache` and
 `NacosServiceInfo.FromLocalCache` tell you when that happened.
 
+## Does the service list cache survive a restart?
+
+Yes. A successful query and a server push both write the service's last known instance list to the
+snapshot directory, and a lookup that finds no in-memory entry falls back to that file. The
+in-memory cache only helps a process that stays up; the on-disk snapshot is what keeps a rolling
+restart during a Nacos outage from becoming an application outage. It is written atomically, so a
+process killed mid-write leaves either the previous snapshot or the new one, never a truncated file.
+
+## How do I resolve services with `Microsoft.Extensions.ServiceDiscovery`?
+
+Add the integration and use a service name as the request URI's host:
+
+```csharp
+builder.Services.AddNacos(options => options.ServerAddresses = ["http://127.0.0.1:8848"]);
+builder.Services.AddNacosServiceDiscovery();
+
+builder.Services.AddHttpClient("orders", c => c.BaseAddress = new Uri("http+nacos://order-service"))
+    .AddServiceDiscovery();
+```
+
+The `nacos` scheme selects the Nacos provider and the leading scheme (`http`) stays the protocol of
+the request. A bare `order-service` name resolves through Nacos by default; set
+`ResolveAllServices = false` to require the explicit scheme. Resolution reuses the naming client, so
+it benefits from the same in-memory and on-disk failover.
+
 ## How do I use multiple namespaces?
 
 Each `NacosConfigKey` and `NacosServiceKey` takes an optional namespace. When it is omitted the
@@ -135,8 +160,14 @@ Yes, for the core `Lolitacoding.Nacos` package. It is annotated `IsAotCompatible
 generation. The `Sample.Aot` project in this repository is published with `PublishAot=true` in CI,
 and every `IL2xxx`/`IL3xxx` warning is an error.
 
-The DI, configuration and ASP.NET Core packages are ordinary `Microsoft.Extensions.*` integrations
-and are not part of the AOT guarantee.
+The DI, configuration, service discovery and ASP.NET Core packages are ordinary
+`Microsoft.Extensions.*` integrations and are not part of the AOT guarantee.
+
+## What do the log event id ranges mean?
+
+Source-generated messages are grouped by subsystem: connection lifecycle in the `1000` range, push
+events in `2000`, reconnect recovery in `3000`, the configuration client in the `4000` range, the
+naming client in the `5000` range, and the service discovery integration in the `6000` range.
 
 ## How do I turn on logs?
 

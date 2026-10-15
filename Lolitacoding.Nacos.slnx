@@ -3,6 +3,7 @@
     <Project Path="src/Lolitacoding.Nacos/Lolitacoding.Nacos.csproj" />
     <Project Path="src/Lolitacoding.Nacos.Extensions.DependencyInjection/Lolitacoding.Nacos.Extensions.DependencyInjection.csproj" />
     <Project Path="src/Lolitacoding.Nacos.Extensions.Configuration/Lolitacoding.Nacos.Extensions.Configuration.csproj" />
+    <Project Path="src/Lolitacoding.Nacos.Extensions.ServiceDiscovery/Lolitacoding.Nacos.Extensions.ServiceDiscovery.csproj" />
     <Project Path="src/Lolitacoding.Nacos.AspNetCore/Lolitacoding.Nacos.AspNetCore.csproj" />
   </Folder>
   <Folder Name="/tests/">
