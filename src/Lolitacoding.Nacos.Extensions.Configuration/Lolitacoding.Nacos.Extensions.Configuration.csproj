@@ -21,6 +21,11 @@
     <PackageReference Include="Microsoft.Extensions.Primitives" />
   </ItemGroup>
 
+  <ItemGroup Label="Optional parsers">
+    <!-- YAML is a first-class configuration format in Nacos deployments; YamlDotNet supplies it. -->
+    <PackageReference Include="YamlDotNet" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>

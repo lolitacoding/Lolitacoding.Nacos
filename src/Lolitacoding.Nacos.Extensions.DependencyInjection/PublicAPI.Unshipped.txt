@@ -1,1 +1,6 @@
 #nullable enable
+Lolitacoding.Nacos.Extensions.DependencyInjection.NacosServiceCollectionExtensions
+const Lolitacoding.Nacos.Extensions.DependencyInjection.NacosServiceCollectionExtensions.HttpClientName = "Lolitacoding.Nacos" -> string!
+static Lolitacoding.Nacos.Extensions.DependencyInjection.NacosServiceCollectionExtensions.AddNacos(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Lolitacoding.Nacos.Extensions.DependencyInjection.NacosServiceCollectionExtensions.AddNacos(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Microsoft.Extensions.Configuration.IConfigurationSection! section) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Lolitacoding.Nacos.Extensions.DependencyInjection.NacosServiceCollectionExtensions.AddNacos(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Lolitacoding.Nacos.NacosOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

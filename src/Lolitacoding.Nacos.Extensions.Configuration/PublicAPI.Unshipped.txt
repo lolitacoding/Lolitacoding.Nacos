@@ -1,1 +1,24 @@
 #nullable enable
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationExtensions
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.DataIds.get -> System.Collections.Generic.IList<string!>!
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.DataIds.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.GroupName.get -> string!
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.GroupName.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.LocalCacheDirectory.get -> string?
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.LocalCacheDirectory.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.LoggerFactory.get -> Microsoft.Extensions.Logging.ILoggerFactory?
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.LoggerFactory.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.NacosConfigurationSourceOptions() -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.Namespace.get -> string!
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.Namespace.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.Optional.get -> bool
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.Optional.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.Password.get -> string?
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.Password.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.ServerAddresses.get -> System.Collections.Generic.IList<string!>!
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.ServerAddresses.set -> void
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.UserName.get -> string?
+Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions.UserName.set -> void
+static Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationExtensions.AddNacosConfiguration(this Microsoft.Extensions.Configuration.IConfigurationBuilder! builder, Microsoft.Extensions.Configuration.IConfigurationSection! section) -> Microsoft.Extensions.Configuration.IConfigurationBuilder!
+static Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationExtensions.AddNacosConfiguration(this Microsoft.Extensions.Configuration.IConfigurationBuilder! builder, System.Action<Lolitacoding.Nacos.Extensions.Configuration.NacosConfigurationSourceOptions!>! configure) -> Microsoft.Extensions.Configuration.IConfigurationBuilder!

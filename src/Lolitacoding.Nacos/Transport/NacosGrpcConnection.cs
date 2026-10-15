@@ -151,7 +151,18 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     public async Task ConnectAsync(CancellationToken ct = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        await EstablishAsync(isReconnect: false, ct).ConfigureAwait(false);
+
+        try
+        {
+            await EstablishAsync(isReconnect: false, ct).ConfigureAwait(false);
+        }
+        catch (NacosConnectionException) when (_options.Optional && !ct.IsCancellationRequested)
+        {
+            // The caller opted into tolerating an unavailable server at startup. Recovery is
+            // started in the background so the client becomes usable once the server returns,
+            // rather than remaining permanently disconnected.
+            _ = Task.Run(() => HandleConnectionLossAsync(_shutdown.Token), CancellationToken.None);
+        }
     }
 
     /// <summary>

@@ -1,1 +1,26 @@
 #nullable enable
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationExtensions
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.ClusterName.get -> string?
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.ClusterName.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.DeregisterOnStop.get -> bool
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.DeregisterOnStop.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Ephemeral.get -> bool
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Ephemeral.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.GroupName.get -> string!
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.GroupName.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.HealthCheckPath.get -> string?
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.HealthCheckPath.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Ip.get -> string?
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Ip.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Metadata.get -> System.Collections.Generic.IDictionary<string!, string!>!
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Metadata.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.NacosServiceRegistrationOptions() -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Port.get -> int?
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Port.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.ServiceName.get -> string?
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.ServiceName.set -> void
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Weight.get -> double
+Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions.Weight.set -> void
+static Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationExtensions.AddNacosServiceRegistration(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationExtensions.AddNacosServiceRegistration(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Lolitacoding.Nacos.AspNetCore.NacosServiceRegistrationOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

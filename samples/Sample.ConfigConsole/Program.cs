@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Primitives;
 
 // Demonstrates the two ways to consume Nacos configuration from a console application:
 // injecting a bound options object, and reading a raw value through the config provider

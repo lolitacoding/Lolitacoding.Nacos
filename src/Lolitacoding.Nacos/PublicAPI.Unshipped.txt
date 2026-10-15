@@ -1,4 +1,9 @@
 #nullable enable
+Lolitacoding.Nacos.Client.NacosClient
+Lolitacoding.Nacos.Client.NacosClient.Config.get -> Lolitacoding.Nacos.Config.INacosConfigClient!
+Lolitacoding.Nacos.Client.NacosClient.ConnectAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Client.NacosClient.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Lolitacoding.Nacos.Client.NacosClient.Naming.get -> Lolitacoding.Nacos.Naming.INacosNamingClient!
 Lolitacoding.Nacos.Config.INacosConfigClient
 Lolitacoding.Nacos.Config.INacosConfigClient.AddListenerAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Func<Lolitacoding.Nacos.Config.NacosConfigChange!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! onChange, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
 Lolitacoding.Nacos.Config.INacosConfigClient.GetConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Config.NacosConfigResult!>!
@@ -106,6 +111,9 @@ Lolitacoding.Nacos.NacosOptions.ServerAddresses.get -> System.Collections.Generi
 Lolitacoding.Nacos.NacosOptions.ServerAddresses.set -> void
 Lolitacoding.Nacos.NacosOptions.UserName.get -> string?
 Lolitacoding.Nacos.NacosOptions.UserName.set -> void
+Lolitacoding.Nacos.NacosOptionsValidator
+Lolitacoding.Nacos.NacosOptionsValidator.NacosOptionsValidator() -> void
+Lolitacoding.Nacos.NacosOptionsValidator.Validate(string? name, Lolitacoding.Nacos.NacosOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
 Lolitacoding.Nacos.NacosReconnectOptions
 Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.set -> void
@@ -224,6 +232,7 @@ override Lolitacoding.Nacos.Naming.NacosServiceInfo.ToString() -> string!
 override Lolitacoding.Nacos.Naming.NacosServiceKey.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Naming.NacosServiceKey.GetHashCode() -> int
 override Lolitacoding.Nacos.Naming.NacosServiceKey.ToString() -> string!
+static Lolitacoding.Nacos.Client.NacosClient.Create(Lolitacoding.Nacos.NacosOptions! options, System.Net.Http.HttpClient? httpClient = null, Microsoft.Extensions.Logging.ILoggerFactory? loggerFactory = null, System.TimeProvider? timeProvider = null) -> Lolitacoding.Nacos.Client.NacosClient!
 static Lolitacoding.Nacos.Config.NacosConfigChange.operator !=(Lolitacoding.Nacos.Config.NacosConfigChange? left, Lolitacoding.Nacos.Config.NacosConfigChange? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigChange.operator ==(Lolitacoding.Nacos.Config.NacosConfigChange? left, Lolitacoding.Nacos.Config.NacosConfigChange? right) -> bool
 static Lolitacoding.Nacos.Config.NacosConfigKey.operator !=(Lolitacoding.Nacos.Config.NacosConfigKey? left, Lolitacoding.Nacos.Config.NacosConfigKey? right) -> bool

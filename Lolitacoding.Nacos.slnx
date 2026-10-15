@@ -9,4 +9,8 @@
     <Project Path="tests/Lolitacoding.Nacos.Tests/Lolitacoding.Nacos.Tests.csproj" />
     <Project Path="tests/Lolitacoding.Nacos.IntegrationTests/Lolitacoding.Nacos.IntegrationTests.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/Sample.ConfigConsole/Sample.ConfigConsole.csproj" />
+    <Project Path="samples/Sample.AspNetCore/Sample.AspNetCore.csproj" />
+  </Folder>
 </Solution>

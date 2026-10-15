@@ -21,7 +21,7 @@ namespace Lolitacoding.Nacos.Config;
 /// reconnect event.
 /// </para>
 /// </remarks>
-internal sealed class NacosConfigClient : INacosConfigClient
+internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
 {
     private readonly NacosOptions _options;
     private readonly NacosGrpcConnection _connection;
@@ -245,6 +245,15 @@ internal sealed class NacosConfigClient : INacosConfigClient
 
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>
+    /// Releases the client synchronously, for a container that disposes synchronously.
+    /// </summary>
+    /// <remarks>
+    /// The client is normally disposed by the shared <c>NacosClient</c> it belongs to; this is an
+    /// idempotent bridge so the container's own synchronous disposal does not fail.
+    /// </remarks>
+    void IDisposable.Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     /// Sends a configuration query and interprets the response.

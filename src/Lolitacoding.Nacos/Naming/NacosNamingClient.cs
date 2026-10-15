@@ -25,7 +25,7 @@ namespace Lolitacoding.Nacos.Naming;
 /// outlive it, and the connection raises a single event that this client uses to replay them.
 /// </para>
 /// </remarks>
-internal sealed class NacosNamingClient : INacosNamingClient
+internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 {
     private readonly NacosOptions _options;
     private readonly NacosGrpcConnection _connection;
@@ -249,6 +249,15 @@ internal sealed class NacosNamingClient : INacosNamingClient
 
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>
+    /// Releases the client synchronously, for a container that disposes synchronously.
+    /// </summary>
+    /// <remarks>
+    /// The client is normally disposed by the shared <c>NacosClient</c> it belongs to; this is an
+    /// idempotent bridge so the container's own synchronous disposal does not fail.
+    /// </remarks>
+    void IDisposable.Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     /// Handles a service change pushed by the server.

@@ -4,6 +4,10 @@ using Lolitacoding.Nacos.Extensions.DependencyInjection;
 
 WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
+// Log to the console only; the sample is meant to be run interactively.
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole();
+
 string serverAddress = builder.Configuration["Nacos:ServerAddress"] ?? "http://127.0.0.1:8848";
 
 // 1. Nacos clients for programmatic config and naming access.
@@ -11,6 +15,8 @@ builder.Services.AddNacos(options =>
 {
     options.ServerAddresses = [serverAddress];
     options.Namespace = "public";
+    // Start even when Nacos is unreachable, so the sample can be run before the server is up.
+    options.Optional = true;
 });
 
 // 2. Pull application settings from Nacos, with hot reload.
