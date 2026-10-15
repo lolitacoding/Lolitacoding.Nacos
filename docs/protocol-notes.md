@@ -14,10 +14,14 @@ Nacos exposes a gRPC endpoint on the HTTP port plus a fixed offset.
 | --- | --- | --- |
 | `NacosConstants.DefaultPort` | 8848 | HTTP OpenAPI. |
 | `NacosConstants.GrpcPortOffset` | 1000 | 8848 → 9848 for gRPC. |
-| `NacosConstants.GrpcTlsPortOffset` | 1001 | TLS gRPC (not implemented in v1). |
 
 The client derives the gRPC endpoint from each entry in `ServerAddresses` by adding the offset. See
 `NacosServerAddress`.
+
+The offset applies to TLS as well: a Nacos server negotiates TLS and plaintext on the same SDK gRPC
+port (port unification), so an `https://` address dials the same `9848`, not a separate TLS port.
+The endpoint one port above the SDK gRPC port (`main + 1001`) is the cluster-to-cluster gRPC port,
+which an SDK client never dials.
 
 ## The payload envelope
 

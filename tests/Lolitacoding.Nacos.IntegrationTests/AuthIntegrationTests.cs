@@ -9,8 +9,8 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// </summary>
 /// <remarks>
 /// These tests exist because the login contract is the part of the client that cannot be trusted
-/// to unit tests alone: which endpoint answers, the exact response shape, and how a wrong password
-/// is reported are all properties of the server, not of this client.
+/// to unit tests alone: the endpoint the server answers on, the exact response shape, and how a
+/// wrong password is reported are all properties of the server, not of this client.
 /// </remarks>
 [Trait(NacosTraits.Category, NacosTraits.Integration)]
 public sealed class AuthIntegrationTests : IAsyncLifetime
@@ -20,7 +20,7 @@ public sealed class AuthIntegrationTests : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         // This class needs the real auth plugin, not the anonymous default.
-        _container = await NacosContainer.StartAsync(NacosIntegrationImages.V2Image, authEnabled: true);
+        _container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image, authEnabled: true);
     }
 
     public async ValueTask DisposeAsync() => await _container.DisposeAsync();

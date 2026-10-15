@@ -11,9 +11,9 @@ namespace Lolitacoding.Nacos.Tests.Auth;
 /// Verifies the endpoint selection and response handling of <see cref="NacosHttpLoginClient"/>.
 /// </summary>
 /// <remarks>
-/// These tests pin the exact HTTP contract: which endpoint is called first, which status codes
-/// trigger the legacy fallback, and which response shapes yield a usable token. That contract is
-/// what lets one client work against both Nacos 2.x and 3.x.
+/// These tests pin the exact HTTP contract: the v3 endpoint is the only one called, and the
+/// response shapes that yield a usable token. The client targets Nacos 3.x, so there is no legacy
+/// fallback to exercise.
 /// </remarks>
 public sealed class NacosHttpLoginClientTests
 {
@@ -31,7 +31,7 @@ public sealed class NacosHttpLoginClientTests
         response!.AccessToken.ShouldBe("token-1");
         response.TokenTtl.ShouldBe(18000);
 
-        // The v3 endpoint must be preferred; the legacy one exists only for older servers.
+        // The v3 endpoint is the only login route the client uses.
         handler.Requests.Count.ShouldBe(1);
         handler.Requests[0].AbsolutePath.ShouldBe("/nacos/v3/auth/user/login");
     }
@@ -57,39 +57,19 @@ public sealed class NacosHttpLoginClientTests
     }
 
     [Fact]
-    public async Task Login_FallsBackToTheLegacyEndpointOnNotFound()
+    public async Task Login_DoesNotFallBackToTheLegacyEndpointOnNotFound()
     {
-        // A Nacos 2.x server has no v3 login route at all and answers 404.
-        var handler = new RecordingHandler(request =>
-            IsV3(request)
-                ? new HttpResponseMessage(HttpStatusCode.NotFound)
-                : Json(HttpStatusCode.OK, V3Body("token-legacy", 18000)));
+        // A server that answers 404 for the v3 login route is not a Nacos 3.x server. The client
+        // surfaces the failure instead of silently retrying the retired v1 endpoint.
+        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.NotFound));
 
         NacosHttpLoginClient client = CreateClient(handler);
 
-        NacosLoginResponse? response = await client.LoginAsync(
-            Server, "nacos", "secret", TestContext.Current.CancellationToken);
+        await Should.ThrowAsync<NacosConnectionException>(
+            () => client.LoginAsync(Server, "nacos", "secret", TestContext.Current.CancellationToken).AsTask());
 
-        response!.AccessToken.ShouldBe("token-legacy");
-        handler.Requests.Count.ShouldBe(2);
+        handler.Requests.Count.ShouldBe(1);
         handler.Requests[0].AbsolutePath.ShouldBe("/nacos/v3/auth/user/login");
-        handler.Requests[1].AbsolutePath.ShouldBe("/nacos/v1/auth/users/login");
-    }
-
-    [Fact]
-    public async Task Login_FallsBackToTheLegacyEndpointOnNotImplemented()
-    {
-        var handler = new RecordingHandler(request =>
-            IsV3(request)
-                ? new HttpResponseMessage(HttpStatusCode.NotImplemented)
-                : Json(HttpStatusCode.OK, V3Body("token-legacy", 18000)));
-
-        NacosHttpLoginClient client = CreateClient(handler);
-
-        NacosLoginResponse? response = await client.LoginAsync(
-            Server, "nacos", "secret", TestContext.Current.CancellationToken);
-
-        response!.AccessToken.ShouldBe("token-legacy");
     }
 
     [Fact]
@@ -100,8 +80,7 @@ public sealed class NacosHttpLoginClientTests
 
         await client.LoginAsync(Server, "nacos", "secret", TestContext.Current.CancellationToken);
 
-        // A single request proves the fallback is driven by the status code, not by a token
-        // field being absent.
+        // A single request proves no fallback request is issued.
         handler.Requests.Count.ShouldBe(1);
     }
 
@@ -133,8 +112,8 @@ public sealed class NacosHttpLoginClientTests
     [Fact]
     public async Task Login_ReadsTheBearerTokenFromTheAuthorizationHeader()
     {
-        // The legacy Spring Security path behind the v1 endpoint returns the token only as a
-        // header, so the header must be honoured when the body carries no token object.
+        // Some server-side auth plugins return the token only as a response header, so the header
+        // must be honoured when the body carries no token object.
         var response = new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""{"code":200,"message":"success","data":"login ok"}"""),
@@ -218,12 +197,6 @@ public sealed class NacosHttpLoginClientTests
     {
         Content = new StringContent(body, Encoding.UTF8, "application/json"),
     };
-
-    /// <summary>Determines whether a request targets the v3 login route.</summary>
-    /// <param name="request">The outgoing request.</param>
-    /// <returns><see langword="true"/> for the v3 endpoint.</returns>
-    private static bool IsV3(HttpRequestMessage request) =>
-        request.RequestUri!.AbsolutePath.Contains("/v3/", StringComparison.Ordinal);
 
     private static NacosHttpLoginClient CreateClient(HttpMessageHandler handler) =>
         new(new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(5) });

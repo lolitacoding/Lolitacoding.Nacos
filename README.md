@@ -1,6 +1,6 @@
 # Lolitacoding.Nacos
 
-Modern **.NET 10** client SDK for [Nacos](https://nacos.io) 2.x / 3.x — configuration center
+Modern **.NET 10** client SDK for [Nacos](https://nacos.io) 3.x — configuration center
 and service registration & discovery.
 
 [![CI](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml/badge.svg)](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml)
@@ -13,8 +13,8 @@ and service registration & discovery.
   generation; every `IL2xxx`/`IL3xxx` warning is an error in this repository.
 - **First-class .NET integration.** `IConfiguration`, dependency injection, `IHostedService`,
   `IHttpClientFactory`, and hot-reload through `IOptionsMonitor<T>`.
-- **Nacos 2.x and 3.x.** The transport speaks the Nacos gRPC protocol and the HTTP OpenAPI,
-  selecting the correct API version for the server it talks to.
+- **Nacos 3.x.** The transport speaks the Nacos gRPC protocol and the v3 HTTP OpenAPI for
+  authentication. Encryption in transit is available by pointing `ServerAddresses` at `https://`.
 
 ## Project layout
 

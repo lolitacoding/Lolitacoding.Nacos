@@ -25,7 +25,7 @@ in the core library.
 Integration tests spin up real Nacos containers through Testcontainers.
 
 ```bash
-docker compose -f tests/docker-compose.yml up -d          # start Nacos 2.x and 3.x
+docker compose -f tests/docker-compose.yml up -d          # start Nacos
 dotnet test tests/Lolitacoding.Nacos.IntegrationTests -c Release
 docker compose -f tests/docker-compose.yml down
 ```

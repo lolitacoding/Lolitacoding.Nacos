@@ -122,9 +122,8 @@ Two capabilities that the older client does not offer in the same form:
 ## What is intentionally not implemented (v1)
 
 - The Nacos **admin/console API** (creating namespaces, managing users).
-- **AI / MCP registry** features.
+- **AI registry** features (MCP, Prompt, Skill, AgentSpec and Agent discovery).
 - **Address-server (endpoint) discovery.** Supply `ServerAddresses` explicitly.
 - **Aliyun MSE AccessKey/SecretKey** authentication. The auth layer leaves room for it, but only
   user name / password is supported today.
-- **TLS / mTLS.** The transport speaks plaintext gRPC.
 - Multi-targeting to `netstandard` / .NET 8 and below.

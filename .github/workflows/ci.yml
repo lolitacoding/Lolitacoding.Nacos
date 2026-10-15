@@ -70,17 +70,9 @@ jobs:
         run: dotnet publish samples/Sample.Aot/Sample.Aot.csproj -c Release -r win-x64
 
   integration:
-    name: Integration tests (Nacos ${{ matrix.nacos }})
+    name: Integration tests (Nacos 3.x)
     runs-on: ubuntu-latest
     needs: build
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - nacos: '2.5.1'
-            image: nacos/nacos-server:v2.5.1
-          - nacos: '3.0.2'
-            image: nacos/nacos-server:v3.0.2
     steps:
       - uses: actions/checkout@v4
         with:
@@ -97,16 +89,17 @@ jobs:
       - name: Build (Release)
         run: dotnet build Lolitacoding.Nacos.slnx -c Release --no-restore
 
-      - name: Start Nacos ${{ matrix.nacos }}
+      - name: Start Nacos
         run: |
           docker run -d --name nacos-it \
             -e MODE=standalone \
             -e NACOS_AUTH_ENABLE=false \
-            -p 8848:8848 -p 9848:9848 -p 9849:9849 \
-            ${{ matrix.image }}
-          # Wait for the server to answer its health endpoint.
+            -p 8848:8848 -p 9848:9848 \
+            nacos/nacos-server:v3.0.2
+          # Wait for the server to answer its readiness endpoint. Nacos 3.x exposes readiness
+          # under the v3 admin core API; the legacy v1 console health path is gone.
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8848/nacos/v1/console/health/readiness >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:8848/nacos/v3/admin/core/state/readiness >/dev/null 2>&1; then
               echo "Nacos is ready."; exit 0
             fi
             sleep 5
@@ -117,12 +110,12 @@ jobs:
 
       - name: Integration tests
         env:
-          NACOS_TEST_IMAGE: ${{ matrix.image }}
+          NACOS_TEST_IMAGE: nacos/nacos-server:v3.0.2
           NACOS_TEST_SERVER: http://127.0.0.1:8848
         run: >
           dotnet test tests/Lolitacoding.Nacos.IntegrationTests/Lolitacoding.Nacos.IntegrationTests.csproj
           -c Release --no-build
-          --logger "trx;LogFileName=integration-${{ matrix.nacos }}.trx"
+          --logger "trx;LogFileName=integration.trx"
           --results-directory ./TestResults
 
       - name: Dump container logs
@@ -133,7 +126,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: integration-test-results-${{ matrix.nacos }}
+          name: integration-test-results
           path: ./TestResults/*.trx
           if-no-files-found: ignore
 

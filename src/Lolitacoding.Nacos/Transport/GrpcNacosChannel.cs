@@ -13,7 +13,8 @@ namespace Lolitacoding.Nacos.Transport;
 /// Nacos multiplexes a unary RPC and a bidirectional stream over one HTTP/2 connection, so a
 /// single <see cref="GrpcChannel"/> is shared by both and disposed with this object. The channel
 /// is created with <c>http</c> for plaintext endpoints; TLS endpoints pass <c>https</c> through
-/// unchanged so the platform's TLS stack performs the handshake.
+/// unchanged so the platform's TLS stack performs the handshake, optionally refined by
+/// <see cref="NacosTlsOptions"/>.
 /// </remarks>
 internal sealed class GrpcNacosChannel : INacosChannel
 {
@@ -24,20 +25,32 @@ internal sealed class GrpcNacosChannel : INacosChannel
     /// </summary>
     /// <param name="address">The server endpoint whose gRPC port was already derived.</param>
     /// <param name="requestTimeout">The timeout applied to a single unary call.</param>
-    public GrpcNacosChannel(NacosServerAddress address, TimeSpan requestTimeout)
+    /// <param name="tls">
+    /// The TLS settings, or <see langword="null"/> to use the platform defaults. Only consulted
+    /// when <paramref name="address"/> uses TLS.
+    /// </param>
+    public GrpcNacosChannel(NacosServerAddress address, TimeSpan requestTimeout, NacosTlsOptions? tls = null)
     {
         ArgumentNullException.ThrowIfNull(address);
         RequestTimeout = requestTimeout;
 
-        // The gRPC port is derived by NacosServerAddress (+1000 plaintext, +1001 TLS), and the
-        // Nacos gRPC endpoint lives at the root, so no context path is appended here.
-        _channel = GrpcChannel.ForAddress(
-            address.ToGrpcAddress(),
-            new GrpcChannelOptions
-            {
-                MaxReceiveMessageSize = 10 * 1024 * 1024,
-                MaxSendMessageSize = 10 * 1024 * 1024,
-            });
+        // The gRPC port is derived by NacosServerAddress (always main + 1000, for TLS and
+        // plaintext alike), and the Nacos gRPC endpoint lives at the root, so no context path is
+        // appended here.
+        var options = new GrpcChannelOptions
+        {
+            MaxReceiveMessageSize = 10 * 1024 * 1024,
+            MaxSendMessageSize = 10 * 1024 * 1024,
+        };
+
+        // A custom handler is only needed when the caller configured TLS behaviour beyond the
+        // platform defaults; otherwise the channel's default handler handshakes correctly.
+        if (address.UseTls && NacosTlsHandler.CreateHandler(tls) is { } handler)
+        {
+            options.HttpHandler = handler;
+        }
+
+        _channel = GrpcChannel.ForAddress(address.ToGrpcAddress(), options);
     }
 
     /// <summary>Gets the timeout applied to a single unary call.</summary>
@@ -185,13 +198,20 @@ internal sealed class GrpcNacosChannel : INacosChannel
 internal sealed class GrpcNacosChannelFactory : INacosChannelFactory
 {
     private readonly TimeSpan _requestTimeout;
+    private readonly NacosTlsOptions? _tls;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="GrpcNacosChannelFactory"/> class.
     /// </summary>
     /// <param name="requestTimeout">The timeout applied to a single unary call.</param>
-    public GrpcNacosChannelFactory(TimeSpan requestTimeout) => _requestTimeout = requestTimeout;
+    /// <param name="tls">The TLS settings, or <see langword="null"/> for platform defaults.</param>
+    public GrpcNacosChannelFactory(TimeSpan requestTimeout, NacosTlsOptions? tls = null)
+    {
+        _requestTimeout = requestTimeout;
+        _tls = tls;
+    }
 
     /// <inheritdoc />
-    public INacosChannel Create(NacosServerAddress address) => new GrpcNacosChannel(address, _requestTimeout);
+    public INacosChannel Create(NacosServerAddress address) =>
+        new GrpcNacosChannel(address, _requestTimeout, _tls);
 }

@@ -2,9 +2,9 @@
 
 ## Which Nacos versions are supported?
 
-Nacos **2.x and 3.x**. The transport speaks the Nacos gRPC protocol, which is unchanged across both
-lines, and the HTTP OpenAPI for authentication. CI runs the integration suite against
-`nacos/nacos-server:v2.5.1` and `nacos/nacos-server:v3.0.2`.
+Nacos **3.x**. The transport speaks the Nacos gRPC protocol, which is unchanged across the 3.x line,
+and the v3 HTTP OpenAPI for authentication. CI runs the integration suite against
+`nacos/nacos-server:v3.0.2`.
 
 The `test` type label and the payload type names differ subtly between upstream versions and Java
 SDK releases; the details, with file references, are in
@@ -18,9 +18,9 @@ multi-targeting. If you need an older runtime, this library is not a fit.
 ## Which ports does the client use?
 
 The gRPC endpoint is the HTTP port plus **1000** (`8848` → `9848`), matching the official client.
-The TLS gRPC offset is the HTTP port plus 1001, but TLS is not implemented in v1. Make sure both
-ports are reachable from the application; a firewall that allows `8848` but not `9848` produces a
-connection failure.
+TLS does not move it: a Nacos server negotiates TLS and plaintext on that same gRPC port, so an
+`https://` address still dials `9848`. Make sure both ports are reachable from the application; a
+firewall that allows `8848` but not `9848` produces a connection failure.
 
 ## How do I authenticate?
 
@@ -39,8 +39,20 @@ Aliyun MSE `AccessKey`/`SecretKey` authentication is **not** implemented in v1.
 
 ## Is TLS supported?
 
-No. The transport uses plaintext gRPC. Run Nacos on a trusted network, or terminate TLS in front of
-it, until a later release adds native support.
+Yes. Put `https://` in `ServerAddresses` to enable it; the client negotiates TLS on both the HTTP and
+gRPC endpoints. `NacosTlsOptions` (on `NacosOptions.Tls`) then controls how the handshake is
+performed:
+
+- `AllowUntrustedCertificate` accepts any server certificate — for development servers with
+  self-signed certificates only.
+- `ServerCertificateAuthority` / `ServerCertificateAuthorityFile` trust a private certificate
+  authority.
+- `ClientCertificate` / `ClientCertificateFile` plus `ClientCertificateKey` /
+  `ClientCertificateKeyFile` present a client certificate for mutual TLS.
+- `EnabledSslProtocols` and `CipherSuites` pin the accepted protocol versions and cipher suites.
+
+The default validates the server certificate against the operating system trust store, which is the
+correct choice for production.
 
 ## Why does the application fail to start when Nacos is down?
 

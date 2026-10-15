@@ -107,9 +107,10 @@ internal sealed class NacosServerAddress
 
         var httpBase = new UriBuilder(uri.Scheme, host, port, contextPath).Uri;
 
-        // The gRPC endpoint is always the main port plus the fixed offset; TLS uses the
-        // scheme's matching gRPC port pair (1000 for plaintext, 1001 for TLS).
-        int grpcPort = port + (useTls ? NacosConstants.GrpcTlsPortOffset : NacosConstants.GrpcPortOffset);
+        // The SDK gRPC endpoint is always the main port plus the fixed offset, for plaintext and
+        // TLS alike: Nacos negotiates the two protocols on the same SDK gRPC port, so HTTPS does
+        // not move the endpoint to a different port.
+        int grpcPort = port + NacosConstants.GrpcPortOffset;
         string grpcScheme = useTls ? Uri.UriSchemeHttps : Uri.UriSchemeHttp;
         var grpcBase = new UriBuilder(grpcScheme, host, grpcPort).Uri;
 

@@ -20,16 +20,13 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// and every test would fail for a reason unrelated to what it checks.
 /// </para>
 /// <para>
-/// All three published ports matter: the main HTTP API, the gRPC transport, and the gRPC TLS
-/// port. Subscribing to configuration or service changes happens over gRPC, so a container that
-/// published only the HTTP port could not run the change-notification tests at all.
+/// All published ports matter: the main HTTP API and the gRPC transport. Subscribing to
+/// configuration or service changes happens over gRPC, so a container that published only the
+/// HTTP port could not run the change-notification tests at all.
 /// </para>
 /// </remarks>
 internal sealed class NacosContainer : IAsyncDisposable
 {
-    /// <summary>The gRPC TLS port inside the container.</summary>
-    private const int GrpcTlsPort = 9849;
-
     private readonly IContainer _container;
 
     private NacosContainer(IContainer container, ushort httpPort)
@@ -69,15 +66,13 @@ internal sealed class NacosContainer : IAsyncDisposable
             .WithPortBinding(
                 httpPort + NacosIntegrationImages.GrpcPortOffset,
                 NacosIntegrationImages.GrpcPort)
-            .WithPortBinding(
-                httpPort + NacosIntegrationImages.GrpcTlsPortOffset,
-                GrpcTlsPort)
             .WithWaitStrategy(Wait.ForUnixContainer()
                 .UntilHttpRequestIsSucceeded(request => request
                     .ForPort(NacosIntegrationImages.HttpPort)
                     // Readiness is the only endpoint that reports "the server can serve traffic";
-                    // the liveness probe returns 200 while the server is still loading data.
-                    .ForPath("/nacos/v1/console/health/readiness"),
+                    // the liveness probe returns 200 while the server is still loading data. Nacos 3.x
+                    // exposes it under the v3 admin core API on the main server port.
+                    .ForPath("/nacos/v3/admin/core/state/readiness"),
                     wait => wait.WithTimeout(TimeSpan.FromMinutes(3))));
 
         if (authEnabled)

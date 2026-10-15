@@ -104,7 +104,7 @@ The image defaults to `docker.io/nacos/nacos-server:latest`. Pin a version with 
 methods:
 
 ```csharp
-builder.AddNacos("nacos").WithImageTag("v2.5.1");
+builder.AddNacos("nacos").WithImageTag("v3.0.2");
 ```
 
 ## 4. Ports
@@ -130,8 +130,13 @@ builder.AddNacos("nacos", httpPort: 18848);
 Override `grpcPort` and `grpcServerPort` independently only if something else manages the client's
 port derivation.
 
-The Nacos console is served by the HTTP endpoint under `/nacos`, so it is available at
-`http://localhost:8848/nacos` with the defaults.
+In Nacos 3.x the web console runs on its own port (`nacos.console.port`, default `8080`) inside the
+container. `AddNacos` publishes only the server endpoints, so expose the console explicitly if you
+need it:
+
+```csharp
+builder.AddNacos("nacos").WithHttpEndpoint(port: 8080, targetPort: 8080, name: "console");
+```
 
 ## 5. Run the sample
 

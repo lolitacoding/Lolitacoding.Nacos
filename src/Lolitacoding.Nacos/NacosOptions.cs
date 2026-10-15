@@ -128,6 +128,15 @@ public sealed class NacosOptions
     public NacosNamingOptions Naming { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets the TLS settings applied to servers configured with the <c>https</c> scheme.
+    /// </summary>
+    /// <remarks>
+    /// TLS is enabled by using <c>https://</c> in <see cref="ServerAddresses"/>; the settings here
+    /// refine how the handshake is performed. See <see cref="NacosTlsOptions"/>.
+    /// </remarks>
+    public NacosTlsOptions Tls { get; set; } = new();
+
+    /// <summary>
     /// Gets a value indicating whether credentials were supplied.
     /// </summary>
     internal bool HasCredentials =>
@@ -193,6 +202,7 @@ public sealed class NacosOptions
         ValidateNamespace();
         Config.Validate();
         Naming.Validate();
+        Tls.Validate();
         Reconnect.Validate();
     }
 

@@ -9,11 +9,10 @@ namespace Lolitacoding.Nacos.Auth;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The endpoint choice follows the official client exactly: the current
-/// <c>/v3/auth/user/login</c> endpoint is tried first, and only when the server answers
-/// <c>404 Not Found</c> or <c>501 Not Implemented</c> does the client fall back to the legacy
-/// <c>/v1/auth/users/login</c>. Those two status codes are the contract: a Nacos 2.x server does
-/// not expose the v3 endpoint at all, while a 3.x server exposes both.
+/// The client targets Nacos 3.x and logs in against its <c>/v3/auth/user/login</c> endpoint. The
+/// legacy <c>/v1/auth/users/login</c> endpoint exposed by Nacos 2.x is deliberately not used: a
+/// 2.x server is out of support, and the fallback previously masked that by silently switching
+/// endpoints.
 /// </para>
 /// <para>
 /// Credentials are sent in the request body rather than the query string. The official client
@@ -25,11 +24,8 @@ namespace Lolitacoding.Nacos.Auth;
 /// </remarks>
 internal sealed class NacosHttpLoginClient : INacosLoginClient
 {
-    /// <summary>The current login endpoint.</summary>
+    /// <summary>The login endpoint exposed by Nacos 3.x.</summary>
     private const string LoginV3Path = "/v3/auth/user/login";
-
-    /// <summary>The login endpoint exposed by Nacos 2.x.</summary>
-    private const string LoginV1Path = "/v1/auth/users/login";
 
     /// <summary>The prefix the server applies to the token in the <c>Authorization</c> header.</summary>
     private const string BearerPrefix = "Bearer ";
@@ -68,15 +64,6 @@ internal sealed class NacosHttpLoginClient : INacosLoginClient
 
         using HttpResponseMessage response = await PostLoginAsync(
             server.BuildHttpUri(LoginV3Path), userName, password, ct).ConfigureAwait(false);
-
-        if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.NotImplemented)
-        {
-            // The server predates the v3 API, so retry against the legacy endpoint.
-            using HttpResponseMessage legacy = await PostLoginAsync(
-                server.BuildHttpUri(LoginV1Path), userName, password, ct).ConfigureAwait(false);
-
-            return await ReadLoginResponseAsync(server, legacy, ct).ConfigureAwait(false);
-        }
 
         return await ReadLoginResponseAsync(server, response, ct).ConfigureAwait(false);
     }

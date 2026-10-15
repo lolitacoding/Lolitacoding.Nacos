@@ -112,9 +112,32 @@ Lolitacoding.Nacos.NacosOptions.ServerAddresses.get -> System.Collections.Generi
 Lolitacoding.Nacos.NacosOptions.ServerAddresses.set -> void
 Lolitacoding.Nacos.NacosOptions.UserName.get -> string?
 Lolitacoding.Nacos.NacosOptions.UserName.set -> void
+Lolitacoding.Nacos.NacosOptions.Tls.get -> Lolitacoding.Nacos.NacosTlsOptions!
+Lolitacoding.Nacos.NacosOptions.Tls.set -> void
 Lolitacoding.Nacos.NacosOptionsValidator
 Lolitacoding.Nacos.NacosOptionsValidator.NacosOptionsValidator() -> void
 Lolitacoding.Nacos.NacosOptionsValidator.Validate(string? name, Lolitacoding.Nacos.NacosOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+Lolitacoding.Nacos.NacosTlsOptions
+Lolitacoding.Nacos.NacosTlsOptions.NacosTlsOptions() -> void
+Lolitacoding.Nacos.NacosTlsOptions.AllowUntrustedCertificate.get -> bool
+Lolitacoding.Nacos.NacosTlsOptions.AllowUntrustedCertificate.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.CipherSuites.get -> System.Collections.Generic.IList<System.Net.Security.TlsCipherSuite>!
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificate.get -> string?
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificate.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateFile.get -> string?
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateFile.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateKey.get -> string?
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateKey.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateKeyFile.get -> string?
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateKeyFile.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateKeyPassword.get -> string?
+Lolitacoding.Nacos.NacosTlsOptions.ClientCertificateKeyPassword.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.EnabledSslProtocols.get -> System.Security.Authentication.SslProtocols
+Lolitacoding.Nacos.NacosTlsOptions.EnabledSslProtocols.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.ServerCertificateAuthority.get -> string?
+Lolitacoding.Nacos.NacosTlsOptions.ServerCertificateAuthority.set -> void
+Lolitacoding.Nacos.NacosTlsOptions.ServerCertificateAuthorityFile.get -> string?
+Lolitacoding.Nacos.NacosTlsOptions.ServerCertificateAuthorityFile.set -> void
 Lolitacoding.Nacos.NacosReconnectOptions
 Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.set -> void
@@ -211,9 +234,7 @@ const Lolitacoding.Nacos.NacosConstants.DefaultContextPath = "/nacos" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultGroup = "DEFAULT_GROUP" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultNamespace = "public" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultPort = 8848 -> int
-const Lolitacoding.Nacos.NacosConstants.DefaultTlsPort = 9848 -> int
 const Lolitacoding.Nacos.NacosConstants.GrpcPortOffset = 1000 -> int
-const Lolitacoding.Nacos.NacosConstants.GrpcTlsPortOffset = 1001 -> int
 override Lolitacoding.Nacos.Config.NacosConfigChange.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Config.NacosConfigChange.GetHashCode() -> int
 override Lolitacoding.Nacos.Config.NacosConfigChange.ToString() -> string!

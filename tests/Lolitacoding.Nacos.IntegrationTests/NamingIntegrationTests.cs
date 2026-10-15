@@ -15,18 +15,10 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 [Trait(NacosTraits.Category, NacosTraits.Integration)]
 public sealed class NamingIntegrationTests
 {
-    /// <summary>Each server generation the client claims to support.</summary>
-    public static TheoryData<string> Images => new()
+    [Fact]
+    public async Task RegisterReadDeregister_RoundTripsThroughARealServer()
     {
-        NacosIntegrationImages.V2Image,
-        NacosIntegrationImages.V3Image,
-    };
-
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task RegisterReadDeregister_RoundTripsThroughARealServer(string image)
-    {
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
 
         var service = new NacosServiceKey(NacosHttp.UniqueId("naming-it"), "DEFAULT_GROUP");
@@ -47,11 +39,10 @@ public sealed class NamingIntegrationTests
         after.Instances.ShouldNotContain(i => i.Port == 8080);
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task Subscribe_ReceivesInstancesComingOnlineAndGoingOffline(string image)
+    [Fact]
+    public async Task Subscribe_ReceivesInstancesComingOnlineAndGoingOffline()
     {
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
 
         var service = new NacosServiceKey(NacosHttp.UniqueId("naming-subscribe-it"), "DEFAULT_GROUP");
@@ -93,13 +84,12 @@ public sealed class NamingIntegrationTests
         enumerator.Current.Instances.ShouldNotContain(i => i.Port == 8081);
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task Dispose_RemovesTheEphemeralInstanceFromTheServer(string image)
+    [Fact]
+    public async Task Dispose_RemovesTheEphemeralInstanceFromTheServer()
     {
         // The server removes an ephemeral instance when the connection that owns it closes, which
         // is what makes "the process exited" equivalent to "the instance is gone".
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
 
         var service = new NacosServiceKey(NacosHttp.UniqueId("naming-dispose-it"), "DEFAULT_GROUP");
         var instance = new NacosInstance("10.20.30.42", 8082);

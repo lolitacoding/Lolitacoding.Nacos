@@ -1,4 +1,5 @@
 using Lolitacoding.Nacos.Client;
+using Lolitacoding.Nacos.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -102,8 +103,16 @@ public static class NacosServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
 
         // Authentication uses an IHttpClientFactory-managed client, which gives the application a
-        // single place to attach resilience or telemetry handlers.
-        services.AddHttpClient(HttpClientName);
+        // single place to attach resilience or telemetry handlers. The primary handler applies the
+        // configured TLS behaviour so login over HTTPS honours custom certificate authorities and
+        // mutual TLS exactly like the gRPC channel does.
+        services
+            .AddHttpClient(HttpClientName)
+            .ConfigurePrimaryHttpMessageHandler(sp =>
+            {
+                NacosTlsOptions tls = sp.GetRequiredService<IOptions<NacosOptions>>().Value.Tls;
+                return NacosTlsHandler.CreateHandler(tls) ?? new SocketsHttpHandler();
+            });
 
         services.TryAddSingleton(sp => NacosClient.Create(
             sp.GetRequiredService<IOptions<NacosOptions>>().Value,

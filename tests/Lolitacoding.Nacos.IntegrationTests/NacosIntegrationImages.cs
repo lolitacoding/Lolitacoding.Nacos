@@ -4,15 +4,11 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// Shared constants describing the Nacos containers the integration tests run against.
 /// </summary>
 /// <remarks>
-/// Two server generations are covered because the client claims support for both, and the
-/// protocol differences between them — the login endpoint, and which OpenAPI paths exist — are
-/// exactly the parts most likely to regress.
+/// The client targets Nacos 3.x only, so a single image is exercised. The v3 login endpoint and
+/// the v3 OpenAPI paths it exposes are exactly the parts most likely to regress.
 /// </remarks>
 internal static class NacosIntegrationImages
 {
-    /// <summary>The Nacos 2.x image, which predates the v3 OpenAPI and the v3 login endpoint.</summary>
-    public const string V2Image = "nacos/nacos-server:v2.5.1";
-
     /// <summary>The Nacos 3.x image, which exposes the v3 OpenAPI and the v3 login endpoint.</summary>
     public const string V3Image = "nacos/nacos-server:v3.0.2";
 
@@ -24,9 +20,6 @@ internal static class NacosIntegrationImages
 
     /// <summary>The gRPC port offset from the main HTTP port.</summary>
     public const int GrpcPortOffset = 1000;
-
-    /// <summary>The gRPC TLS port offset from the main HTTP port.</summary>
-    public const int GrpcTlsPortOffset = 1001;
 
     /// <summary>The default user name of an auth-enabled Nacos server.</summary>
     public const string DefaultUserName = "nacos";

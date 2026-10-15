@@ -8,28 +8,20 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Lolitacoding.Nacos.IntegrationTests;
 
 /// <summary>
-/// Verifies the gRPC transport against real Nacos 2.x and 3.x servers.
+/// Verifies the gRPC transport against a real Nacos 3.x server.
 /// </summary>
 /// <remarks>
 /// The protocol implementation is only as good as its agreement with a real server, so these
 /// tests exercise the handshake, a request/response round trip and reconnection after the server
-/// is restarted. Both server generations are covered because the client claims support for both.
+/// is restarted.
 /// </remarks>
 [Trait(NacosTraits.Category, NacosTraits.Integration)]
 public sealed class TransportIntegrationTests
 {
-    /// <summary>Each server generation the client claims to support.</summary>
-    public static TheoryData<string> Images => new()
+    [Fact]
+    public async Task Connect_CompletesTheHandshakeAgainstARealServer()
     {
-        NacosIntegrationImages.V2Image,
-        NacosIntegrationImages.V3Image,
-    };
-
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task Connect_CompletesTheHandshakeAgainstARealServer(string image)
-    {
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
 
         await using NacosGrpcConnection connection = CreateConnection(container);
 
@@ -39,14 +31,13 @@ public sealed class TransportIntegrationTests
         connection.ConnectionId.ShouldNotBeNullOrEmpty();
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task Connect_ReceivesServerAbilities(string image)
+    [Fact]
+    public async Task Connect_ReceivesServerAbilities()
     {
         // Both 2.x and 3.x support ability negotiation, so the acknowledgement must arrive and
         // carry the server's capability table. An empty table here would mean the client failed
         // to advertise its own abilities and the server stayed silent.
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
 
         await using NacosGrpcConnection connection = CreateConnection(container);
         await connection.ConnectAsync(TestContext.Current.CancellationToken);
@@ -54,11 +45,10 @@ public sealed class TransportIntegrationTests
         connection.ServerAbilities.ShouldNotBeEmpty();
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task RequestAsync_RoundTripsAConfigQuery(string image)
+    [Fact]
+    public async Task RequestAsync_RoundTripsAConfigQuery()
     {
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
 
         string dataId = NacosHttp.UniqueId("transport-it");
         string content = NacosHttp.ConfigContent("round-trip");
@@ -87,13 +77,12 @@ public sealed class TransportIntegrationTests
         response.Success.ShouldBeTrue();
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task ServerRestart_IsRecoveredAutomatically(string image)
+    [Fact]
+    public async Task ServerRestart_IsRecoveredAutomatically()
     {
         // PLAN.md's acceptance criterion for T1.3 is that killing and restarting the container
         // restores the connection without any action from the caller.
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
 
         await using NacosGrpcConnection connection = CreateConnection(container);
 
@@ -123,11 +112,10 @@ public sealed class TransportIntegrationTests
         connection.ConnectionId.ShouldNotBeNullOrEmpty();
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task DisposeAsync_ShutsDownCleanly(string image)
+    [Fact]
+    public async Task DisposeAsync_ShutsDownCleanly()
     {
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
 
         NacosGrpcConnection connection = CreateConnection(container);
         await connection.ConnectAsync(TestContext.Current.CancellationToken);

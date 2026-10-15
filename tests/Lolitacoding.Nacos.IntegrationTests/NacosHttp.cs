@@ -97,7 +97,7 @@ internal static class NacosHttp
         ]);
 
         var response = await http.PostAsync(
-            string.Concat(baseAddress, "/nacos/v1/auth/users/login"), form, ct);
+            string.Concat(baseAddress, "/nacos/v3/auth/user/login"), form, ct);
 
         using (response)
         {

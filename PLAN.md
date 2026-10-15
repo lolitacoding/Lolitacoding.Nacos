@@ -7,12 +7,13 @@
 为 Nacos 提供现代化的 .NET 客户端 SDK：
 
 - 仅面向 **.NET 10**（`net10.0`），充分使用新语言特性（C# 14、`System.Text.Json` 源生成、`Span`、`Channel<T>`、`TimeProvider`、`IAsyncEnumerable` 等）。
-- 同时支持 **Nacos 2.x 与 3.x** 服务端（见第 6 节"待核对事项"）。
-- 覆盖两大核心能力：**配置中心（Config）** 与 **服务注册发现（Naming）**。
+- 仅支持 **Nacos 3.x** 服务端（不再支持 2.x；见第 6 节"待核对事项"）。
+- 覆盖核心能力：**配置中心（Config）**、**服务注册发现（Naming）**、**分布式锁（Lock）** 与 **AI 注册中心（MCP / Prompt / Skill / AgentSpec / Agent）**。
 - 提供与 .NET 生态的一等集成：`IConfiguration`、`Microsoft.Extensions.DependencyInjection`、`IHostedService`、`HttpClientFactory`、`Microsoft.Extensions.ServiceDiscovery`（可选依赖）。
+- 支持 **TLS / mTLS**：以 `https://` 地址启用，可配置私有 CA、跳过校验（仅开发）、客户端证书与协议/密码套件。
 - 对 **Native AOT / 裁剪友好**：不使用反射式 JSON 序列化，不使用运行时代码生成。
 
-非目标（v1 不做）：Nacos 服务端管理 API、AI/MCP 注册中心相关功能、.NET 8 及以下的多目标。
+非目标：Nacos 服务端管理（admin/console）API、.NET 8 及以下的多目标。
 
 ## 2. 命名与仓库结构
 
@@ -65,7 +66,7 @@ Lolitacoding.Nacos/
 
 **测试**
 - 单元测试：xUnit + 断言库（任选其一并全仓统一）；网络层通过接口抽象替身，不得真实联网。
-- 集成测试：Testcontainers 启动 `nacos/nacos-server` 镜像（2.x 与 3.x 各一套，通过测试矩阵参数化），标记 `[Trait("Category","Integration")]`。
+- 集成测试：Testcontainers 启动 `nacos/nacos-server` 3.x 镜像，标记 `[Trait("Category","Integration")]`。
 - 每个任务的新增代码行为覆盖率目标 ≥ 80%。
 
 **提交规范**
@@ -144,13 +145,13 @@ INacosClientFactory / NacosClient
 - [ ] **T5.4** 发布 `0.1.0-preview` 到 NuGet，申请保留前缀 `Lolitacoding.*`。
 
 ### 后续（v1 之后）
-- 阿里云 MSE AccessKey 认证；地址服务器发现；TLS / mTLS。
+- 阿里云 MSE AccessKey 认证；地址服务器发现。
 - 以同样的结构扩展其他国内生态组件（独立仓库）。
 
 ## 6. 待核对事项（AI 开始 M1 前必须先确认，不得凭记忆编写）
 
 1. **协议定义**：从官方 `alibaba/nacos` 仓库对应版本的 `api` 模块（`nacos_grpc_service.proto`）与 Java 客户端实现（`nacos-client`）核对 Payload/Metadata 结构、请求类型名称、握手流程、端口偏移（gRPC 通常为主端口 +1000）。
-2. **2.x 与 3.x 差异**：核对 3.x 对 HTTP OpenAPI（v1/v2/v3）的变更、登录接口路径、默认鉴权行为，以及客户端 gRPC 协议是否有不兼容改动。以官方文档与源码为准，如与本文档冲突，以官方为准并更新本文档。
+2. **Nacos 3.x 契约**：以 3.x（`nacos-develop`）为准核对 HTTP OpenAPI v3、登录接口（`/v3/auth/user/login`）、连接 `module` 标签、能力协商，以及 AI/Lock 的 gRPC 与 HTTP 契约。以官方源码与 `specs/` 为准，如与本文档冲突，以官方为准并更新本文档。
 3. **许可证**：参考官方 Java SDK 行为时，只实现协议兼容，不拷贝其源码；protobuf 定义的使用需遵守其 Apache-2.0 许可并保留声明。
 4. **已有社区实现**：参考 `nacos-sdk-csharp` 的 API 习惯以降低迁移成本，但不复制代码。
 
@@ -191,3 +192,36 @@ public sealed class NacosOptions
 3. 遇到第 6 节的未确认事项，先查官方资料并在 PR 中附上依据，不要猜测协议细节。
 4. 完成后运行：`dotnet build -c Release`、`dotnet test`（单元）、必要时集成测试，并在 PR 描述中粘贴结果。
 5. 发现本计划与实际不符时，提出修改建议并更新本文档，而不是静默偏离。
+
+## 9. v0.2 新增范围与执行阶段
+
+v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire。v0.2 在此基础上扩展，按下列阶段推进，每个阶段独立提交并满足"验收标准"后再进入下一个。
+
+### 阶段 1 · Nacos 3.x only + TLS + gRPC 端口修正
+
+- 移除对 2.x 的登录回退（`/v1/auth/users/login`），只使用 `/v3/auth/user/login`。
+- 修正 gRPC 端口推导：SDK gRPC 端口恒为 `main + 1000`；TLS 与明文在同一端口协商，`main + 1001` 是集群端口而非 TLS 端口。
+- 新增 `NacosTlsOptions`（挂在 `NacosOptions.Tls`）：`AllowUntrustedCertificate`、私有 CA（内联/文件）、mTLS 客户端证书（内联/文件 + 口令）、`EnabledSslProtocols`、`CipherSuites`；同时作用于 gRPC 通道与 HTTP 登录客户端。
+- 集成测试、CI、文档与包描述全部收敛到 3.x。
+- 验收：Release 构建零警告零错误；单元测试全绿；`https://` 地址推导出的 gRPC 端口为 `main + 1000`。
+
+### 阶段 2 · 传输基础：按模块独立连接与 `module` 标签
+
+- Nacos 服务端按连接的 `module` 标签工作（`config` / `naming` / `lock` / `ai`）。当前实现未发送该标签，导致临时实例注册与清理、锁清理、AI 端点注册都无法正确工作。
+- 改为每个模块一条 gRPC 连接（各自携带 `module` 标签、能力表与重连生命周期），由 `NacosClient` 汇总对外暴露。
+- 验收：命名临时实例注册/注销端到端通过；各连接的 `module` 标签与能力表正确。
+
+### 阶段 3 · 分布式锁（对齐 3.3 语义）
+
+- 新增 `INacosLockClient`：`Acquire` / `Release` / `Renew`，支持 owner 归属、可重入计数、等待队列、服务端 `LockNotification` 推送与 watchdog 续租。
+- gRPC 请求/响应：`LockOperationRequest` / `LockOperationResponse`、`LockNotificationRequest` / `LockNotificationResponse`；能力位 `lock = true`；连接 `module=lock`。
+- 验收：单元测试覆盖获取/释放/续租/超时/重入/等待通知；与真实服务器集成通过。
+
+### 阶段 4 · AI 注册中心（完整对齐 3.x）
+
+- 资源族：MCP Server、Prompt、Skill、AgentSpec、Agent（含 A2A 与 Agent watch / RAD 推送）。
+- 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
+- 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
+- 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用。
+
+> 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

@@ -85,7 +85,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         TimeProvider clock = timeProvider ?? TimeProvider.System;
 
-        HttpClient client = httpClient ?? new HttpClient();
+        HttpClient client = httpClient ?? CreateHttpClient(options.Tls);
 
         INacosAuthProvider authProvider = NacosAuthProviderFactory.Create(
             options, servers, client, clock, loggerFactory.CreateLogger("Lolitacoding.Nacos.Auth"), random);
@@ -93,7 +93,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         var connection = new NacosGrpcConnection(
             options,
             servers,
-            channelFactory ?? new GrpcNacosChannelFactory(options.RequestTimeout),
+            channelFactory ?? new GrpcNacosChannelFactory(options.RequestTimeout, options.Tls),
             clock,
             loggerFactory.CreateLogger<NacosGrpcConnection>(),
             random,
@@ -205,6 +205,17 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             NacosConfigLog.ListenerFailed(
                 _logger, notification.DataId ?? "<unknown>", ex.Message);
         }
+    }
+
+    /// <summary>
+    /// Creates the HTTP client used for authentication.
+    /// </summary>
+    /// <param name="tls">The TLS settings.</param>
+    /// <returns>A client with the configured TLS behaviour, or a default client.</returns>
+    private static HttpClient CreateHttpClient(NacosTlsOptions tls)
+    {
+        SocketsHttpHandler? handler = NacosTlsHandler.CreateHandler(tls);
+        return handler is null ? new HttpClient() : new HttpClient(handler);
     }
 
     /// <summary>

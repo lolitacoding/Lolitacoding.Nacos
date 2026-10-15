@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Lolitacoding.Nacos.IntegrationTests;
 
 /// <summary>
-/// Verifies the configuration client end to end against real Nacos 2.x and 3.x servers.
+/// Verifies the configuration client end to end against a real Nacos 3.x server.
 /// </summary>
 /// <remarks>
 /// PLAN.md's acceptance criterion for M2 is a full publish → read → change-push → remove cycle,
@@ -16,18 +16,10 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 [Trait(NacosTraits.Category, NacosTraits.Integration)]
 public sealed class ConfigIntegrationTests
 {
-    /// <summary>Each server generation the client claims to support.</summary>
-    public static TheoryData<string> Images => new()
+    [Fact]
+    public async Task PublishReadRemove_RoundTripsThroughARealServer()
     {
-        NacosIntegrationImages.V2Image,
-        NacosIntegrationImages.V3Image,
-    };
-
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task PublishReadRemove_RoundTripsThroughARealServer(string image)
-    {
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
 
         string dataId = NacosHttp.UniqueId("config-it");
@@ -47,11 +39,10 @@ public sealed class ConfigIntegrationTests
         removed.Exists.ShouldBeFalse();
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task Listen_ReceivesAChangePushedByTheServer(string image)
+    [Fact]
+    public async Task Listen_ReceivesAChangePushedByTheServer()
     {
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
 
         string dataId = NacosHttp.UniqueId("config-listen-it");
@@ -85,13 +76,12 @@ public sealed class ConfigIntegrationTests
         enumerator.Current.Content.ShouldBe(updated);
     }
 
-    [Theory]
-    [MemberData(nameof(Images))]
-    public async Task Listen_SurvivesAServerRestart(string image)
+    [Fact]
+    public async Task Listen_SurvivesAServerRestart()
     {
         // The acceptance criterion for M2: after a reconnect the listener is still effective. The
         // server discards the registration with the connection, so this proves it was replayed.
-        await using NacosContainer container = await NacosContainer.StartAsync(image);
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
 
         string dataId = NacosHttp.UniqueId("config-reconnect-it");

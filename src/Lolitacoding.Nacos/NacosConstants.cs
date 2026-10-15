@@ -12,19 +12,18 @@ public static class NacosConstants
     /// <summary>The default Nacos server main (HTTP / gRPC entry) port.</summary>
     public const int DefaultPort = 8848;
 
-    /// <summary>The default TLS port used by Nacos 3.x.</summary>
-    public const int DefaultTlsPort = 9848;
-
     /// <summary>
-    /// The offset added to the main port to obtain the gRPC port. Nacos reserves
+    /// The offset added to the main port to obtain the SDK gRPC port. Nacos reserves
     /// <c>main + 1000</c> for the client gRPC endpoint.
     /// </summary>
+    /// <remarks>
+    /// The same port carries both plaintext and TLS. A Nacos server negotiates TLS and plaintext
+    /// on one SDK gRPC port (port unification) instead of reserving a second one, so an
+    /// <c>https://</c> server address still dials <c>main + 1000</c>. The endpoint one port above
+    /// this (<c>main + 1001</c>) is the cluster-to-cluster gRPC port, which an SDK client never
+    /// dials.
+    /// </remarks>
     public const int GrpcPortOffset = 1000;
-
-    /// <summary>
-    /// The offset added to the main port to obtain the gRPC TLS port (<c>main + 1001</c>).
-    /// </summary>
-    public const int GrpcTlsPortOffset = 1001;
 
     /// <summary>The default HTTP context path of a Nacos server.</summary>
     public const string DefaultContextPath = "/nacos";
