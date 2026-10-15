@@ -1,0 +1,14 @@
+Lolitacoding.Nacos
+Copyright 2024 Lolitacoding
+
+This product includes software developed as part of the Nacos project
+(https://github.com/alibaba/nacos), licensed under the Apache License, Version 2.0.
+
+  src/Lolitacoding.Nacos/Protocol/Proto/nacos_grpc_service.proto
+      Verbatim copy of api/src/main/proto/nacos_grpc_service.proto
+      Copyright 1999-2020 Alibaba Group Holding Ltd.
+      Licensed under the Apache License, Version 2.0.
+
+The gRPC message types compiled into this assembly are generated from that file.
+No Nacos Java client source code has been copied; only the wire protocol is
+re-implemented for interoperability.

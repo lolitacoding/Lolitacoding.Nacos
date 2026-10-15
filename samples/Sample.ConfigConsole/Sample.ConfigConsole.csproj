@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Sample.ConfigConsole</RootNamespace>
+    <AssemblyName>Sample.ConfigConsole</AssemblyName>
+    <IsPackable>false</IsPackable>
+    <IsAotCompatible>false</IsAotCompatible>
+    <EnableTrimAnalyzer>false</EnableTrimAnalyzer>
+    <EnableAotAnalyzer>false</EnableAotAnalyzer>
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Lolitacoding.Nacos\Lolitacoding.Nacos.csproj" />
+    <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.DependencyInjection\Lolitacoding.Nacos.Extensions.DependencyInjection.csproj" />
+    <ProjectReference Include="..\..\src\Lolitacoding.Nacos.Extensions.Configuration\Lolitacoding.Nacos.Extensions.Configuration.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" />
+  </ItemGroup>
+
+</Project>

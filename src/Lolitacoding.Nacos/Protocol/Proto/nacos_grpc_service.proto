@@ -20,11 +20,16 @@
 //
 // The protobuf envelope carries JSON-encoded message bodies inside google.protobuf.Any,
 // so the two services below are the *only* protobuf definitions a client requires.
+//
+// SINGLE DOCUMENTED DEVIATION FROM UPSTREAM: the upstream file also imports
+// "google/protobuf/timestamp.proto", but no message in this file references it, and protoc
+// emits an "Import ... is unused" warning that this repository treats as an error. The
+// import is therefore omitted here. It has no effect on the wire format: no field, message
+// or service in this contract uses google.protobuf.Timestamp.
 
 syntax = "proto3";
 
 import "google/protobuf/any.proto";
-import "google/protobuf/timestamp.proto";
 
 option java_multiple_files = true;
 option java_package = "com.alibaba.nacos.api.grpc.auto";

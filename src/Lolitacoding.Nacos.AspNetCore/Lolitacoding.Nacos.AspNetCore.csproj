@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Lolitacoding.Nacos.AspNetCore</RootNamespace>
+    <AssemblyName>Lolitacoding.Nacos.AspNetCore</AssemblyName>
+    <PackageId>Lolitacoding.Nacos.AspNetCore</PackageId>
+    <Description>Automatic Nacos service registration and deregistration for ASP.NET Core applications.</Description>
+    <!-- References framework ASP.NET Core types; the framework supplies them at run time. -->
+    <IsAotCompatible>false</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lolitacoding.Nacos\Lolitacoding.Nacos.csproj" />
+    <ProjectReference Include="..\Lolitacoding.Nacos.Extensions.DependencyInjection\Lolitacoding.Nacos.Extensions.DependencyInjection.csproj" />
+  </ItemGroup>
+
+  <!-- Microsoft.Extensions.* and ASP.NET Core abstractions come from the shared framework. -->
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lolitacoding.Nacos.Tests" />
+    <InternalsVisibleTo Include="Lolitacoding.Nacos.IntegrationTests" />
+  </ItemGroup>
+
+</Project>

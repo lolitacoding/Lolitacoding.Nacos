@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Lolitacoding.Nacos.Extensions.Configuration</RootNamespace>
+    <AssemblyName>Lolitacoding.Nacos.Extensions.Configuration</AssemblyName>
+    <PackageId>Lolitacoding.Nacos.Extensions.Configuration</PackageId>
+    <Description>IConfiguration provider for Lolitacoding.Nacos with hot reload through IChangeToken.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lolitacoding.Nacos\Lolitacoding.Nacos.csproj" />
+    <ProjectReference Include="..\Lolitacoding.Nacos.Extensions.DependencyInjection\Lolitacoding.Nacos.Extensions.DependencyInjection.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.Extensions.Primitives" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lolitacoding.Nacos.Tests" />
+    <InternalsVisibleTo Include="Lolitacoding.Nacos.IntegrationTests" />
+  </ItemGroup>
+
+</Project>
