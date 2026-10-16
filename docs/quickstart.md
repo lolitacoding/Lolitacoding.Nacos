@@ -296,6 +296,47 @@ Spans: `Nacos.Client.Connect`, `Nacos.Client.Request`. Metrics:
 `nacos.client.requests`, `nacos.client.request.duration`, `nacos.client.reconnects`,
 `nacos.client.pushes`, `nacos.client.connection.state.changes`.
 
+## 10. Take a distributed lock
+
+`client.Lock` talks to the Nacos lock service. The lock is a lease the server grants to an owner, so
+it has to be renewed for work that outlives it and released when the work is done:
+
+```csharp
+using Lolitacoding.Nacos.Locking;
+
+var key = new NacosLockKey("nightly-reindex");
+
+NacosLockResult acquired = await client.Lock.AcquireAsync(key, new NacosLockAcquireOptions
+{
+    // Wait in the server's first-in-first-out queue instead of failing immediately.
+    WaitTime = TimeSpan.FromSeconds(30),
+
+    // The server releases the lock on its own if this client dies.
+    LeaseDuration = TimeSpan.FromSeconds(15),
+});
+
+if (!acquired.Success)
+{
+    // The queue ran out, or another owner holds the lock.
+    Console.WriteLine(acquired.ErrorMessage);
+    return;
+}
+
+try
+{
+    // ... the work this lock protects ...
+    await client.Lock.RenewAsync(key, leaseDuration: TimeSpan.FromSeconds(15));
+}
+finally
+{
+    await client.Lock.ReleaseAsync(key);
+}
+```
+
+The lock connection is opened on first use, so an application that never takes one does not carry a
+connection for it. There is no fencing token: a holder whose lease expired can still act, so guard
+work whose effects are idempotent, or that checks its own lease before committing.
+
 ## Next steps
 
 - [Configuration reference](configuration.md) — every option, with defaults.

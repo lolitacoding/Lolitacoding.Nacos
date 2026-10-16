@@ -1,7 +1,7 @@
 # Lolitacoding.Nacos
 
-Modern **.NET 10** client SDK for [Nacos](https://nacos.io) 3.x — configuration center
-and service registration & discovery.
+Modern **.NET 10** client SDK for [Nacos](https://nacos.io) 3.x — configuration center,
+service registration & discovery, and distributed locking.
 
 [![CI](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml/badge.svg)](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml)
 
@@ -20,7 +20,7 @@ and service registration & discovery.
 
 | Project | Purpose |
 | --- | --- |
-| `Lolitacoding.Nacos` | Core: protocol, transport, Config and Naming clients. |
+| `Lolitacoding.Nacos` | Core: protocol, transport, Config, Naming and Lock clients. |
 | `Lolitacoding.Nacos.Extensions.DependencyInjection` | `AddNacos(...)`, options binding and validation, lifetime management. |
 | `Lolitacoding.Nacos.Extensions.Configuration` | `AddNacosConfiguration(...)` configuration provider with change tokens. |
 | `Lolitacoding.Nacos.Extensions.ServiceDiscovery` | `AddNacosServiceDiscovery()` integration for `Microsoft.Extensions.ServiceDiscovery`. |
@@ -149,6 +149,36 @@ builder.AddNacosClient(options => options.Optional = true);
 
 `AddNacosClient` throws at startup when the connection string is missing, so a misconfigured
 reference fails fast. See the [Aspire guide](docs/aspire.md) for the options `AddNacos` exposes.
+
+### Distributed locking
+
+```csharp
+using Lolitacoding.Nacos.Locking;
+
+var key = new NacosLockKey("nightly-reindex");
+
+NacosLockResult acquired = await client.Lock.AcquireAsync(key, new NacosLockAcquireOptions
+{
+    WaitTime = TimeSpan.FromSeconds(30),
+    LeaseDuration = TimeSpan.FromSeconds(15),
+});
+
+if (acquired.Success)
+{
+    try
+    {
+        // ... the work this lock protects ...
+    }
+    finally
+    {
+        await client.Lock.ReleaseAsync(key);
+    }
+}
+```
+
+The lock is a lease the server grants to an owner: it survives a caller that dies by expiring, and
+`RenewAsync` extends it for work that outlives the lease. The lock connection is opened on first
+use. See the [quick start](docs/quickstart.md#10-take-a-distributed-lock) for the details.
 
 ### Observability
 

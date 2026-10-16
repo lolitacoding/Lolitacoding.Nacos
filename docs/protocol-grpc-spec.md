@@ -625,6 +625,43 @@ single field **`abilityTable`** (object<string,boolean>) — the **server's** ab
 | `ServerLoaderInfoResponse` | `address` (string), `loaderMetrics` (object<string,string>) |
 | `ErrorResponse` | (base fields only) |
 
+### 3.13 Distributed-lock payloads
+
+`lock/.../LockOperationServiceImpl` and `api/.../lock/**` define the lock module. All four payloads
+are keyed by their simple class names, as every other payload is.
+
+`LockOperationRequest` (client → server, `AbstractLockRequest.getModule()` = `"lock"`):
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `lockInstance` | object | The `LockInstance` below. |
+| `lockOperationEnum` | string | `ACQUIRE`, `RELEASE`, `RENEW` or `CANCEL_WAIT`. `EXPIRE` is server-side only. |
+
+`LockInstance`:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `key` | string | The lock identifier. |
+| `expiredTime` | number | A **duration in milliseconds**, not a timestamp. Negative asks for the server's 30-second default; the server caps the value it accepts. Required non-zero for `ACQUIRE` and `RENEW`. |
+| `params` | object<string,> | Opaque; the server records only the entry count. |
+| `lockType` | string | `NACOS_LOCK` (default), `REENTRANT`, `NON_REENTRANT`. |
+| `owner` | string | The holder. The server defaults it to the connection id when absent. |
+| `waitTime` | number | Milliseconds; `-1` means "do not queue", `> 0` queues the request. |
+| `waiterRetry` | bool | A retry from the wait queue. The server grants it only at the head of the queue. |
+
+`LockOperationResponse` (server → client): `result` (bool, the bare outcome a renewal returns) and
+`lockResult` (`LockResult`: `success`, `reentrantCount`, `waitPosition` — `-1` when not queued —
+and `errorMessage`). A refused acquisition is `resultCode = 200` with `lockResult.success = false`;
+`resultCode = 500` is a request the server rejected outright.
+
+`LockNotificationRequest` (server push, `extends ServerRequest`): `lockKey`, `lockType`, `owner` and
+`notificationType` (`AVAILABLE` or `TIMEOUT`). The client answers `LockNotificationResponse`. The
+server pushes it with `RpcPushService.pushWithoutAck`, so the reply is what stops it retrying an
+unacknowledged notification.
+
+`LockResult` also serialises a computed `waiting` flag. It is exactly `waitPosition >= 0`, and a
+read-only property would be dropped on the way back in, so the client derives it instead.
+
 ---
 
 ## 4. The gRPC port

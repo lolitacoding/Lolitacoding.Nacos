@@ -49,6 +49,12 @@ internal static class PayloadTypeRegistry
         ["NotifySubscriberRequest"] = NacosJsonContext.Default.NotifySubscriberRequest,
         ["NotifySubscriberResponse"] = NacosJsonContext.Default.NotifySubscriberResponse,
 
+        // Distributed lock.
+        ["LockOperationRequest"] = NacosJsonContext.Default.LockOperationRequest,
+        ["LockOperationResponse"] = NacosJsonContext.Default.LockOperationResponse,
+        ["LockNotificationRequest"] = NacosJsonContext.Default.LockNotificationRequest,
+        ["LockNotificationResponse"] = NacosJsonContext.Default.LockNotificationResponse,
+
         // Transport and connection management.
         ["ServerCheckRequest"] = NacosJsonContext.Default.ServerCheckRequest,
         ["ServerCheckResponse"] = NacosJsonContext.Default.ServerCheckResponse,

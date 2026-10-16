@@ -236,6 +236,64 @@ public sealed class NacosGrpcConnectionTests
     }
 
     [Fact]
+    public async Task ServerPush_IsAnsweredWithTheResponseItsHandlerProduced()
+    {
+        // The server matches an acknowledgement by the request id of the push it answers, and it
+        // keeps retrying a lock notification until one arrives. A handler response that the
+        // transport dropped would therefore silence every push-driven feature that needs a reply.
+        var stream = new FakeNacosDuplexStream();
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(address, FakeServerCheck.Responding(), stream));
+
+        await using NacosGrpcConnection connection =
+            CreateConnection(factory, module: NacosConnectionModule.Lock);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        connection.ServerRequestReceived += (request, _) =>
+            Task.FromResult<NacosResponse?>(
+                request is LockNotificationRequest ? new LockNotificationResponse() : null);
+
+        stream.Push(TestPayload.ForRequest(new LockNotificationRequest
+        {
+            LockKey = "lock-1",
+            Owner = "owner-1",
+            NotificationType = "AVAILABLE",
+            RequestId = "notify-9",
+        }));
+
+        await WaitForWriteCountAsync(stream, 2, TestContext.Current.CancellationToken);
+
+        PayloadCodec.ReadTypeName(stream.Written[1]).ShouldBe("LockNotificationResponse");
+        PayloadCodec.Decode<LockNotificationResponse>(stream.Written[1])!.RequestId.ShouldBe("notify-9");
+    }
+
+    [Fact]
+    public async Task ServerPush_WithNoHandlerResponseWritesNothingBack()
+    {
+        // A handler that only observes a push — the configuration and naming change listeners do —
+        // must not produce a reply the server never asked for.
+        var stream = new FakeNacosDuplexStream();
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(address, FakeServerCheck.Responding(), stream));
+
+        await using NacosGrpcConnection connection =
+            CreateConnection(factory, module: NacosConnectionModule.Lock);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        connection.ServerRequestReceived += (_, _) => Task.FromResult<NacosResponse?>(null);
+
+        stream.Push(TestPayload.ForRequest(new LockNotificationRequest
+        {
+            LockKey = "lock-1",
+            RequestId = "notify-10",
+        }));
+
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+
+        stream.Written.Count.ShouldBe(1);
+    }
+
+    [Fact]
     public async Task RequestAsync_SendsTheRequestAndReturnsTheDecodedResponse()
     {
         var stream = new FakeNacosDuplexStream();

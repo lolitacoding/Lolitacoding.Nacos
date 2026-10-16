@@ -98,6 +98,10 @@ message), which the server ignores because the labels are authoritative. A modul
 labels, such as the AI client's UUID, through the `extraLabels` argument; they are merged over the
 standard ones.
 
+Configuration and naming are connected eagerly because nearly every application uses them. The lock
+connection is opened on first use instead: an application that never takes a lock would otherwise
+carry a handshake, a heartbeat and one socket per cluster node for a module it never calls.
+
 ## Server-initiated messages
 
 Within one module, Nacos multiplexes its messages over a single stream, so the read loop classifies
@@ -117,6 +121,12 @@ A domain push is answered by the feature that owns it before the real work happe
 - `ConfigChangeNotifyRequest` → `ConfigChangeNotifyResponse`, then the content is fetched.
 - `NotifySubscriberRequest` → `NotifySubscriberResponse`, and the payload already carries the
   instance list.
+- `LockNotificationRequest` → `LockNotificationResponse`, and the waiter the notification names is
+  released.
+
+The first non-null response any handler produces is the one written back, exactly as the official
+client does, and the remaining handlers still run. A handler that returns `null` — one that only
+observes a push, like a configuration listener — produces no reply.
 
 Handlers run on the read loop and are isolated: one that throws is logged without stopping the loop
 or the other features sharing the connection. See `NacosGrpcConnection.DispatchServerRequestAsync`.
@@ -140,6 +150,34 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
 - Subscriptions use `SubscribeServiceRequest`; changes arrive as `NotifySubscriberRequest`, which
   carries the complete instance list, and are answered with `NotifySubscriberResponse`.
 - `ServiceInfo.allIps` serialises as `allIPs` (capital `IP`) on the wire.
+
+## Distributed lock specifics
+
+- One request type carries every operation. `LockOperationRequest` holds a `LockInstance` and an
+  `lockOperationEnum` naming the operation: `ACQUIRE`, `RELEASE`, `RENEW` or `CANCEL_WAIT`. An enum
+  value the server keeps for itself, `EXPIRE`, is never sent by a client.
+- `expiredTime` is a **duration in milliseconds measured from when the server handles the request**,
+  not an absolute timestamp. It is always sent because the server compares it to zero without a null
+  check, so an omitted value fails the request. A negative value asks for the server's own lease,
+  which is 30 seconds; the server also caps whatever it is given.
+- `owner` is what reentrancy, release and renewal are all keyed by, and the server substitutes the
+  connection id when it is absent. This client always sends one, because the wait queue is keyed by
+  the owner and a notification that names the wrong owner would never release the waiter.
+- The lock type (`NACOS_LOCK`, `REENTRANT`, `NON_REENTRANT`) is part of a lock's identity: the same
+  key can be held independently under two types. `NACOS_LOCK` is the default and the one the server
+  treats as an ordinary mutex.
+- `waitTime` greater than zero asks the server to queue the request. The server then answers with
+  `LockResult.waiting(position)` rather than failing, and pushes `LockNotificationRequest` when the
+  lock becomes available or when it drops the waiter (`notificationType` is `AVAILABLE` or
+  `TIMEOUT`). A retry that carries `waiterRetry = true` is only granted at the head of the queue,
+  which is what makes the queue first-in-first-out. `-1` is the protocol's "do not queue" value.
+- The response prefers the structured `lockResult` (`success`, `reentrantCount`, `waitPosition`,
+  `errorMessage`) and falls back to the bare `result` boolean, which is what a renewal returns.
+  Failing to acquire is an ordinary reply with a success result code, not a transport error;
+  `resultCode = 500` is what the server uses for a request it refused outright.
+- Synchronising on a lock is not enough on its own. The lock has no fencing token, so a holder whose
+  lease expired can still act on what the lock guarded until it notices. Renewing well inside the
+  lease, and treating an unsuccessful renewal as having lost the lock, is what makes the lease safe.
 
 ## Authentication
 

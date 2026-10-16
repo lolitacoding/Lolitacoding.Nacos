@@ -4,7 +4,7 @@
     <RootNamespace>Lolitacoding.Nacos</RootNamespace>
     <AssemblyName>Lolitacoding.Nacos</AssemblyName>
     <PackageId>Lolitacoding.Nacos</PackageId>
-    <Description>Modern .NET client SDK for Nacos 3.x: configuration center, service registration and discovery.</Description>
+    <Description>Modern .NET client SDK for Nacos 3.x: configuration center, service registration and discovery, and distributed locking.</Description>
     <!-- Core library is trim- and Native AOT-compatible; IL2xxx/IL3xxx warnings are errors. -->
     <IsAotCompatible>true</IsAotCompatible>
     <IsTrimmable>true</IsTrimmable>

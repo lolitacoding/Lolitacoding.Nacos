@@ -766,10 +766,18 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// </summary>
     /// <param name="request">The request that arrived.</param>
     /// <param name="ct">A token that cancels the work.</param>
-    /// <returns>A task that completes once every handler ran.</returns>
+    /// <returns>A task that completes once every handler ran and the acknowledgement was sent.</returns>
     /// <remarks>
+    /// <para>
     /// A handler that throws is isolated so that one broken feature cannot stop the read loop and
     /// take every other feature on the connection down with it.
+    /// </para>
+    /// <para>
+    /// The first response any handler produces is written back, and the remaining handlers still
+    /// run. That is what the official client does: it asks every registered handler and answers
+    /// with the first non-null reply, so a push that several features observe is acknowledged
+    /// exactly once, by the feature that recognised it.
+    /// </para>
     /// </remarks>
     private async Task DispatchServerRequestAsync(NacosRequest request, CancellationToken ct)
     {
@@ -786,6 +794,8 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         string typeName = PayloadTypeRegistry.GetTypeName(request);
         RecordPush(typeName);
 
+        NacosResponse? response = null;
+
         foreach (Func<NacosRequest, CancellationToken, Task<NacosResponse?>> handler in
             handlers.GetInvocationList().Cast<Func<NacosRequest, CancellationToken, Task<NacosResponse?>>>())
         {
@@ -793,7 +803,8 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             {
                 // Handing the work off rather than awaiting it inline keeps a slow feature from
                 // blocking the stream; ordering within the feature is preserved by its own queue.
-                await handler(request, ct).ConfigureAwait(false);
+                NacosResponse? handlerResponse = await handler(request, ct).ConfigureAwait(false);
+                response ??= handlerResponse;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
@@ -803,6 +814,14 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             {
                 LogPushHandlerFailed(typeName, ex.Message);
             }
+        }
+
+        if (response is not null)
+        {
+            // The server correlates the acknowledgement by request id, and the transport owns that
+            // correlation: a handler only says what kind of reply is due, never which push it is for.
+            response.RequestId = request.RequestId;
+            await SendResponseAsync(response, ct).ConfigureAwait(false);
         }
     }
 
@@ -1046,14 +1065,16 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// ability names, not Java enum member names.
     /// </para>
     /// <para>
-    /// This transport currently implements neither fuzzy watch nor the distributed lock, so both
-    /// are advertised as unsupported rather than claiming a capability it cannot honour.
+    /// This transport does not implement fuzzy watch, so it is advertised as unsupported rather than
+    /// claiming a capability it cannot honour. The distributed lock is implemented, so it is
+    /// advertised: the server reads the flag to decide whether a lock notification may be pushed to
+    /// this connection.
     /// </para>
     /// </remarks>
     private static Dictionary<string, bool> BuildAbilityTable() => new(StringComparer.Ordinal)
     {
         ["fuzzyWatch"] = false,
-        ["lock"] = false,
+        ["lock"] = true,
     };
 
     /// <summary>

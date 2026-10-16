@@ -1,4 +1,5 @@
 using Lolitacoding.Nacos.Config;
+using Lolitacoding.Nacos.Locking;
 using Lolitacoding.Nacos.Naming;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -6,13 +7,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Lolitacoding.Nacos.Client;
 
 /// <summary>
-/// The entry point for programmatic access to Nacos configuration and service discovery.
+/// The entry point for programmatic access to Nacos configuration, service discovery and the
+/// distributed lock.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The client owns one gRPC connection per module. Nacos routes each connection by the
 /// <c>module</c> label it declares, and the naming, lock and AI servers discard connections that
-/// did not declare them, so configuration and naming do not share a stream.
+/// did not declare them, so configuration and naming do not share a stream. The lock connection is
+/// opened the first time a lock is used rather than at startup.
 /// </para>
 /// <para>
 /// A client is safe for concurrent use and is intended to live for the lifetime of the process.
@@ -30,6 +33,13 @@ public sealed class NacosClient : IAsyncDisposable, IDisposable
 
     /// <summary>Gets the service registration and discovery client.</summary>
     public INacosNamingClient Naming => _factory.Naming;
+
+    /// <summary>Gets the distributed lock client.</summary>
+    /// <remarks>
+    /// Its connection is not opened until the first lock is used, so reading this property costs
+    /// nothing to an application that never takes one.
+    /// </remarks>
+    public INacosLockClient Lock => _factory.Lock;
 
     /// <summary>
     /// Creates a client from the supplied options.

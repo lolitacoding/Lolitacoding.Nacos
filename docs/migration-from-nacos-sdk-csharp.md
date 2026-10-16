@@ -33,11 +33,15 @@ await using NacosClient client = NacosClient.Create(new NacosOptions
 
 INacosConfigClient config = client.Config;
 INacosNamingClient naming = client.Naming;
+INacosLockClient @lock = client.Lock;
 ```
 
 Under the hood the client opens one gRPC connection per module. Nacos routes a connection by the
 `module` label it declares during the handshake, and the naming, lock and AI servers discard
 connections that did not declare them, so configuration and naming cannot share a stream.
+
+Configuration and naming are connected when the client is; the lock connection is opened the first
+time a lock is used, so an application that never takes one does not pay for it.
 
 Construct with `NacosClient.Create(...)` — the constructor is private — and dispose it when the
 process exits.
@@ -101,6 +105,49 @@ await foreach (NacosConfigChange change in client.Config.ListenAsync(configKey, 
 
 Change objects carry the whole result plus `PreviousMd5`. Duplicate notifications are suppressed by
 comparing MD5 values, so a listener only runs when the value actually changed.
+
+## Distributed locking
+
+Locking is its own module on the client, `client.Lock`, and the lock is a server-side lease rather
+than a local mutex:
+
+```csharp
+var key = new NacosLockKey("nightly-reindex");
+
+NacosLockResult acquired = await client.Lock.AcquireAsync(key, new NacosLockAcquireOptions
+{
+    // Join the server's queue instead of failing when the lock is already held.
+    WaitTime = TimeSpan.FromSeconds(30),
+    LeaseDuration = TimeSpan.FromSeconds(15),
+});
+
+if (acquired.Success)
+{
+    try
+    {
+        // ... work ...
+    }
+    finally
+    {
+        await client.Lock.ReleaseAsync(key);
+    }
+}
+```
+
+What is worth knowing before using it:
+
+- The result is a value rather than a boolean: it carries the reentrant depth and the queue
+  position, and a refused acquisition is an unsuccessful result rather than an exception.
+  Exceptions are reserved for a request that could not be carried out at all — an unreachable
+  server, a rejected token, a server that does not implement locking.
+- The lease is what releases a lock whose holder died, so work that can outlive it has to renew it.
+  An unsuccessful renewal means the lock is already gone, and the work must stop.
+- The owner defaults to an identifier this client generates, which is the right default for a
+  process acquiring its own locks. A lock that spans processes, or threads that must share one
+  acquisition, has to name an owner the callers agree on.
+- There is no fencing token. A holder whose lease expired can still act on what the lock guarded
+  until it notices, so only guard work whose effects are idempotent or that checks its own lease
+  before committing.
 
 ## Options are validated up front
 

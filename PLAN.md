@@ -213,9 +213,24 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 
 ### 阶段 3 · 分布式锁（对齐 3.3 语义）
 
-- 新增 `INacosLockClient`：`Acquire` / `Release` / `Renew`，支持 owner 归属、可重入计数、等待队列、服务端 `LockNotification` 推送与 watchdog 续租。
-- gRPC 请求/响应：`LockOperationRequest` / `LockOperationResponse`、`LockNotificationRequest` / `LockNotificationResponse`；能力位 `lock = true`；连接 `module=lock`。
-- 验收：单元测试覆盖获取/释放/续租/超时/重入/等待通知；与真实服务器集成通过。
+拆成两个提交：B1 传输与低层客户端，B2 高层可重入锁与 watchdog。
+
+#### B1 · 锁消息与低层 `INacosLockClient`（✅ 已完成）
+
+- `Protocol/Messages/LockMessages.cs`：`LockOperationRequest` / `LockOperationResponse`、`LockNotificationRequest` / `LockNotificationResponse`，以及嵌套的 `LockInstance` / `LockResult`；全部注册进 `NacosJsonContext` 与 `PayloadTypeRegistry`（顶层类名与 Java 一致）。
+- 公共 API：`INacosLockClient`（`AcquireAsync` / `ReleaseAsync` / `RenewAsync` / `CancelWaitAsync`）、`NacosLockKey`、`NacosLockTypes`、`NacosLockResult`、`NacosLockAcquireOptions`；`NacosClient.Lock` 暴露，`module=lock`，能力位 `lock = true`。
+- 连接按需惰性建立（`NacosLazyModuleConnection`，后续 AI 模块复用）。
+- 等待队列：owner 恒显式发送；`waitTime > 0` 时先注册等待者再发首个请求，按 `AVAILABLE` / `TIMEOUT` 推送唤醒，并以轮询窗口兜底；放弃时向服务端补发 `CANCEL_WAIT`。
+- 修正传输层缺陷：`DispatchServerRequestAsync` 现在会把 handler 返回的首个非空响应写回（对齐 `GrpcClient.onNext` / `RpcClient.handleServerRequest`），配置/命名推送确认与锁通知确认都依赖它。
+- 验收：Release 构建零警告零错误；341 个单元测试全绿（新增获取/释放/续租/等待通知/超时/能力协商/惰性连接/推送应答用例）。
+
+#### B2 · 高层 `NacosLock`（可重入 + watchdog 续租）
+
+- 基于 B1 提供持有句柄（`AcquireAsync` 返回可释放句柄），本地维护 owner 与重入计数，释放时按计数递减。
+- `NacosLockWatchdog`：租约到期前自动续租，续租失败视为失去锁并通知调用方。
+- 验收：重入/并发/续租/失去锁路径均有单元测试覆盖。
+
+验收（阶段级）：单元测试覆盖获取/释放/续租/超时/重入/等待通知；与真实服务器集成通过。
 
 ### 阶段 4 · AI 注册中心（完整对齐 3.x）
 

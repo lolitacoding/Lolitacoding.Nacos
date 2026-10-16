@@ -3,6 +3,7 @@ Lolitacoding.Nacos.Client.NacosClient
 Lolitacoding.Nacos.Client.NacosClient.Config.get -> Lolitacoding.Nacos.Config.INacosConfigClient!
 Lolitacoding.Nacos.Client.NacosClient.ConnectAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Lolitacoding.Nacos.Client.NacosClient.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Lolitacoding.Nacos.Client.NacosClient.Lock.get -> Lolitacoding.Nacos.Locking.INacosLockClient!
 Lolitacoding.Nacos.Client.NacosClient.Naming.get -> Lolitacoding.Nacos.Naming.INacosNamingClient!
 Lolitacoding.Nacos.Config.INacosConfigClient
 Lolitacoding.Nacos.Config.INacosConfigClient.AddListenerAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Func<Lolitacoding.Nacos.Config.NacosConfigChange!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! onChange, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
@@ -225,8 +226,42 @@ Lolitacoding.Nacos.Naming.NacosServiceKey.ServiceName.get -> string!
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.NacosWeightedRandomLoadBalancer(System.Random? random = null) -> void
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.Select(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances) -> Lolitacoding.Nacos.Naming.NacosInstance?
+Lolitacoding.Nacos.Locking.INacosLockClient
+Lolitacoding.Nacos.Locking.INacosLockClient.AcquireAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, Lolitacoding.Nacos.Locking.NacosLockAcquireOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
+Lolitacoding.Nacos.Locking.INacosLockClient.CancelWaitAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, string? owner = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
+Lolitacoding.Nacos.Locking.INacosLockClient.ReleaseAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, string? owner = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
+Lolitacoding.Nacos.Locking.INacosLockClient.RenewAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, string? owner = null, System.TimeSpan? leaseDuration = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.LeaseDuration.get -> System.TimeSpan?
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.LeaseDuration.set -> void
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.NacosLockAcquireOptions() -> void
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.Owner.get -> string?
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.Owner.set -> void
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.Parameters.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.Parameters.set -> void
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.WaitTime.get -> System.TimeSpan?
+Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.WaitTime.set -> void
+Lolitacoding.Nacos.Locking.NacosLockKey
+Lolitacoding.Nacos.Locking.NacosLockKey.<Clone>$() -> Lolitacoding.Nacos.Locking.NacosLockKey!
+Lolitacoding.Nacos.Locking.NacosLockKey.Equals(Lolitacoding.Nacos.Locking.NacosLockKey? other) -> bool
+Lolitacoding.Nacos.Locking.NacosLockKey.LockType.get -> string!
+Lolitacoding.Nacos.Locking.NacosLockKey.LockType.init -> void
+Lolitacoding.Nacos.Locking.NacosLockKey.NacosLockKey(string! name, string! lockType = "NACOS_LOCK") -> void
+Lolitacoding.Nacos.Locking.NacosLockKey.Name.get -> string!
+Lolitacoding.Nacos.Locking.NacosLockResult
+Lolitacoding.Nacos.Locking.NacosLockResult.<Clone>$() -> Lolitacoding.Nacos.Locking.NacosLockResult!
+Lolitacoding.Nacos.Locking.NacosLockResult.Equals(Lolitacoding.Nacos.Locking.NacosLockResult? other) -> bool
+Lolitacoding.Nacos.Locking.NacosLockResult.ErrorMessage.get -> string?
+Lolitacoding.Nacos.Locking.NacosLockResult.ReentrantCount.get -> int
+Lolitacoding.Nacos.Locking.NacosLockResult.Success.get -> bool
+Lolitacoding.Nacos.Locking.NacosLockResult.Waiting.get -> bool
+Lolitacoding.Nacos.Locking.NacosLockResult.WaitPosition.get -> int
+Lolitacoding.Nacos.Locking.NacosLockTypes
 const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.ActivitySourceName = "Lolitacoding.Nacos" -> string!
 const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.MeterName = "Lolitacoding.Nacos" -> string!
+const Lolitacoding.Nacos.Locking.NacosLockTypes.Mutex = "NACOS_LOCK" -> string!
+const Lolitacoding.Nacos.Locking.NacosLockTypes.NonReentrant = "NON_REENTRANT" -> string!
+const Lolitacoding.Nacos.Locking.NacosLockTypes.Reentrant = "REENTRANT" -> string!
 const Lolitacoding.Nacos.NacosConstants.Charset = "UTF-8" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultCluster = "DEFAULT" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultConfigType = "text" -> string!
@@ -244,6 +279,12 @@ override Lolitacoding.Nacos.Config.NacosConfigKey.ToString() -> string!
 override Lolitacoding.Nacos.Config.NacosConfigResult.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Config.NacosConfigResult.GetHashCode() -> int
 override Lolitacoding.Nacos.Config.NacosConfigResult.ToString() -> string!
+override Lolitacoding.Nacos.Locking.NacosLockKey.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Locking.NacosLockKey.GetHashCode() -> int
+override Lolitacoding.Nacos.Locking.NacosLockKey.ToString() -> string!
+override Lolitacoding.Nacos.Locking.NacosLockResult.Equals(object? obj) -> bool
+override Lolitacoding.Nacos.Locking.NacosLockResult.GetHashCode() -> int
+override Lolitacoding.Nacos.Locking.NacosLockResult.ToString() -> string!
 override Lolitacoding.Nacos.Naming.NacosInstance.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Naming.NacosInstance.GetHashCode() -> int
 override Lolitacoding.Nacos.Naming.NacosInstance.ToString() -> string!
@@ -265,6 +306,10 @@ static Lolitacoding.Nacos.Config.NacosConfigResult.operator !=(Lolitacoding.Naco
 static Lolitacoding.Nacos.Config.NacosConfigResult.operator ==(Lolitacoding.Nacos.Config.NacosConfigResult? left, Lolitacoding.Nacos.Config.NacosConfigResult? right) -> bool
 static Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.ActivitySource.get -> System.Diagnostics.ActivitySource!
 static Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.Meter.get -> System.Diagnostics.Metrics.Meter!
+static Lolitacoding.Nacos.Locking.NacosLockKey.operator !=(Lolitacoding.Nacos.Locking.NacosLockKey? left, Lolitacoding.Nacos.Locking.NacosLockKey? right) -> bool
+static Lolitacoding.Nacos.Locking.NacosLockKey.operator ==(Lolitacoding.Nacos.Locking.NacosLockKey? left, Lolitacoding.Nacos.Locking.NacosLockKey? right) -> bool
+static Lolitacoding.Nacos.Locking.NacosLockResult.operator !=(Lolitacoding.Nacos.Locking.NacosLockResult? left, Lolitacoding.Nacos.Locking.NacosLockResult? right) -> bool
+static Lolitacoding.Nacos.Locking.NacosLockResult.operator ==(Lolitacoding.Nacos.Locking.NacosLockResult? left, Lolitacoding.Nacos.Locking.NacosLockResult? right) -> bool
 static Lolitacoding.Nacos.Naming.NacosInstance.operator !=(Lolitacoding.Nacos.Naming.NacosInstance? left, Lolitacoding.Nacos.Naming.NacosInstance? right) -> bool
 static Lolitacoding.Nacos.Naming.NacosInstance.operator ==(Lolitacoding.Nacos.Naming.NacosInstance? left, Lolitacoding.Nacos.Naming.NacosInstance? right) -> bool
 static Lolitacoding.Nacos.Naming.NacosServiceChange.operator !=(Lolitacoding.Nacos.Naming.NacosServiceChange? left, Lolitacoding.Nacos.Naming.NacosServiceChange? right) -> bool
