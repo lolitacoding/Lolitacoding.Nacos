@@ -15,6 +15,12 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// </remarks>
 internal static class NacosHttp
 {
+    /// <summary>The admin config endpoint of the v3 HTTP API.</summary>
+    private const string ConfigPath = "/nacos/v3/admin/cs/config";
+
+    /// <summary>The result code the v3 API reports for a resource that does not exist.</summary>
+    private const int ResourceNotFoundCode = 20004;
+
     /// <summary>
     /// Publishes or replaces a configuration.
     /// </summary>
@@ -26,6 +32,14 @@ internal static class NacosHttp
     /// <param name="accessToken">The access token, when the server requires authentication.</param>
     /// <param name="ct">A token that cancels the request.</param>
     /// <returns>The task.</returns>
+    /// <remarks>
+    /// The v3 admin API, which is the part of the HTTP surface that can write a configuration: the
+    /// v3 client-facing config API only reads, and the v1 write API the 2.x servers exposed is gone.
+    /// The endpoint takes the group as <c>groupName</c> and answers with a result envelope. It is an
+    /// administrative call, so it needs an access token even on a server whose authentication plugin
+    /// is switched off — where there is then no account to log in with, and no way to seed a
+    /// configuration over HTTP at all.
+    /// </remarks>
     public static async Task PublishConfigAsync(
         HttpClient http,
         string baseAddress,
@@ -35,14 +49,19 @@ internal static class NacosHttp
         string? accessToken = null,
         CancellationToken ct = default)
     {
-        string url = string.Concat(
-            baseAddress, "/nacos/v1/cs/configs?dataId=", Uri.EscapeDataString(dataId),
-            "&group=", Uri.EscapeDataString(group),
-            "&content=", Uri.EscapeDataString(content),
-            "&type=text");
+        using var form = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("dataId", dataId),
+            new KeyValuePair<string, string>("groupName", group),
+            new KeyValuePair<string, string>("content", content),
+            new KeyValuePair<string, string>("type", "text"),
+        ]);
 
-        using HttpResponseMessage response = await SendAsync(http, HttpMethod.Post, url, accessToken, ct);
+        using HttpResponseMessage response = await SendAsync(
+            http, HttpMethod.Post, string.Concat(baseAddress, ConfigPath), accessToken, form, ct);
+
         response.EnsureSuccessStatusCode();
+        EnsureSucceeded(await response.Content.ReadAsStringAsync(ct));
     }
 
     /// <summary>
@@ -64,14 +83,34 @@ internal static class NacosHttp
         CancellationToken ct = default)
     {
         string url = string.Concat(
-            baseAddress, "/nacos/v1/cs/configs?dataId=", Uri.EscapeDataString(dataId),
-            "&group=", Uri.EscapeDataString(group));
+            baseAddress, ConfigPath,
+            "?dataId=", Uri.EscapeDataString(dataId),
+            "&groupName=", Uri.EscapeDataString(group));
 
-        using HttpResponseMessage response = await SendAsync(http, HttpMethod.Get, url, accessToken, ct);
+        using HttpResponseMessage response = await SendAsync(
+            http, HttpMethod.Get, url, accessToken, content: null, ct);
+
         response.EnsureSuccessStatusCode();
 
         string body = await response.Content.ReadAsStringAsync(ct);
-        return body.Length == 0 ? null : body;
+
+        using JsonDocument document = JsonDocument.Parse(body);
+        JsonElement root = document.RootElement;
+
+        if (root.TryGetProperty("code", out JsonElement code) && code.GetInt32() == ResourceNotFoundCode)
+        {
+            // An absent configuration is a result code rather than a 404, as it is for the client API.
+            return null;
+        }
+
+        EnsureSucceeded(body);
+
+        return root.TryGetProperty("data", out JsonElement data)
+            && data.ValueKind == JsonValueKind.Object
+            && data.TryGetProperty("content", out JsonElement content)
+            && content.ValueKind == JsonValueKind.String
+            ? content.GetString()
+            : null;
     }
 
     /// <summary>
@@ -120,9 +159,10 @@ internal static class NacosHttp
         HttpMethod method,
         string url,
         string? accessToken,
+        HttpContent? content,
         CancellationToken ct)
     {
-        using var request = new HttpRequestMessage(method, url);
+        using var request = new HttpRequestMessage(method, url) { Content = content };
 
         if (!string.IsNullOrEmpty(accessToken))
         {
@@ -132,6 +172,24 @@ internal static class NacosHttp
         }
 
         return await http.SendAsync(request, ct);
+    }
+
+    /// <summary>
+    /// Throws when a v3 API response reports a failure in its result envelope.
+    /// </summary>
+    /// <param name="body">The response body.</param>
+    /// <remarks>
+    /// The v3 APIs answer with success status codes and report a failure in the envelope, so a
+    /// <c>code</c> other than zero is what says the call did not do what it was asked to.
+    /// </remarks>
+    private static void EnsureSucceeded(string body)
+    {
+        using JsonDocument document = JsonDocument.Parse(body);
+
+        if (document.RootElement.TryGetProperty("code", out JsonElement code) && code.GetInt32() != 0)
+        {
+            throw new InvalidOperationException(string.Concat("The Nacos API reported a failure: ", body));
+        }
     }
 
     /// <summary>

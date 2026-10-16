@@ -20,21 +20,27 @@ public sealed class NamingIntegrationTests
     {
         await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
 
         var service = new NacosServiceKey(NacosHttp.UniqueId("naming-it"), "DEFAULT_GROUP");
         var instance = new NacosInstance("10.20.30.40", 8080);
 
         await client.Naming.RegisterInstanceAsync(service, instance, TestContext.Current.CancellationToken);
 
-        NacosServiceInfo info = await client.Naming.GetInstancesAsync(
-            service, ct: TestContext.Current.CancellationToken);
+        // A registration answers before the server lists the instance, so the read waits for it.
+        NacosServiceInfo info = await NacosEventually.BecomesAsync(
+            () => client.Naming.GetInstancesAsync(service, ct: TestContext.Current.CancellationToken),
+            result => result.Instances.Any(i => i.Port == 8080 && i.IpAddress == "10.20.30.40"),
+            TestContext.Current.CancellationToken);
 
         info.Instances.ShouldContain(i => i.Port == 8080 && i.IpAddress == "10.20.30.40");
 
         await client.Naming.DeregisterInstanceAsync(service, instance, TestContext.Current.CancellationToken);
 
-        NacosServiceInfo after = await client.Naming.GetInstancesAsync(
-            service, ct: TestContext.Current.CancellationToken);
+        NacosServiceInfo after = await NacosEventually.BecomesAsync(
+            () => client.Naming.GetInstancesAsync(service, ct: TestContext.Current.CancellationToken),
+            result => !result.Instances.Any(i => i.Port == 8080),
+            TestContext.Current.CancellationToken);
 
         after.Instances.ShouldNotContain(i => i.Port == 8080);
     }
@@ -44,6 +50,7 @@ public sealed class NamingIntegrationTests
     {
         await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
 
         var service = new NacosServiceKey(NacosHttp.UniqueId("naming-subscribe-it"), "DEFAULT_GROUP");
 
@@ -57,29 +64,28 @@ public sealed class NamingIntegrationTests
         (await enumerator.MoveNextAsync()).ShouldBeTrue();
 
         var instance = new NacosInstance("10.20.30.41", 8081);
-        await client.Naming.RegisterInstanceAsync(service, instance, cts.Token);
 
-        // Wait for the online push.
-        while (await enumerator.MoveNextAsync())
-        {
-            if (enumerator.Current.Instances.Any(i => i.Port == 8081))
+        // The subscription is registered with the server just after its current state is yielded, so
+        // an instance registered in that window is not pushed; the state is toggled until the online
+        // push arrives, because re-registering an instance the server already holds is not a change.
+        await NacosEventually.PushedAsync(
+            async ct =>
             {
-                break;
-            }
-        }
+                await client.Naming.DeregisterInstanceAsync(service, instance, ct).ConfigureAwait(false);
+                await client.Naming.RegisterInstanceAsync(service, instance, ct).ConfigureAwait(false);
+            },
+            enumerator,
+            change => change.Instances.Any(i => i.Port == 8081),
+            cts.Token);
 
         enumerator.Current.Instances.ShouldContain(i => i.Port == 8081);
 
-        await client.Naming.DeregisterInstanceAsync(service, instance, cts.Token);
-
-        // Wait for the offline push.
-        while (await enumerator.MoveNextAsync())
-        {
-            if (enumerator.Current.Instances.All(i => i.Port != 8081))
-            {
-                break;
-            }
-        }
+        // The subscription is effective by now, so the offline push follows the deregistration.
+        await NacosEventually.PushedAsync(
+            ct => client.Naming.DeregisterInstanceAsync(service, instance, ct),
+            enumerator,
+            change => change.Instances.All(i => i.Port != 8081),
+            cts.Token);
 
         enumerator.Current.Instances.ShouldNotContain(i => i.Port == 8081);
     }
@@ -96,30 +102,28 @@ public sealed class NamingIntegrationTests
 
         await using (NacosClientFactory owner = CreateClient(container))
         {
+            await owner.ConnectAsync(TestContext.Current.CancellationToken);
             await owner.Naming.RegisterInstanceAsync(service, instance, TestContext.Current.CancellationToken);
+
+            // The instance is confirmed to exist while its owner is connected, so that the wait after
+            // the owner goes away proves a removal rather than a registration that never happened.
+            await NacosEventually.BecomesAsync(
+                () => owner.Naming.GetInstancesAsync(service, ct: TestContext.Current.CancellationToken),
+                result => result.Instances.Any(i => i.Port == 8082),
+                TestContext.Current.CancellationToken);
         }
 
         await using NacosClientFactory observer = CreateClient(container);
+        await observer.ConnectAsync(TestContext.Current.CancellationToken);
 
-        // Removal is asynchronous on the server, so the assertion polls rather than assuming.
-        for (int attempt = 0; ; attempt++)
-        {
-            NacosServiceInfo info = await observer.Naming.GetInstancesAsync(
-                service, ct: TestContext.Current.CancellationToken);
+        // The server drops an ephemeral instance when its connection closes, which it does
+        // asynchronously, so the read waits for the instance to disappear.
+        NacosServiceInfo info = await NacosEventually.BecomesAsync(
+            () => observer.Naming.GetInstancesAsync(service, ct: TestContext.Current.CancellationToken),
+            result => !result.Instances.Any(i => i.Port == 8082),
+            TestContext.Current.CancellationToken);
 
-            if (!info.Instances.Any(i => i.Port == 8082))
-            {
-                break;
-            }
-
-            if (attempt >= 30)
-            {
-                throw new TimeoutException(
-                    "The ephemeral instance was not removed after its owning connection closed.");
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(1), TestContext.Current.CancellationToken);
-        }
+        info.Instances.ShouldNotContain(i => i.Port == 8082);
     }
 
     private static NacosClientFactory CreateClient(NacosContainer container) =>

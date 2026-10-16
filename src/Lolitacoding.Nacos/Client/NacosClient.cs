@@ -59,9 +59,10 @@ public sealed class NacosClient : IAsyncDisposable, IDisposable
     /// <returns>The created client, which has not yet connected.</returns>
     /// <exception cref="NacosConfigurationException">The options are not usable.</exception>
     /// <remarks>
-    /// Construction does not connect. Call <see cref="ConnectAsync"/> before issuing requests, or
-    /// let the first request attempt the connection implicitly. Keeping the two separate lets a
-    /// host decide whether an unreachable server should fail startup.
+    /// Construction does not connect. The configuration and naming connections are opened by
+    /// <see cref="ConnectAsync"/>, which the hosting integrations call during startup, while the lock
+    /// connection is opened when the first lock is taken. Keeping construction and connection apart
+    /// lets a host decide whether an unreachable server should fail startup.
     /// </remarks>
     public static NacosClient Create(
         NacosOptions options,

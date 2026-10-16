@@ -236,13 +236,35 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 新增日志 7003（续租失败）/ 7004（释放失败）；客户端 `DisposeAsync` 先结束全部持有、停止续租，再关闭连接。
 - 验收：Release 构建零警告零错误；359 个单元测试全绿（新增重入、跨流独立 owner、非可重入拒绝、有限/无限等待、队列重排、续租间隔与字段、失去锁、释放幂等与被拒、客户端释放等用例）。
 
-验收（阶段级）：单元测试覆盖获取/释放/续租/超时/重入/等待通知；与真实服务器集成通过。
+#### B3 · 真实服务器端到端验收（✅ 已完成）
+
+- 集成测试 `tests/Lolitacoding.Nacos.IntegrationTests/LockingIntegrationTests.cs` 新增 4 个用例，每个自起一个容器：获取 → 他人被拒 → 释放 → 他人接管；可重入类型下服务端计数随每次获取递增、逐层释放；等待队列在持有者释放时由服务端推送交接；高层租约在 6 秒租约下连续续租 15 秒不掉锁。
+- 关键发现：锁模块的完整契约属于 **3.3**。当时最新稳定版 `nacos-server:3.2.4` 的 `nacos-lock` 仍是旧协议——`LockOperationEnum` 只有 `ACQUIRE` / `RELEASE` / `EXPIRE`，`LockInstance` 无 `owner` / `waitTime` / `waiterRetry`，响应只有裸 `result`（无 `LockResult`），SPI 只注册 `SimpleLockFactory`（仅 `NACOS_LOCK`）。于是在 3.2 上 `RENEW` / `CANCEL_WAIT` 被拒（`resultCode=500`、`Nacos deserialize failed`），`REENTRANT` / `NON_REENTRANT` 被拒（`lockType: ... is not exist.`）。`nacos-server:v3.3.0-RC` 三件套齐全（三个 factory、`RENEW` / `CANCEL_WAIT`、`waitTime` / `waiterRetry`、`LockResult`），4 个用例全绿（1m05s）。
+- 能力位不足以区分版本：3.2 服务器握手时同样声明 `lock = true`，客户端无法据此判断协议，只能文档化。锁测试改用独立镜像（`NACOS_LOCK_TEST_IMAGE`，默认 `v3.3.0-RC`），其余套件保持 `v3.0.2`（可被 `NACOS_TEST_IMAGE` 覆盖），即受支持的最老 3.x 版本。
+- 顺带修掉两个 Aspire 缺陷：`NacosBuilderExtensions.ReadinessPath` 由 v1 console health 改为 `/nacos/v3/admin/core/state/readiness`（v1 路径在 3.2+ 返回 404，`WaitFor` 永远不会就绪）；`AddNacos` 恒定写入 `NACOS_AUTH_TOKEN` / `NACOS_AUTH_IDENTITY_KEY` / `NACOS_AUTH_IDENTITY_VALUE` 开发默认值（3.2+ 镜像即使关闭鉴权也强制要求，否则容器退出 255）。
+- 套件修复（与 B3 一并完成，否则集成套件无法为后续阶段背书）。修复前 21 个用例只有 1 个通过：多数失败源于测试与容器夹具，而命名订阅的推送用例最终暴露出**客户端的两个真实缺陷**（见下）。
+  - 就绪必须看响应体：`/nacos/v3/admin/core/state/readiness` 在某个模块尚未就绪时返回 200 且 `{"code":30000,"message":"naming not in readiness"}`，只有 `{"code":0,…,"data":"ok"}` 才算就绪。两个启动路径（Testcontainers 等待谓词与重启后的等待）都改为校验响应体。
+  - 端口分配不能依赖 bind 探测：被 Docker 分配给别的容器的端口在本机仍可 bind，`IsFree` 说空闲而 docker 报 `port is already allocated`。改为串行启动（静态 `SemaphoreSlim`）+ 单调端口游标（步长 1001）+ 冲突重试。
+  - 3.x 不预置任何账号：`nacos/nacos` 并不存在，未建管理员前登录一律被拒（3.0.2 回 `403 Access Denied`，3.2.4 回 `User not found!`）。夹具在就绪后调用 `POST /nacos/v3/auth/user/admin?password=…` 建首个管理员（已存在时返回 409，予以接受）。
+  - 写入配置的 HTTP 助手只能走 v3 admin API（`/nacos/v3/admin/cs/config`，表单参数是 `groupName`）：v3 客户端接口只读，v1 写接口在 3.x 已下线；该 admin 接口即使关闭鉴权也要求令牌，而在关闭鉴权的服务器上没有任何账号可登录。因此传输层用例改为直接用 gRPC 发布配置（顺带更贴合该用例的定位）。
+  - 配置与命名集成用例从未调用 `ConnectAsync`，而客户端不会隐式连接（宿主服务与单元测试都会显式连接）：补上。同时修正 `NacosClient` 中“首个请求会隐式连接”的错误注释。
+  - 写入是最终一致的：配置发布返回后约 234ms 才可读，实例注册约 18ms 可读，注销约 656ms 才消失。读回断言改为轮询（`NacosEventually.BecomesAsync`）。
+  - `ListenAsync` / `SubscribeAsync` 先产出当前快照、再向服务器注册监听，落在这个窗口里的变更不会被推送（`SubscribeServiceResponse` 携带订阅生效瞬间的服务状态，Java 客户端即以此为准，本客户端尚未使用它，留待阶段 4）。推送类断言改为重复施加变更直到收到推送（`NacosEventually.PushedAsync`）。
+- 命名推送的两个真实缺陷（由该用例暴露，已修，随阶段 3 一并提交）：
+  - **推送身份读错了位置**：服务器用 `NotifySubscriberRequest.buildNotifySubscriberRequest(serviceInfo)` 构造推送，**只填 `serviceInfo`**，请求自身的 `namespace` / `serviceName` / `groupName` 在线上恒为缺失（即便 Java 类声明了这三个字段），而旧实现在这三个字段为空时直接返回，于是每一条推送都被静默丢弃。改为像 Java 的 `NamingPushRequestHandler` 一样，从 `serviceInfo.name` / `serviceInfo.groupName` 读取服务身份，`namespace` 缺省时回落到客户端配置的命名空间；抓包实证记入 `docs/protocol-grpc-spec.md` §3.10 与 `docs/protocol-notes.md`。
+  - **变更判定依赖了服务器不发的字段**：推送里的 `serviceInfo.checksum` 恒为空串，旧实现“checksum 相同即忽略”，会把**每一条**推送当作重复丢掉。改为复刻 Java `ServiceInfoHolder.processServiceInfo` → `InstancesDiffer.doDiff`：按地址（`ip:port`）比较两边实例表并逐项比较实例描述（权重 / 集群 / 健康 / 可用 / 临时 / 元数据 / `instanceId`），顺序无关；另按 `lastRefTime` 丢弃早于已应用状态的推送（每条推送各自在独立任务上落地，旧状态可能后完成），新增日志事件 5012。
+  - 单元测试此前用“顶栏也带身份字段”的脚本推送，正好掩盖了这两个缺陷；已改为服务器实际发送的形状（只带 `serviceInfo`），见 `NacosNamingClientTests.Push` 的说明。
+- 已知缺口（留待阶段 4）：连接尚未建立时请求直接抛 `NacosConnectionException`，重连期间的请求不排队等待；监听/订阅的快照与注册之间仍非原子。
+- 文档：`docs/faq.md`、`docs/protocol-notes.md`、`docs/protocol-grpc-spec.md` §3.13、`README.md`、`docs/aspire.md` 与 `NacosLockTypes` 注释写明 3.3 要求及 3.2 的降级行为。
+
+验收（阶段级）：单元测试 **360 个全绿**（覆盖获取/释放/续租/超时/重入/等待通知）；与真实服务器集成 **21 个用例全绿（3m54s）**：锁的 4 个用例跑在 `nacos/nacos-server:v3.3.0-RC`，其余（配置 / 命名 / 传输 / 鉴权）跑在受支持的最老 3.x 版本 `nacos/nacos-server:v3.0.2`。
 
 ### 阶段 4 · AI 注册中心（完整对齐 3.x）
 
 - 资源族：MCP Server、Prompt、Skill、AgentSpec、Agent（含 A2A 与 Agent watch / RAD 推送）。
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
+- 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用。
 
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

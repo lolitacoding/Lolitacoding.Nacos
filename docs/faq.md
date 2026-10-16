@@ -3,8 +3,17 @@
 ## Which Nacos versions are supported?
 
 Nacos **3.x**. The transport speaks the Nacos gRPC protocol, which is unchanged across the 3.x line,
-and the v3 HTTP OpenAPI for authentication. CI runs the integration suite against
-`nacos/nacos-server:v3.0.2`.
+and the v3 HTTP OpenAPI for authentication. The integration suite runs against
+`nacos/nacos-server:v3.0.2` unless `NACOS_TEST_IMAGE` names another server.
+
+The distributed **lock** module is the exception. Lease renewal, the wait queue, explicit owners and
+the reentrant count belong to the lock service Nacos **3.3** introduced, and the one a 3.2 server
+ships only acquires and releases. Against a 3.2 server this client can therefore acquire and release
+a lock, but it cannot renew one — a refused renewal ends the lease locally, so the caller learns
+about it rather than holding a lock the server has already dropped — and a request that would queue
+is refused instead. The lock tests choose their server with `NACOS_LOCK_TEST_IMAGE`, which defaults
+to `nacos/nacos-server:v3.3.0-RC`. Which is which is described in
+[the protocol notes](protocol-notes.md#distributed-lock-specifics).
 
 The `test` type label and the payload type names differ subtly between upstream versions and Java
 SDK releases; the details, with file references, are in
@@ -34,6 +43,19 @@ options.Password = "nacos";
 Both must be supplied together. The client logs in over the HTTP OpenAPI, caches the access token,
 refreshes it before it expires, and retries a request once if the server rejects the token. A wrong
 password throws `NacosAuthException`.
+
+The account has to exist first: a Nacos 3.x server ships no users at all, not even a default
+administrator. Create one once — through the console on its first run, or by posting a `password` to
+`/nacos/v3/auth/user/admin` on the server's main port:
+
+```powershell
+curl.exe -X POST "http://localhost:8848/nacos/v3/auth/user/admin?password=<password>"
+```
+
+Until that call has been made, every login is rejected whether or not the user exists, and the
+endpoint itself answers `409` once an administrator is in place. Note also that this endpoint is the
+only way to write a configuration over HTTP: the v3 administration API needs a token even when the
+authentication plugin is switched off, and the client-facing v3 API reads only.
 
 Aliyun MSE `AccessKey`/`SecretKey` authentication is **not** implemented in v1.
 
@@ -82,6 +104,15 @@ ephemeral instance registrations — when a connection drops. The client records
 replays it after a reconnect, so subscriptions keep working. Check the logs at `Information` level
 to see the replay; replayed listeners are counted, and a subscriber that fails to restore logs an
 error without taking the connection down.
+
+## Can a change to a subscribed service slip through?
+
+Rarely, yes — and only one. Both in this client and in the official Java client, `ListenAsync` /
+`SubscribeAsync` first hand you the state as it was read, and only then register the listener or
+subscription with the server. A change that the server applies in that window is not pushed, so it
+is not delivered until the next change. Everything after the registration is pushed, and a push that
+repeats a state you already have is filtered out rather than reported twice. `PLAN.md` tracks closing
+the window by seeding the subscription from the state the subscribe response carries.
 
 ## Where are cached values stored?
 

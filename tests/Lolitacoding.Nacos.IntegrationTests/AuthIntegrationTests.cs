@@ -127,14 +127,14 @@ public sealed class AuthIntegrationTests : IAsyncLifetime
 
         string dataId = NacosHttp.UniqueId("noauth-it");
 
-        using HttpResponseMessage response = await http.PostAsync(
-            string.Concat(
-                _container.HttpAddress, "/nacos/v1/cs/configs?dataId=", dataId,
-                "&group=DEFAULT_GROUP&content=x&type=text"),
-            content: null,
-            TestContext.Current.CancellationToken);
-
-        response.IsSuccessStatusCode.ShouldBeFalse();
+        await Should.ThrowAsync<HttpRequestException>(() => NacosHttp.PublishConfigAsync(
+            http,
+            _container.HttpAddress,
+            dataId,
+            "DEFAULT_GROUP",
+            "x",
+            accessToken: null,
+            TestContext.Current.CancellationToken));
     }
 
     private NacosOptions CreateOptions() => new()

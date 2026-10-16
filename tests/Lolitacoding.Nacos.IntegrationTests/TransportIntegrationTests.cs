@@ -53,27 +53,40 @@ public sealed class TransportIntegrationTests
         string dataId = NacosHttp.UniqueId("transport-it");
         string content = NacosHttp.ConfigContent("round-trip");
 
-        using (var http = new HttpClient())
-        {
-            await NacosHttp.PublishConfigAsync(
-                http, container.HttpAddress, dataId, "DEFAULT_GROUP", content,
-                accessToken: null, TestContext.Current.CancellationToken);
-        }
-
         await using NacosGrpcConnection connection = CreateConnection(container);
         await connection.ConnectAsync(TestContext.Current.CancellationToken);
 
-        ConfigQueryResponse response = await connection.RequestAsync<ConfigQueryResponse>(
-            new ConfigQueryRequest
+        // The configuration is published over the transport that reads it back rather than over the
+        // administration API: as well as keeping this a transport test, that write API demands a token
+        // even on a server whose authentication plugin is disabled, which is what this server is.
+        ConfigPublishResponse published = await connection.RequestAsync<ConfigPublishResponse>(
+            new ConfigPublishRequest
             {
                 DataId = dataId,
                 Group = "DEFAULT_GROUP",
                 Tenant = string.Empty,
+                Content = content,
             },
             TestContext.Current.CancellationToken);
 
-        // The server reports the content either inline or as a locatable reference depending on
-        // size; both are a successful query, so only the success of the round trip is asserted.
+        published.Success.ShouldBeTrue();
+
+        // The server can report the configuration as missing for a moment after the publish, so the
+        // query is repeated while it does. The server reports the content either inline or as a
+        // locatable reference depending on size, so only a successful round trip is asserted.
+        ConfigQueryResponse response = await NacosEventually.BecomesAsync(
+            () => connection.RequestAsync<ConfigQueryResponse>(
+                new ConfigQueryRequest
+                {
+                    DataId = dataId,
+                    Group = "DEFAULT_GROUP",
+                    Tenant = string.Empty,
+                },
+                TestContext.Current.CancellationToken),
+            result => result.Success,
+            TestContext.Current.CancellationToken,
+            tolerateFailures: true);
+
         response.Success.ShouldBeTrue();
     }
 

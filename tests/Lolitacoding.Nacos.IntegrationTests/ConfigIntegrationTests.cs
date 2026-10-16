@@ -21,6 +21,7 @@ public sealed class ConfigIntegrationTests
     {
         await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
 
         string dataId = NacosHttp.UniqueId("config-it");
         var key = new NacosConfigKey(dataId, "DEFAULT_GROUP");
@@ -28,14 +29,24 @@ public sealed class ConfigIntegrationTests
 
         await client.Config.PublishConfigAsync(key, content, "text", ct: TestContext.Current.CancellationToken);
 
-        NacosConfigResult read = await client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken);
+        // A publish answers before the value is readable, so the read waits for it rather than
+        // assuming the server applied it already.
+        NacosConfigResult read = await NacosEventually.BecomesAsync(
+            () => client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+            result => result.Exists,
+            TestContext.Current.CancellationToken);
+
         read.Exists.ShouldBeTrue();
         read.Content.ShouldBe(content);
         read.FromLocalCache.ShouldBeFalse();
 
         await client.Config.RemoveConfigAsync(key, TestContext.Current.CancellationToken);
 
-        NacosConfigResult removed = await client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken);
+        NacosConfigResult removed = await NacosEventually.BecomesAsync(
+            () => client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+            result => !result.Exists,
+            TestContext.Current.CancellationToken);
+
         removed.Exists.ShouldBeFalse();
     }
 
@@ -44,12 +55,20 @@ public sealed class ConfigIntegrationTests
     {
         await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
 
         string dataId = NacosHttp.UniqueId("config-listen-it");
         var key = new NacosConfigKey(dataId, "DEFAULT_GROUP");
 
         await client.Config.PublishConfigAsync(
             key, NacosHttp.ConfigContent("before"), "text", ct: TestContext.Current.CancellationToken);
+
+        // The listener's first element is read back from the server, so the publish has to be applied
+        // first for the listener to initialise from a value rather than from "not published yet".
+        await NacosEventually.BecomesAsync(
+            () => client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+            result => result.Exists,
+            TestContext.Current.CancellationToken);
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         cts.CancelAfter(TimeSpan.FromMinutes(1));
@@ -62,16 +81,15 @@ public sealed class ConfigIntegrationTests
         enumerator.Current.Content.ShouldNotBeNull();
 
         string updated = NacosHttp.ConfigContent("after");
-        await client.Config.PublishConfigAsync(key, updated, "text", ct: cts.Token);
 
-        // The server decides when to push, so the assertion waits for it rather than assuming.
-        while (await enumerator.MoveNextAsync())
-        {
-            if (enumerator.Current.Content == updated)
-            {
-                break;
-            }
-        }
+        // The listener is registered with the server just after its current value is yielded, and the
+        // server decides when to push, so the change is repeated until it is pushed. That is what
+        // leaves the assertion about the push path rather than about the registration window.
+        await NacosEventually.PushedAsync(
+            ct => client.Config.PublishConfigAsync(key, updated, "text", ct: ct),
+            enumerator,
+            change => change.Content == updated,
+            cts.Token);
 
         enumerator.Current.Content.ShouldBe(updated);
     }
@@ -83,6 +101,7 @@ public sealed class ConfigIntegrationTests
         // server discards the registration with the connection, so this proves it was replayed.
         await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
         await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
 
         string dataId = NacosHttp.UniqueId("config-reconnect-it");
         var key = new NacosConfigKey(dataId, "DEFAULT_GROUP");
@@ -103,25 +122,24 @@ public sealed class ConfigIntegrationTests
         string updated = NacosHttp.ConfigContent("after-restart");
 
         // The value is published once the server is serving traffic again; the change must still
-        // reach the listener that was registered on the connection that was destroyed.
-        Task publish = Task.Run(
-            async () =>
+        // reach the listener that was registered on the connection that was destroyed. The restart
+        // returns only once the server reports ready, so the publish can follow it.
+        Task restart = Task.Run(() => container.StartAsync(cts.Token), cts.Token);
+
+        // The server discards the registration with the connection, so the push proves it was
+        // replayed. Repeating the publish also covers the window in which the connection is still
+        // coming back and a request would be refused rather than delivered.
+        await NacosEventually.PushedAsync(
+            async ct =>
             {
-                await container.StartAsync(cts.Token);
-                await WaitForReadyAsync(container, cts.Token);
-                await client.Config.PublishConfigAsync(key, updated, "text", ct: cts.Token);
+                await restart.ConfigureAwait(false);
+                await client.Config.PublishConfigAsync(key, updated, "text", ct: ct).ConfigureAwait(false);
             },
+            enumerator,
+            change => change.Content == updated,
             cts.Token);
 
-        while (await enumerator.MoveNextAsync())
-        {
-            if (enumerator.Current.Content == updated)
-            {
-                break;
-            }
-        }
-
-        await publish;
+        await restart;
 
         enumerator.Current.Content.ShouldBe(updated);
     }
@@ -143,31 +161,4 @@ public sealed class ConfigIntegrationTests
             channelFactory: null,
             timeProvider: TimeProvider.System,
             loggerFactory: NullLoggerFactory.Instance);
-
-    private static async Task WaitForReadyAsync(NacosContainer container, CancellationToken ct)
-    {
-        using var http = new HttpClient();
-
-        for (int attempt = 0; attempt < 60; attempt++)
-        {
-            try
-            {
-                using HttpResponseMessage response = await http.GetAsync(
-                    string.Concat(container.HttpAddress, "/nacos/v1/console/health/readiness"), ct);
-
-                if (response.IsSuccessStatusCode)
-                {
-                    return;
-                }
-            }
-            catch (HttpRequestException)
-            {
-                // The server is still starting.
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(2), ct);
-        }
-
-        throw new TimeoutException("The Nacos server did not become ready in time.");
-    }
 }
