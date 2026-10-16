@@ -4,8 +4,15 @@ namespace Lolitacoding.Nacos.Locking;
 /// The lock types the built-in Nacos lock service accepts.
 /// </summary>
 /// <remarks>
+/// <para>
 /// The type is part of a lock's identity, so the same key can be held independently under two
 /// different types. The values are the server's <c>LockConstants</c> strings.
+/// </para>
+/// <para>
+/// Only <see cref="Mutex"/> is served by a Nacos 3.2 server: <see cref="Reentrant"/> and
+/// <see cref="NonReentrant"/> are registered by the 3.3 lock service, and asking a 3.2 server for
+/// one fails with <c>lockType: &lt;type&gt; is not exist.</c>
+/// </para>
 /// </remarks>
 public static class NacosLockTypes
 {

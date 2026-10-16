@@ -298,9 +298,11 @@ Spans: `Nacos.Client.Connect`, `Nacos.Client.Request`. Metrics:
 
 ## 10. Take a distributed lock
 
-`client.Lock` talks to the Nacos lock service. The lock is a lease the server grants to an owner, so
-it has to be renewed to outlive the lease and released when the work is done — `GetLock` returns a
-lock that does both by itself:
+`client.Lock` talks to the Nacos lock service, which is the one Nacos **3.3** introduced: the module a
+3.2 server ships only acquires and releases, so renewing and waiting need a 3.3 server (the
+[FAQ](faq.md#which-nacos-versions-are-supported) has the details). The lock is a lease the server
+grants to an owner, so it has to be renewed to outlive the lease and released when the work is done —
+`GetLock` returns a lock that does both by itself:
 
 ```csharp
 using Lolitacoding.Nacos.Locking;

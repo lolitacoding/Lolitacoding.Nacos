@@ -181,6 +181,10 @@ connection is opened on first use, and `client.Lock` also exposes the individual
 caller that needs its own owner. See
 [quick start §10](docs/quickstart.md#10-take-a-distributed-lock) for both forms.
 
+The lock service this speaks to is the one Nacos **3.3** introduced. A 3.2 server's lock module only
+acquires and releases, so renewals and queued waiting need a 3.3 server;
+[the FAQ](docs/faq.md#which-nacos-versions-are-supported) says what happens without one.
+
 ### Observability
 
 ```csharp

@@ -149,9 +149,29 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
   `ServiceQueryRequest`.
 - Subscriptions use `SubscribeServiceRequest`; changes arrive as `NotifySubscriberRequest`, which
   carries the complete instance list, and are answered with `NotifySubscriberResponse`.
+- A push identifies the service **inside** `serviceInfo` (`name`, `groupName`): the server builds it
+  with `NotifySubscriberRequest.buildNotifySubscriberRequest(serviceInfo)`, so the request's own
+  `namespace`/`serviceName`/`groupName` fields are absent on the wire even though the class declares
+  them. Reading them is silently lossy — the push is discarded as unidentifiable. The Java client
+  reads `serviceInfo` too (`NamingPushRequestHandler`).
+- The pushed `serviceInfo.checksum` is **empty**, so a change is detected by comparing the instance
+  lists (by address, with the instance description), not by a checksum:
+  `ServiceInfoHolder.processServiceInfo` → `InstancesDiffer.doDiff` keys both lists by `ip:port`,
+  compares the descriptions, and drops a push whose `lastRefTime` predates the applied state.
 - `ServiceInfo.allIps` serialises as `allIPs` (capital `IP`) on the wire.
 
 ## Distributed lock specifics
+
+> **Which server this describes.** The lock service belongs to the **3.3** line; this section and the
+> client follow it. The lock module a **3.2** server ships is an earlier contract: its
+> `LockOperationEnum` knows only `ACQUIRE`, `RELEASE` and `EXPIRE`, its `LockInstance` has no
+> `owner`, `waitTime` or `waiterRetry`, its response is the bare `result` boolean with no
+> `LockResult`, and its service loader registers `NACOS_LOCK` as the only lock type. Against such a
+> server this client acquires and releases fine, but `RENEW` and `CANCEL_WAIT` come back as
+> `resultCode = 500` / `Nacos deserialize failed` — the operation name is not a value the older
+> enum knows — and `REENTRANT` / `NON_REENTRANT` are refused with `lockType: <type> is not exist.`
+> The handshake cannot tell the two apart: a 3.2 server advertises `lock = true` just as a 3.3 one
+> does.
 
 - One request type carries every operation. `LockOperationRequest` holds a `LockInstance` and an
   `lockOperationEnum` naming the operation: `ACQUIRE`, `RELEASE`, `RENEW` or `CANCEL_WAIT`. An enum

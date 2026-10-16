@@ -374,10 +374,12 @@ Note the four **derived** instance fields (`instanceIdGenerator`, `instanceHeart
 {"headers":{},"namespace":"namespace","serviceName":"service","groupName":"group","subscribe":false,"clusters":"aa,bb","module":"naming"}
 ```
 
-**`NotifySubscriberRequest` body** (`NotifySubscriberRequestTest.java:63-67`):
+**`NotifySubscriberRequest` body** (`NotifySubscriberRequestTest.java:63-67`, a hand-built request):
 ```json
 {"headers":{},"namespace":"namespace","serviceName":"service","groupName":"group","serviceInfo":{"name":"service","groupName":"group","cacheMillis":1000,"hosts":[],"lastRefTime":0,"checksum":"","allIPs":false,"reachProtectionThreshold":false,"valid":true},"module":"naming"}
 ```
+⚠️ That unit test fills the three identity fields in itself; the **server never does** — see §3.10. A
+captured push from a real server carries `serviceInfo` (and `module`) only.
 
 **`QueryServiceResponse` body** (`QueryServiceResponseTest.java:64-67`):
 ```json
@@ -556,7 +558,11 @@ registering an instance should send `weight:1.0`, `healthy:true`, `enabled:true`
 | `subscribe` | boolean | `true` subscribe, `false` unsubscribe |
 | `clusters` | string | comma-separated cluster filter |
 
-`SubscribeServiceResponse` adds **`serviceInfo`** (object `ServiceInfo`).
+`SubscribeServiceResponse` adds **`serviceInfo`** (object `ServiceInfo`): the state the server holds at
+the moment the subscription became effective. That is where a change that landed between the
+client's own read of the service and this response would otherwise be lost; this client serves the
+subscription's first element from a read issued *before* the request and does not use the response's
+copy, so such a change is not delivered until the next one (see PLAN.md).
 
 ### 3.10 NotifySubscriberRequest → `NotifySubscriberResponse`
 `NotifySubscriberRequest extends ServerRequest` — **server push, not a subclass of
@@ -568,6 +574,26 @@ registering an instance should send `weight:1.0`, `healthy:true`, `enabled:true`
 | `serviceName` | string |
 | `groupName` | string |
 | `serviceInfo` | object `ServiceInfo` |
+
+**Only `serviceInfo` is ever populated.** The server builds every push with
+`NotifySubscriberRequest.buildNotifySubscriberRequest(serviceInfo)`, which sets nothing else, so the
+identity of the pushed service has to be read back out of `serviceInfo.name` and
+`serviceInfo.groupName`; the request's own three fields are always absent on the wire. A push
+captured from `nacos-server:3.0.2` is:
+
+```json
+{"headers":{},"requestId":"1","serviceInfo":{"name":"<service>","groupName":"DEFAULT_GROUP","cacheMillis":10000,"hosts":[{"instanceId":"10.20.30.41#8081#DEFAULT#<service>","ip":"10.20.30.41","port":8081,"weight":1.0,"healthy":true,"enabled":true,"ephemeral":true,"clusterName":"DEFAULT","serviceName":"DEFAULT_GROUP@@<service>","metadata":{},"instanceHeartBeatInterval":5000,"instanceHeartBeatTimeOut":15000,"instanceIdGenerator":"simple","ipDeleteTimeout":30000}],"lastRefTime":1792173476703,"checksum":"","allIPs":false,"reachProtectionThreshold":false,"valid":true},"module":"naming"}
+```
+
+The Java client reads it the same way: `NamingPushRequestHandler.requestReply` passes
+`notifyRequest.getServiceInfo()` to the `ServiceInfoHolder` and never looks at the request's own
+fields.
+
+**The pushed `checksum` is empty**, so a change cannot be detected by comparing checksums. Java's
+`ServiceInfoHolder.processServiceInfo` diffs the pushed state against the last one with
+`InstancesDiffer.doDiff`, which keys both instance lists by `ip:port` and compares the instance
+descriptions, and it drops a push whose `lastRefTime` is older than the state already applied. This
+client does the same.
 
 `NotifySubscriberResponse` adds **no** fields (base `Response` fields + `success` only).
 
@@ -629,6 +655,11 @@ single field **`abilityTable`** (object<string,boolean>) — the **server's** ab
 
 `lock/.../LockOperationServiceImpl` and `api/.../lock/**` define the lock module. All four payloads
 are keyed by their simple class names, as every other payload is.
+
+This is the **3.3** lock service. The module a 3.2 server runs is an earlier contract — `ACQUIRE`,
+`RELEASE` and `EXPIRE` only, a `LockInstance` without `owner`, `waitTime` or `waiterRetry`, a bare
+boolean `result` and no `lockResult`, and `NACOS_LOCK` as its only lock type. What that means for a
+caller is recorded in the [protocol notes](protocol-notes.md#distributed-lock-specifics).
 
 `LockOperationRequest` (client → server, `AbstractLockRequest.getModule()` = `"lock"`):
 

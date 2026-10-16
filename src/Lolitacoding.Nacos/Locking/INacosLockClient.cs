@@ -22,6 +22,11 @@ namespace Lolitacoding.Nacos.Locking;
 /// lease before committing.
 /// </para>
 /// <para>
+/// The lock service addressed here is the one Nacos 3.3 introduced. The module a 3.2 server ships
+/// only acquires and releases: it renews and queues nothing, so a renewal or a wait against such a
+/// server fails the request rather than being served late.
+/// </para>
+/// <para>
 /// Implementations are expected to be safe for concurrent use, since a hosted application will
 /// serve many requests through one client.
 /// </para>

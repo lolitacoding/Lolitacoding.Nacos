@@ -3,14 +3,24 @@
 # The client targets Nacos 3.x only. The SDK gRPC port is the main port + 1000 (8848 -> 9848);
 # it must be published or the client cannot subscribe to configuration and service changes.
 # TLS is negotiated on that same gRPC port, so there is no separate TLS port to publish.
+#
+# Both instances run the newest stable 3.x release. The distributed lock's full semantics — lease
+# renewal, the wait queue, explicit owners — belong to the 3.3 lock service, so point an instance at
+# a 3.3 image (nacos/nacos-server:v3.3.0-RC for now) to exercise those; a 3.2 server only acquires
+# and releases. See docs/faq.md.
 
 services:
   nacos-3x:
-    image: nacos/nacos-server:v3.0.2
+    image: nacos/nacos-server:v3.2.4
     container_name: nacos-dev-3x
     environment:
       MODE: standalone
       NACOS_AUTH_ENABLE: "false"
+      # Nacos 3.2 refuses to start without a signing key and identity even when the authentication
+      # plugin is disabled, so both instances set them.
+      NACOS_AUTH_TOKEN: SecretKey012345678901234567890123456789012345678901234567890123456789
+      NACOS_AUTH_IDENTITY_KEY: serverIdentity
+      NACOS_AUTH_IDENTITY_VALUE: security
       JVM_XMS: 512m
       JVM_XMX: 512m
       JVM_XMN: 256m
@@ -26,7 +36,7 @@ services:
 
   # Auth-enabled Nacos instance, for exercising the login flow.
   nacos-auth:
-    image: nacos/nacos-server:v3.0.2
+    image: nacos/nacos-server:v3.2.4
     container_name: nacos-dev-auth
     environment:
       MODE: standalone

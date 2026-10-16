@@ -109,8 +109,10 @@ comparing MD5 values, so a listener only runs when the value actually changed.
 ## Distributed locking
 
 Locking is its own module on the client, `client.Lock`, and the lock is a server-side lease rather
-than a local mutex. The closest thing to `NacosLock.lock()` is a lock handle that waits, renews and
-releases on its own:
+than a local mutex. It is also the one module that needs a Nacos **3.3** server: the lock service a
+3.2 server ships only acquires and releases, with neither renewal nor a wait queue, which
+[the FAQ](faq.md#which-nacos-versions-are-supported) explains. The closest thing to
+`NacosLock.lock()` is a lock handle that waits, renews and releases on its own:
 
 ```csharp
 NacosLock nightlyLock = client.Lock.GetLock(
@@ -157,6 +159,10 @@ What is worth knowing before using it:
 - `Ended` completes both when a lease is released and when it is lost, and `IsHeld` tells the two
   apart. That is the question a critical section should ask: was the lock still mine when the work
   finished?
+- A renewal the server refuses, or one that never reaches it, is treated as losing the lock: the
+  watchdog stops, `Ended` completes and `IsHeld` turns false, so the caller is told instead of being
+  left to act on a lease the server has already dropped. Java's watchdog stops its own renewals and
+  says nothing.
 - The result is a value rather than a boolean: `NacosLockResult` carries the reentrant depth and the
   queue position, and a refused acquisition is an unsuccessful result rather than an exception.
   Exceptions are reserved for a request that could not be carried out at all — an unreachable

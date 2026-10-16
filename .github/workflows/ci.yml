@@ -91,15 +91,25 @@ jobs:
 
       - name: Start Nacos
         run: |
+          # The tests start their own containers, so this step is what warms the image cache for them.
+          # The lock tests run against a second image, because the lock service the client speaks to
+          # arrived after 3.2.
+          docker pull nacos/nacos-server:v3.3.0-RC
+          # The container image requires a signing key and a server identity from 3.2 on, whether or
+          # not the authentication plugin is enabled.
           docker run -d --name nacos-it \
             -e MODE=standalone \
             -e NACOS_AUTH_ENABLE=false \
+            -e NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789 \
+            -e NACOS_AUTH_IDENTITY_KEY=serverIdentity \
+            -e NACOS_AUTH_IDENTITY_VALUE=security \
             -p 8848:8848 -p 9848:9848 \
             nacos/nacos-server:v3.0.2
           # Wait for the server to answer its readiness endpoint. Nacos 3.x exposes readiness
-          # under the v3 admin core API; the legacy v1 console health path is gone.
+          # under the v3 admin core API; the legacy v1 console health path is gone. The body is what
+          # decides: the endpoint answers 200 while it is still reporting that a module is not ready.
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8848/nacos/v3/admin/core/state/readiness >/dev/null 2>&1; then
+            if curl -fsS http://127.0.0.1:8848/nacos/v3/admin/core/state/readiness | grep -q '"data":"ok"'; then
               echo "Nacos is ready."; exit 0
             fi
             sleep 5
@@ -111,6 +121,7 @@ jobs:
       - name: Integration tests
         env:
           NACOS_TEST_IMAGE: nacos/nacos-server:v3.0.2
+          NACOS_LOCK_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
           NACOS_TEST_SERVER: http://127.0.0.1:8848
         run: >
           dotnet test tests/Lolitacoding.Nacos.IntegrationTests/Lolitacoding.Nacos.IntegrationTests.csproj
