@@ -64,6 +64,13 @@ internal sealed class NacosLockClient : INacosLockClient
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<NacosLockClient> _logger;
 
+    /// <summary>The locks taken through this client, as opposed to the requests it sends.</summary>
+    /// <remarks>
+    /// The coordinator owns the renewal loops, so it is created with the client and disposed with it
+    /// rather than per acquisition: a lease outlives the call that took it.
+    /// </remarks>
+    private readonly NacosLockCoordinator _locks;
+
     /// <summary>The owner this client uses when a caller names none.</summary>
     private readonly string _owner = Guid.NewGuid().ToString("N");
 
@@ -122,6 +129,10 @@ internal sealed class NacosLockClient : INacosLockClient
 
         _timeProvider = timeProvider;
         _logger = loggerFactory.CreateLogger<NacosLockClient>();
+
+        // Created with the client rather than lazily: it holds no connection of its own, only the
+        // renewal loops of the locks that are held.
+        _locks = new NacosLockCoordinator(this, _owner, timeProvider, loggerFactory);
     }
 
     /// <inheritdoc />
@@ -301,6 +312,15 @@ internal sealed class NacosLockClient : INacosLockClient
     }
 
     /// <inheritdoc />
+    public NacosLock GetLock(NacosLockKey key, NacosLockOptions? options = null)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        return new NacosLock(_locks, key, options ?? new NacosLockOptions());
+    }
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
@@ -309,6 +329,10 @@ internal sealed class NacosLockClient : INacosLockClient
         }
 
         _disposed = true;
+
+        // The locks this client holds are given up before the connection is closed: its renewals
+        // would have nowhere to go, and every holder is told the lock is no longer its own.
+        _locks.Dispose();
 
         TaskCompletionSource<NacosLockNotificationType>[] waiters;
 

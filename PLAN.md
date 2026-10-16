@@ -224,11 +224,17 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 修正传输层缺陷：`DispatchServerRequestAsync` 现在会把 handler 返回的首个非空响应写回（对齐 `GrpcClient.onNext` / `RpcClient.handleServerRequest`），配置/命名推送确认与锁通知确认都依赖它。
 - 验收：Release 构建零警告零错误；341 个单元测试全绿（新增获取/释放/续租/等待通知/超时/能力协商/惰性连接/推送应答用例）。
 
-#### B2 · 高层 `NacosLock`（可重入 + watchdog 续租）
+#### B2 · 高层 `NacosLock`（可重入 + watchdog 续租）（✅ 已完成）
 
-- 基于 B1 提供持有句柄（`AcquireAsync` 返回可释放句柄），本地维护 owner 与重入计数，释放时按计数递减。
-- `NacosLockWatchdog`：租约到期前自动续租，续租失败视为失去锁并通知调用方。
-- 验收：重入/并发/续租/失去锁路径均有单元测试覆盖。
+- 公共 API：`INacosLockClient.GetLock(key, options)` 返回 `NacosLock`；`AcquireAsync`（无限等待）与 `TryAcquireAsync(wait, ct)`（有限等待，`TimeSpan.Zero` 表示只问一次、不入队）；`NacosLockOptions` 只有 `LeaseDuration` 与 `Parameters`（owner 与 waitTime 由锁自身管理）。
+- `AcquireAsync` 返回 `NacosLockLease`（`Key` / `Owner` / `ReentrancyCount` / `IsHeld` / `Ended`，`DisposeAsync` 释放一层）。释放最后一层时才向服务端发 `RELEASE`；重复释放只生效一次；被拒绝或发不出去的释放只记日志、不抛异常，由租约到期兜底。
+- 可重入按“持有者”而非“嵌套锁对象”实现：owner 每次获取新生成（`{clientId}:{n}`），同一异步流内再次获取只增加本地计数、不产生服务端往返，服务端看到的计数恒为 1。这样既避免服务端把重入请求排到持有者自己后面，也避免“释放还在途中、紧接着又获取”被服务端误判为重入。
+- 非可重入类型（`NACOS_LOCK` / `NON_REENTRANT`）在同一流内重入时抛 `LockRecursionException`（对应 Java 的 `IllegalMonitorStateException` 保护），而不是让调用方与自己在服务端队列里互相等待。
+- 持有关系随 `AsyncLocal` 沿异步流传递：嵌套调用、以及从持锁流中启动的任务，都视为同一持有者（重入）；需要真正互斥的并发工作要用低层客户端显式 owner，或以不继承流的方式启动。流的记录必须在公共同步入口创建——`async` 方法内写入的 `AsyncLocal` 对调用方不可见——该约束已由单元测试固化。
+- 等待语义：`AcquireAsync` 每次向服务端排队 5 分钟（Java `DEFAULT_SERVER_WAIT_TIME_MS`）并在被丢弃后重排，直到取消；`TryAcquireAsync(wait)` 以本地截止时间为准，到点返回 `null` 并把队列项撤回。
+- `NacosLockWatchdog`：每个持有者一条续租循环，间隔为 `max(1s, min(lease/3, 10s))`（未指定租约时按服务端默认 30s 计算）；续租被拒或异常即结束持有、停止续租，并记录 `LeaseRenewFailed`（7003）。`Ended` 覆盖“释放”与“失去”两种结束，`IsHeld` 区分二者。
+- 新增日志 7003（续租失败）/ 7004（释放失败）；客户端 `DisposeAsync` 先结束全部持有、停止续租，再关闭连接。
+- 验收：Release 构建零警告零错误；359 个单元测试全绿（新增重入、跨流独立 owner、非可重入拒绝、有限/无限等待、队列重排、续租间隔与字段、失去锁、释放幂等与被拒、客户端释放等用例）。
 
 验收（阶段级）：单元测试覆盖获取/释放/续租/超时/重入/等待通知；与真实服务器集成通过。
 

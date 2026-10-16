@@ -31,4 +31,36 @@ internal static partial class NacosLockLog
         Level = LogLevel.Debug,
         Message = "Lock notification for {Key} carried the unknown type {Type} and was treated as available.")]
     public static partial void UnknownNotificationType(ILogger logger, string key, string type);
+
+    /// <summary>Logs that a lease could not be kept alive, so the lock was given up.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The lock whose lease was lost.</param>
+    /// <param name="owner">The owner that held it.</param>
+    /// <param name="reason">Why the renewal failed.</param>
+    /// <remarks>
+    /// A renewal the server refused and one that never reached it look the same from here, and both
+    /// mean the lock is no longer this holder's — the server hands it to somebody else when the lease
+    /// runs out. The holder is told through the lease as well; this is the record of why.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 7003,
+        Level = LogLevel.Warning,
+        Message = "The lease on lock {Key} for owner {Owner} could not be renewed, so the lock was given up: {Reason}")]
+    public static partial void LeaseRenewFailed(ILogger logger, string key, string owner, string reason);
+
+    /// <summary>Logs that releasing a lock was refused or could not be sent.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The lock that was released.</param>
+    /// <param name="owner">The owner that held it.</param>
+    /// <param name="reason">Why the release failed.</param>
+    /// <remarks>
+    /// The caller is done with the lock either way, and a server that no longer knows the owner has
+    /// already freed it. A failed release therefore only delays another holder by the rest of the
+    /// lease, which is a warning rather than an error.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 7004,
+        Level = LogLevel.Warning,
+        Message = "Releasing lock {Key} for owner {Owner} failed, so the server may hold it until the lease expires: {Reason}")]
+    public static partial void LeaseReleaseFailed(ILogger logger, string key, string owner, string reason);
 }

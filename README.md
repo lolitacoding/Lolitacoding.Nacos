@@ -155,30 +155,31 @@ reference fails fast. See the [Aspire guide](docs/aspire.md) for the options `Ad
 ```csharp
 using Lolitacoding.Nacos.Locking;
 
-var key = new NacosLockKey("nightly-reindex");
+NacosLock nightlyLock = client.Lock.GetLock(
+    new NacosLockKey("nightly-reindex"),
+    new NacosLockOptions { LeaseDuration = TimeSpan.FromSeconds(15) });
 
-NacosLockResult acquired = await client.Lock.AcquireAsync(key, new NacosLockAcquireOptions
-{
-    WaitTime = TimeSpan.FromSeconds(30),
-    LeaseDuration = TimeSpan.FromSeconds(15),
-});
+await using NacosLockLease lease = await nightlyLock.AcquireAsync(cancellationToken);
 
-if (acquired.Success)
+// ... the work this lock protects ...
+
+if (!lease.IsHeld)
 {
-    try
-    {
-        // ... the work this lock protects ...
-    }
-    finally
-    {
-        await client.Lock.ReleaseAsync(key);
-    }
+    // The lease was lost while the work ran, so its effect may not have been exclusive.
 }
 ```
 
-The lock is a lease the server grants to an owner: it survives a caller that dies by expiring, and
-`RenewAsync` extends it for work that outlives the lease. The lock connection is opened on first
-use. See the [quick start](docs/quickstart.md#10-take-a-distributed-lock) for the details.
+`GetLock` returns a lock that waits for itself: the lease is renewed while it is held, released when
+the lease is disposed, and a nested call from the same asynchronous flow re-enters instead of waiting
+for itself. A lock type that forbids re-entrancy is refused with `LockRecursionException` rather than
+deadlocking.
+
+The lock is a lease the server grants to an owner, so it survives a caller that dies — usually
+released at once, because the connection goes with the process. There is no fencing token, so a
+critical section that must not outlive its lock checks `lease.IsHeld` before committing. The lock
+connection is opened on first use, and `client.Lock` also exposes the individual operations for a
+caller that needs its own owner. See
+[quick start §10](docs/quickstart.md#10-take-a-distributed-lock) for both forms.
 
 ### Observability
 

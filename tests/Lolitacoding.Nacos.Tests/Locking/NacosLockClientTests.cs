@@ -1,10 +1,8 @@
-using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Locking;
 using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Generated;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Tests.Transport;
-using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lolitacoding.Nacos.Tests.Locking;
 
@@ -19,21 +17,19 @@ namespace Lolitacoding.Nacos.Tests.Locking;
 /// </remarks>
 public sealed class NacosLockClientTests
 {
-    private static readonly NacosServerAddress Server = NacosServerAddress.Parse("127.0.0.1:8848");
-
     [Fact]
     public async Task AcquireAsync_OpensTheLockConnectionOnlyWhenFirstUsed()
     {
         // An application that never takes a lock should not carry a connection and a heartbeat for
         // the module it does not use.
-        var server = new LockServer();
+        var server = new LockTestServer();
 
-        await using NacosLockClient client = CreateClient(server);
+        await using NacosLockClient client = server.CreateClient();
 
         server.Factory.RequestedAddresses.ShouldBeEmpty();
         server.Stream.Written.ShouldBeEmpty();
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
 
         await client.AcquireAsync(new NacosLockKey("order-42"), ct: TestContext.Current.CancellationToken);
 
@@ -43,10 +39,10 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_SendsTheAcquireOnAConnectionLabelledForTheLockModule()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
 
         await client.AcquireAsync(new NacosLockKey("order-42"), ct: TestContext.Current.CancellationToken);
 
@@ -59,15 +55,15 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_SendsTheOperationTheServerReadsLiterally()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["holder"] = "nightly-job",
         };
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
 
         await client.AcquireAsync(
             new NacosLockKey("order-42", NacosLockTypes.Reentrant),
@@ -100,10 +96,10 @@ public sealed class NacosLockClientTests
     {
         // The server would otherwise default the owner to the connection, and every wait would then
         // address the connection rather than the caller that is still waiting.
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
 
         await client.AcquireAsync(new NacosLockKey("order-42"), ct: TestContext.Current.CancellationToken);
 
@@ -114,10 +110,10 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_ReportsTheReentrantCount()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(3);
+        server.OnOperation = _ => LockTest.Success(3);
 
         NacosLockResult result =
             await client.AcquireAsync(new NacosLockKey("order-42"), ct: TestContext.Current.CancellationToken);
@@ -132,8 +128,8 @@ public sealed class NacosLockClientTests
     {
         // Being refused is an ordinary answer to asking for a lock, not a failure of the call, so
         // it must not be an exception.
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         server.OnOperation = _ => new LockOperationResponse
         {
@@ -156,8 +152,8 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_ThrowsWhenTheServerReportsATransportFailure()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         server.OnOperation = _ => new LockOperationResponse
         {
@@ -177,14 +173,14 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_ThrowsWhenTheServerAdvertisesNoLockSupport()
     {
-        var server = new LockServer(new Dictionary<string, bool>(StringComparer.Ordinal)
+        var server = new LockTestServer(new Dictionary<string, bool>(StringComparer.Ordinal)
         {
             ["lock"] = false,
         });
 
-        await using NacosLockClient client = CreateClient(server);
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
 
         NacosServerException ex = await Should.ThrowAsync<NacosServerException>(
             () => client.AcquireAsync(
@@ -199,14 +195,14 @@ public sealed class NacosLockClientTests
     {
         // An ability table that does not mention the lock means the server did not say, not that it
         // cannot serve it: the request is the only way to find out.
-        var server = new LockServer(new Dictionary<string, bool>(StringComparer.Ordinal)
+        var server = new LockTestServer(new Dictionary<string, bool>(StringComparer.Ordinal)
         {
             ["fuzzyWatch"] = false,
         });
 
-        await using NacosLockClient client = CreateClient(server);
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
 
         NacosLockResult result =
             await client.AcquireAsync(new NacosLockKey("order-42"), ct: TestContext.Current.CancellationToken);
@@ -217,10 +213,10 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_RejectsNegativeWaitAndNonPositiveLease()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
         var key = new NacosLockKey("order-42");
 
         await Should.ThrowAsync<ArgumentOutOfRangeException>(
@@ -241,15 +237,15 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_RetriesAsASecondAttemptAndSucceedsAfterANotification()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         int attempts = 0;
 
         server.OnOperation = request =>
         {
             request.LockOperationEnum.ShouldBe("ACQUIRE");
-            return ++attempts == 1 ? Waiting(0) : Success(1);
+            return ++attempts == 1 ? LockTest.Waiting(0) : LockTest.Success(1);
         };
 
         var key = new NacosLockKey("order-42");
@@ -261,7 +257,7 @@ public sealed class NacosLockClientTests
 
         // The waiter is registered before the first attempt is sent, so once the attempt has been
         // recorded a notification pushed now is guaranteed to find it.
-        await WaitForAsync(() => server.Operations.Count >= 1, TestContext.Current.CancellationToken);
+        await LockTest.WaitForAsync(() => server.Operations.Count >= 1, TestContext.Current.CancellationToken);
 
         string owner = server.Operations[0].LockInstance!.Owner!;
 
@@ -285,7 +281,7 @@ public sealed class NacosLockClientTests
         server.Operations[1].LockInstance!.WaiterRetry.ShouldBeTrue();
 
         // The acknowledgement is what stops the server retrying the notification.
-        await WaitForAsync(
+        await LockTest.WaitForAsync(
             () => server.Stream.Written.Any(
                 payload => PayloadCodec.ReadTypeName(payload) == "LockNotificationResponse"),
             TestContext.Current.CancellationToken);
@@ -294,13 +290,13 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_WithdrawsTheQueueEntryWhenTheWaitRunsOut()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         server.OnOperation = request => request.LockOperationEnum switch
         {
-            "ACQUIRE" => Waiting(0),
-            "CANCEL_WAIT" => Success(0),
+            "ACQUIRE" => LockTest.Waiting(0),
+            "CANCEL_WAIT" => LockTest.Success(0),
             _ => throw new InvalidOperationException(request.LockOperationEnum),
         };
 
@@ -319,13 +315,13 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task AcquireAsync_StopsWhenTheServerDropsTheWaiter()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         server.OnOperation = request => request.LockOperationEnum switch
         {
-            "ACQUIRE" => Waiting(2),
-            "CANCEL_WAIT" => Success(0),
+            "ACQUIRE" => LockTest.Waiting(2),
+            "CANCEL_WAIT" => LockTest.Success(0),
             _ => throw new InvalidOperationException(request.LockOperationEnum),
         };
 
@@ -336,7 +332,7 @@ public sealed class NacosLockClientTests
             new NacosLockAcquireOptions { WaitTime = TimeSpan.FromSeconds(30) },
             TestContext.Current.CancellationToken);
 
-        await WaitForAsync(() => server.Operations.Count >= 1, TestContext.Current.CancellationToken);
+        await LockTest.WaitForAsync(() => server.Operations.Count >= 1, TestContext.Current.CancellationToken);
 
         server.Stream.Push(TestPayload.ForRequest(new LockNotificationRequest
         {
@@ -359,10 +355,10 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task ReleaseAsync_SendsTheReleaseForTheNamedOwner()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(0);
+        server.OnOperation = _ => LockTest.Success(0);
 
         NacosLockResult result = await client.ReleaseAsync(
             new NacosLockKey("order-42"),
@@ -379,8 +375,8 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task RenewAsync_SendsTheRenewWithTheNewLease()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         // A renewal answers with a bare boolean, which is why the client must read that form too.
         server.OnOperation = _ => new LockOperationResponse { Result = true };
@@ -399,8 +395,8 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task RenewAsync_FailsWhenTheServerSaysTheLeaseIsGone()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
         server.OnOperation = _ => new LockOperationResponse { Result = false };
 
@@ -413,10 +409,10 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task CancelWaitAsync_SendsTheCancellationForTheNamedOwner()
     {
-        var server = new LockServer();
-        await using NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(0);
+        server.OnOperation = _ => LockTest.Success(0);
 
         NacosLockResult result = await client.CancelWaitAsync(
             new NacosLockKey("order-42"),
@@ -431,10 +427,10 @@ public sealed class NacosLockClientTests
     [Fact]
     public async Task Operations_ThrowAfterTheClientIsDisposed()
     {
-        var server = new LockServer();
-        NacosLockClient client = CreateClient(server);
+        var server = new LockTestServer();
+        NacosLockClient client = server.CreateClient();
 
-        server.OnOperation = _ => Success(1);
+        server.OnOperation = _ => LockTest.Success(1);
 
         await client.DisposeAsync();
 
@@ -443,124 +439,4 @@ public sealed class NacosLockClientTests
                 new NacosLockKey("order-42"), ct: TestContext.Current.CancellationToken));
     }
 
-    private static NacosLockClient CreateClient(LockServer server)
-    {
-        var options = new NacosOptions
-        {
-            ServerAddresses = ["127.0.0.1:8848"],
-            AppName = "lock-tests",
-            ConnectionTimeout = TimeSpan.FromSeconds(5),
-        };
-
-        return new NacosLockClient(
-            options,
-            [Server],
-            server.Factory,
-            TimeProvider.System,
-            NullLoggerFactory.Instance,
-            new Random(1234));
-    }
-
-    private static LockOperationResponse Success(int reentrantCount) => new()
-    {
-        Result = true,
-        LockResult = new LockResult
-        {
-            Success = true,
-            ReentrantCount = reentrantCount,
-            WaitPosition = -1,
-        },
-    };
-
-    private static LockOperationResponse Waiting(int position) => new()
-    {
-        Result = false,
-        LockResult = new LockResult
-        {
-            Success = false,
-            WaitPosition = position,
-        },
-    };
-
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
-    {
-        for (int i = 0; i < 500; i++)
-        {
-            if (condition())
-            {
-                return;
-            }
-
-            await Task.Delay(10, ct);
-        }
-
-        throw new TimeoutException("The expected condition was not observed.");
-    }
-
-    /// <summary>
-    /// A scripted stand-in for the Nacos lock service.
-    /// </summary>
-    /// <remarks>
-    /// It answers the per-connection probe as the real server does, records every lock operation it
-    /// was asked to perform, and delegates the answer to the test. An unscripted operation fails the
-    /// test where it was made, so a client sending something unexpected is reported as such rather
-    /// than as a timeout.
-    /// </remarks>
-    private sealed class LockServer
-    {
-        private readonly List<LockOperationRequest> _operations = [];
-
-        public LockServer(Dictionary<string, bool>? abilities = null)
-        {
-            Stream = new FakeNacosDuplexStream
-            {
-                SetupAckAbilityTable = abilities ?? [],
-            };
-
-            var channel = new FakeNacosChannel(Server, Handle, Stream);
-            Factory = new FakeNacosChannelFactory(_ => channel);
-        }
-
-        /// <summary>Gets the stream the module connection talks over.</summary>
-        public FakeNacosDuplexStream Stream { get; }
-
-        /// <summary>Gets the channel factory the connection was built with.</summary>
-        public FakeNacosChannelFactory Factory { get; }
-
-        /// <summary>Gets the lock operations the client sent, in order.</summary>
-        public IReadOnlyList<LockOperationRequest> Operations
-        {
-            get
-            {
-                lock (_operations)
-                {
-                    return [.. _operations];
-                }
-            }
-        }
-
-        /// <summary>
-        /// Gets or sets how the server answers a lock operation.
-        /// </summary>
-        public Func<LockOperationRequest, LockOperationResponse> OnOperation { get; set; } =
-            request => throw new InvalidOperationException(
-                $"The test did not script an answer for {request.LockOperationEnum}.");
-
-        private Payload Handle(Payload payload)
-        {
-            if (PayloadCodec.ReadTypeName(payload) == "ServerCheckRequest")
-            {
-                return FakeServerCheck.Responding()(payload);
-            }
-
-            LockOperationRequest request = PayloadCodec.Decode<LockOperationRequest>(payload)!;
-
-            lock (_operations)
-            {
-                _operations.Add(request);
-            }
-
-            return PayloadCodec.Encode(OnOperation(request));
-        }
-    }
 }

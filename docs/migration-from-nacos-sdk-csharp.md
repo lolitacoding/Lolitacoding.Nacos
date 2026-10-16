@@ -109,42 +109,61 @@ comparing MD5 values, so a listener only runs when the value actually changed.
 ## Distributed locking
 
 Locking is its own module on the client, `client.Lock`, and the lock is a server-side lease rather
-than a local mutex:
+than a local mutex. The closest thing to `NacosLock.lock()` is a lock handle that waits, renews and
+releases on its own:
 
 ```csharp
-var key = new NacosLockKey("nightly-reindex");
+NacosLock nightlyLock = client.Lock.GetLock(
+    new NacosLockKey("nightly-reindex"),
+    new NacosLockOptions { LeaseDuration = TimeSpan.FromSeconds(15) });
 
-NacosLockResult acquired = await client.Lock.AcquireAsync(key, new NacosLockAcquireOptions
-{
-    // Join the server's queue instead of failing when the lock is already held.
-    WaitTime = TimeSpan.FromSeconds(30),
-    LeaseDuration = TimeSpan.FromSeconds(15),
-});
+await using NacosLockLease lease = await nightlyLock.AcquireAsync(ct);
 
-if (acquired.Success)
+// ... work ...
+
+if (!lease.IsHeld)
 {
-    try
-    {
-        // ... work ...
-    }
-    finally
-    {
-        await client.Lock.ReleaseAsync(key);
-    }
+    // The lease was lost while the work ran.
 }
 ```
 
+The two clients line up like this:
+
+| Nacos Java client | here |
+| --- | --- |
+| `NacosLock.lock()` | `NacosLock.AcquireAsync` |
+| `NacosLock.tryLock()` | `NacosLock.TryAcquireAsync(TimeSpan.Zero)` |
+| `NacosLock.tryLock(time, unit)` | `NacosLock.TryAcquireAsync(wait)` |
+| `NacosLock.unlock()` | `NacosLockLease.DisposeAsync` |
+| `NacosLockService.getReentrantLock(key)` | `GetLock(new NacosLockKey(key, NacosLockTypes.Reentrant))` |
+| `NacosLockService.getNonReentrantLock(key)` | `GetLock(new NacosLockKey(key, NacosLockTypes.NonReentrant))` |
+| `NacosLockService.remoteTryLock` / `unLock` / `renew` | `INacosLockClient.AcquireAsync` / `ReleaseAsync` / `RenewAsync` |
+| `NacosLockWatchdog` | internal, started and stopped with the lock |
+
 What is worth knowing before using it:
 
-- The result is a value rather than a boolean: it carries the reentrant depth and the queue
-  position, and a refused acquisition is an unsuccessful result rather than an exception.
+- Ownership is per asynchronous **flow**, not per thread. Java keeps the reentrant count in a
+  `ThreadLocal`, which says nothing about work that hops between threads; here a nested call from the
+  flow that holds the lock re-enters. A lock type that forbids re-entrancy throws
+  `LockRecursionException`, this client's counterpart of Java's `IllegalMonitorStateException` guard
+  for the same case.
+- Re-entering does not ask the server. Java sends one `ACQUIRE` per nesting level; here the depth is
+  local, the server sees one acquisition, and a nested acquisition therefore cannot end up queued
+  behind its own holder.
+- `unlock()` is `DisposeAsync`, and it does not throw where Java's does. Releasing a lock this client
+  no longer holds, or a release the server refuses, is logged rather than thrown out of a dispose —
+  nothing useful can be done about it there, and the lease expires anyway. Disposing the same lease
+  twice releases once, so the `await using` form and an explicit release cannot collide.
+- `Ended` completes both when a lease is released and when it is lost, and `IsHeld` tells the two
+  apart. That is the question a critical section should ask: was the lock still mine when the work
+  finished?
+- The result is a value rather than a boolean: `NacosLockResult` carries the reentrant depth and the
+  queue position, and a refused acquisition is an unsuccessful result rather than an exception.
   Exceptions are reserved for a request that could not be carried out at all — an unreachable
   server, a rejected token, a server that does not implement locking.
-- The lease is what releases a lock whose holder died, so work that can outlive it has to renew it.
-  An unsuccessful renewal means the lock is already gone, and the work must stop.
 - The owner defaults to an identifier this client generates, which is the right default for a
-  process acquiring its own locks. A lock that spans processes, or threads that must share one
-  acquisition, has to name an owner the callers agree on.
+  process acquiring its own locks. The low-level operations are for a lock that spans processes, or
+  for renewing and releasing a lock this client did not take, where the owner has to be named.
 - There is no fencing token. A holder whose lease expired can still act on what the lock guarded
   until it notices, so only guard work whose effects are idempotent or that checks its own lease
   before committing.

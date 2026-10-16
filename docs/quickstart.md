@@ -299,16 +299,65 @@ Spans: `Nacos.Client.Connect`, `Nacos.Client.Request`. Metrics:
 ## 10. Take a distributed lock
 
 `client.Lock` talks to the Nacos lock service. The lock is a lease the server grants to an owner, so
-it has to be renewed for work that outlives it and released when the work is done:
+it has to be renewed to outlive the lease and released when the work is done — `GetLock` returns a
+lock that does both by itself:
 
 ```csharp
 using Lolitacoding.Nacos.Locking;
 
-var key = new NacosLockKey("nightly-reindex");
+NacosLock nightlyLock = client.Lock.GetLock(
+    new NacosLockKey("nightly-reindex"),
 
+    // The server frees the lock on its own if this client dies, and the client renews it while it is
+    // held: three times per lease, or every ten seconds, whichever is less often.
+    new NacosLockOptions { LeaseDuration = TimeSpan.FromSeconds(15) });
+
+// Waits for as long as it takes. TryAcquireAsync(wait) gives up instead and returns null, and
+// TryAcquireAsync(TimeSpan.Zero) asks the server once without queueing.
+await using NacosLockLease lease = await nightlyLock.AcquireAsync(cancellationToken);
+
+// ... the work this lock protects ...
+
+if (!lease.IsHeld)
+{
+    // A renewal failed while the work ran, so the lock may be somebody else's by now.
+}
+```
+
+The lock is released when the last lease of the holder is disposed, which is the end of the scope
+above. Re-entrancy is decided by the client rather than asked of the server: a nested call — or a
+helper that takes the same lock — from the flow that already holds it returns another lease and only
+increases a local count, and a lock type that forbids re-entrancy
+(`NacosLockTypes.Mutex`, `NacosLockTypes.NonReentrant`) throws `LockRecursionException` instead of
+deadlocking against itself.
+
+Ownership follows the asynchronous flow, so *concurrent* work that must exclude the holder rather
+than re-enter it — a task started while the lock is held inherits the flow — has to start in a flow
+of its own, or use the low-level operations below with an owner of its own.
+
+Three things are worth knowing before relying on this:
+
+- The lease is a lease: a holder that dies loses its locks within one lease, and usually at once,
+  because the connection carrying the renewals goes with it.
+- There is no fencing token. A holder whose lease expired can still act on what the lock guarded, so
+  a critical section whose effect must not outlive its lock checks `lease.IsHeld` before committing,
+  or makes its effect idempotent.
+- `IsHeld` turns false when the last lease is disposed, when the renewal fails, and when the client is
+  disposed. `lease.Ended` completes for all of those, and is what a background task can wait on.
+
+### Low-level access
+
+The individual operations are on `client.Lock` as well, for the cases a lease does not cover: an
+owner shared with another process, a renewal or release of a lock this client did not take, or an
+acquisition that is abandoned somewhere other than the call that made it.
+
+```csharp
 NacosLockResult acquired = await client.Lock.AcquireAsync(key, new NacosLockAcquireOptions
 {
-    // Wait in the server's first-in-first-out queue instead of failing immediately.
+    // Who holds the lock. The default is an identifier this client generates.
+    Owner = "order-42-worker",
+
+    // Join the server's first-in-first-out queue instead of failing immediately.
     WaitTime = TimeSpan.FromSeconds(30),
 
     // The server releases the lock on its own if this client dies.
@@ -325,17 +374,16 @@ if (!acquired.Success)
 try
 {
     // ... the work this lock protects ...
-    await client.Lock.RenewAsync(key, leaseDuration: TimeSpan.FromSeconds(15));
+    await client.Lock.RenewAsync(key, owner: "order-42-worker");
 }
 finally
 {
-    await client.Lock.ReleaseAsync(key);
+    await client.Lock.ReleaseAsync(key, owner: "order-42-worker");
 }
 ```
 
 The lock connection is opened on first use, so an application that never takes one does not carry a
-connection for it. There is no fencing token: a holder whose lease expired can still act, so guard
-work whose effects are idempotent, or that checks its own lease before committing.
+connection for it.
 
 ## Next steps
 

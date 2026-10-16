@@ -229,8 +229,13 @@ Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.Select(System.Collecti
 Lolitacoding.Nacos.Locking.INacosLockClient
 Lolitacoding.Nacos.Locking.INacosLockClient.AcquireAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, Lolitacoding.Nacos.Locking.NacosLockAcquireOptions? options = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
 Lolitacoding.Nacos.Locking.INacosLockClient.CancelWaitAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, string? owner = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
+Lolitacoding.Nacos.Locking.INacosLockClient.GetLock(Lolitacoding.Nacos.Locking.NacosLockKey! key, Lolitacoding.Nacos.Locking.NacosLockOptions? options = null) -> Lolitacoding.Nacos.Locking.NacosLock!
 Lolitacoding.Nacos.Locking.INacosLockClient.ReleaseAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, string? owner = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
 Lolitacoding.Nacos.Locking.INacosLockClient.RenewAsync(Lolitacoding.Nacos.Locking.NacosLockKey! key, string? owner = null, System.TimeSpan? leaseDuration = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockResult!>!
+Lolitacoding.Nacos.Locking.NacosLock
+Lolitacoding.Nacos.Locking.NacosLock.AcquireAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockLease!>!
+Lolitacoding.Nacos.Locking.NacosLock.Key.get -> Lolitacoding.Nacos.Locking.NacosLockKey!
+Lolitacoding.Nacos.Locking.NacosLock.TryAcquireAsync(System.TimeSpan wait, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Locking.NacosLockLease?>!
 Lolitacoding.Nacos.Locking.NacosLockAcquireOptions
 Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.LeaseDuration.get -> System.TimeSpan?
 Lolitacoding.Nacos.Locking.NacosLockAcquireOptions.LeaseDuration.set -> void
@@ -248,6 +253,19 @@ Lolitacoding.Nacos.Locking.NacosLockKey.LockType.get -> string!
 Lolitacoding.Nacos.Locking.NacosLockKey.LockType.init -> void
 Lolitacoding.Nacos.Locking.NacosLockKey.NacosLockKey(string! name, string! lockType = "NACOS_LOCK") -> void
 Lolitacoding.Nacos.Locking.NacosLockKey.Name.get -> string!
+Lolitacoding.Nacos.Locking.NacosLockLease
+Lolitacoding.Nacos.Locking.NacosLockLease.DisposeAsync() -> System.Threading.Tasks.ValueTask
+Lolitacoding.Nacos.Locking.NacosLockLease.Ended.get -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Locking.NacosLockLease.IsHeld.get -> bool
+Lolitacoding.Nacos.Locking.NacosLockLease.Key.get -> Lolitacoding.Nacos.Locking.NacosLockKey!
+Lolitacoding.Nacos.Locking.NacosLockLease.Owner.get -> string!
+Lolitacoding.Nacos.Locking.NacosLockLease.ReentrancyCount.get -> int
+Lolitacoding.Nacos.Locking.NacosLockOptions
+Lolitacoding.Nacos.Locking.NacosLockOptions.LeaseDuration.get -> System.TimeSpan?
+Lolitacoding.Nacos.Locking.NacosLockOptions.LeaseDuration.set -> void
+Lolitacoding.Nacos.Locking.NacosLockOptions.NacosLockOptions() -> void
+Lolitacoding.Nacos.Locking.NacosLockOptions.Parameters.get -> System.Collections.Generic.IReadOnlyDictionary<string!, string!>?
+Lolitacoding.Nacos.Locking.NacosLockOptions.Parameters.set -> void
 Lolitacoding.Nacos.Locking.NacosLockResult
 Lolitacoding.Nacos.Locking.NacosLockResult.<Clone>$() -> Lolitacoding.Nacos.Locking.NacosLockResult!
 Lolitacoding.Nacos.Locking.NacosLockResult.Equals(Lolitacoding.Nacos.Locking.NacosLockResult? other) -> bool
@@ -282,6 +300,7 @@ override Lolitacoding.Nacos.Config.NacosConfigResult.ToString() -> string!
 override Lolitacoding.Nacos.Locking.NacosLockKey.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Locking.NacosLockKey.GetHashCode() -> int
 override Lolitacoding.Nacos.Locking.NacosLockKey.ToString() -> string!
+override Lolitacoding.Nacos.Locking.NacosLockLease.ToString() -> string!
 override Lolitacoding.Nacos.Locking.NacosLockResult.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Locking.NacosLockResult.GetHashCode() -> int
 override Lolitacoding.Nacos.Locking.NacosLockResult.ToString() -> string!

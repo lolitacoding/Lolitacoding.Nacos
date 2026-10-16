@@ -178,6 +178,9 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
 - Synchronising on a lock is not enough on its own. The lock has no fencing token, so a holder whose
   lease expired can still act on what the lock guarded until it notices. Renewing well inside the
   lease, and treating an unsuccessful renewal as having lost the lock, is what makes the lease safe.
+  Renewal is the client's job, and this client does it on the cadence Nacos' own client uses —
+  `max(1s, min(lease / 3, 10s))` — with a lease left to the server assumed to be the server's 30
+  seconds. See `NacosLockWatchdog`.
 
 ## Authentication
 

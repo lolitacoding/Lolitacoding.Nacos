@@ -133,4 +133,30 @@ public interface INacosLockClient : IAsyncDisposable
         NacosLockKey key,
         string? owner = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the lock a caller holds, renews and releases without writing any of that itself.
+    /// </summary>
+    /// <param name="key">The lock.</param>
+    /// <param name="options">
+    /// The lease and the metadata of every acquisition of the lock, or <see langword="null"/> for
+    /// the defaults: the server's lease and no metadata.
+    /// </param>
+    /// <returns>The lock.</returns>
+    /// <exception cref="ObjectDisposedException">The client was disposed.</exception>
+    /// <remarks>
+    /// <para>
+    /// The returned object is a thin handle on this client, so it may be created per use or kept for
+    /// as long as the client lives. It names its own holder for every acquisition, so two
+    /// acquisitions made through it contend with each other rather than both being granted the lock
+    /// — which is what the low-level methods cannot offer, because they only send what they are told
+    /// to send.
+    /// </para>
+    /// <para>
+    /// Use the low-level methods instead when the shape of a single request matters: an owner shared
+    /// with another process, a renewal or release of a lock this client did not take, or an
+    /// acquisition that is to be abandoned from somewhere other than the call that made it.
+    /// </para>
+    /// </remarks>
+    NacosLock GetLock(NacosLockKey key, NacosLockOptions? options = null);
 }
