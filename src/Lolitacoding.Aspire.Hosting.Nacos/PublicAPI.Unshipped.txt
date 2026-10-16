@@ -9,7 +9,7 @@ Lolitacoding.Aspire.Hosting.Nacos.NacosResource.Host.get -> Aspire.Hosting.Appli
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.HttpEndpoint.get -> Aspire.Hosting.ApplicationModel.EndpointReference!
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.NacosResource(string! name) -> void
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.Port.get -> Aspire.Hosting.ApplicationModel.EndpointReferenceExpression!
-const Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.ReadinessPath = "/nacos/v1/console/health/readiness" -> string!
+const Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.ReadinessPath = "/nacos/v3/admin/core/state/readiness" -> string!
 const Lolitacoding.Aspire.Hosting.Nacos.NacosContainerImageTags.Image = "nacos/nacos-server" -> string!
 const Lolitacoding.Aspire.Hosting.Nacos.NacosContainerImageTags.Registry = "docker.io" -> string!
 const Lolitacoding.Aspire.Hosting.Nacos.NacosContainerImageTags.Tag = "latest" -> string!

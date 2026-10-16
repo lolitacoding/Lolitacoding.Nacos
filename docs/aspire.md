@@ -92,7 +92,7 @@ apply. This package adds Nacos-specific helpers on top:
 | --- | --- |
 | `WithDataVolume(name)` | Persists `/home/nacos/data` in a named volume (auto-named when omitted). |
 | `WithDataBindMount(source)` | Persists `/home/nacos/data` in a host directory. |
-| `WithAuthentication()` | Sets `NACOS_AUTH_ENABLE=true`. The server's built-in `nacos`/`nacos` credentials still work. |
+| `WithAuthentication()` | Sets `NACOS_AUTH_ENABLE=true`. No account exists yet: create the administrator once with `POST /nacos/v3/auth/user/admin?password=…` on the container's main port, as described in the [FAQ](faq.md#how-do-i-authenticate). |
 
 ```csharp
 builder.AddNacos("nacos")
@@ -104,8 +104,17 @@ The image defaults to `docker.io/nacos/nacos-server:latest`. Pin a version with 
 methods:
 
 ```csharp
-builder.AddNacos("nacos").WithImageTag("v3.0.2");
+builder.AddNacos("nacos").WithImageTag("v3.2.4");
 ```
+
+The container image requires a signing key and a server identity from 3.2 on, whether or not
+authentication is enabled, and exits without them. `AddNacos` therefore always sets development
+values for `NACOS_AUTH_TOKEN`, `NACOS_AUTH_IDENTITY_KEY` and `NACOS_AUTH_IDENTITY_VALUE`; override
+them with the standard `WithEnvironment` when the deployment is not a local one.
+
+The distributed lock is the one module that needs more than the newest stable release: its renewal,
+wait queue and reentrancy belong to the 3.3 lock service. See
+[the FAQ](faq.md#which-nacos-versions-are-supported).
 
 ## 4. Ports
 

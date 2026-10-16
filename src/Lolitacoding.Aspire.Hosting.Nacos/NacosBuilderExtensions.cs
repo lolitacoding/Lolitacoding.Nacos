@@ -11,7 +11,30 @@ public static class NacosBuilderExtensions
     /// <summary>
     /// The relative path of the Nacos readiness endpoint, used for the built-in health check.
     /// </summary>
-    public const string ReadinessPath = "/nacos/v1/console/health/readiness";
+    /// <remarks>
+    /// The v3 admin core API. A Nacos 3.2 server has dropped the earlier v1 console health path, so
+    /// this is the one that works across the supported servers, and the client's own container
+    /// harness waits on the same path.
+    /// </remarks>
+    public const string ReadinessPath = "/nacos/v3/admin/core/state/readiness";
+
+    /// <summary>
+    /// The signing key the container is given for local development.
+    /// </summary>
+    /// <remarks>
+    /// The image requires a signing key and a server identity from 3.2 on, whether or not the
+    /// authentication plugin is enabled, and exits without them. These are always set — to the same
+    /// development values the repository's compose file and CI use — so that the container starts
+    /// out of the box, and a deployment overrides them with <c>WithEnvironment</c>.
+    /// </remarks>
+    private const string DevelopmentAuthToken =
+        "SecretKey012345678901234567890123456789012345678901234567890123456789";
+
+    /// <summary>The identity key that goes with <see cref="DevelopmentAuthToken"/>.</summary>
+    private const string DevelopmentAuthIdentityKey = "serverIdentity";
+
+    /// <summary>The identity value that goes with <see cref="DevelopmentAuthToken"/>.</summary>
+    private const string DevelopmentAuthIdentityValue = "security";
 
     /// <summary>
     /// Adds a Nacos server container to the application model.
@@ -42,7 +65,9 @@ public static class NacosBuilderExtensions
     /// <para>
     /// The server runs in standalone mode with authentication disabled, which is the convenient
     /// default for local development. Call <see cref="WithAuthentication"/> to enable the
-    /// authentication plugin.
+    /// authentication plugin. The container image requires a signing key and a server identity even
+    /// with the plugin off, so development values are always set; override them with
+    /// <c>WithEnvironment</c> for anything but local development.
     /// </para>
     /// <para>
     /// The container includes a health check against the readiness endpoint, so a resource added
@@ -83,6 +108,9 @@ public static class NacosBuilderExtensions
                 name: NacosResource.GrpcServerEndpointName,
                 scheme: "tcp")
             .WithEnvironment(NacosEnvironmentVariables.Mode, "standalone")
+            .WithEnvironment(NacosEnvironmentVariables.AuthToken, DevelopmentAuthToken)
+            .WithEnvironment(NacosEnvironmentVariables.AuthIdentityKey, DevelopmentAuthIdentityKey)
+            .WithEnvironment(NacosEnvironmentVariables.AuthIdentityValue, DevelopmentAuthIdentityValue)
             .WithHttpHealthCheck(ReadinessPath, endpointName: NacosResource.HttpEndpointName);
     }
 
@@ -128,8 +156,10 @@ public static class NacosBuilderExtensions
     /// <returns>The resource builder for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> is null.</exception>
     /// <remarks>
-    /// The server's built-in <c>nacos</c> user keeps its default password (<c>nacos</c>) unless it
-    /// is changed, so a development client can authenticate with the default credentials.
+    /// A Nacos 3.x server ships no accounts, so a client cannot authenticate until the first
+    /// administrator exists: it is created once, either through the console on its first run or by
+    /// posting to <c>/nacos/v3/auth/user/admin</c> on the server's main port. Enabling authentication
+    /// without creating that account leaves every login rejected.
     /// </remarks>
     public static IResourceBuilder<NacosResource> WithAuthentication(
         this IResourceBuilder<NacosResource> builder)

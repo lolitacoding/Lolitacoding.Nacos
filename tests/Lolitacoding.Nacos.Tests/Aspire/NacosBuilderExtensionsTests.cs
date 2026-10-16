@@ -72,6 +72,25 @@ public sealed class NacosBuilderExtensionsTests
 
         variables["MODE"].ShouldBe("standalone");
         variables.ShouldNotContainKey("NACOS_AUTH_ENABLE");
+
+        // The image requires a signing key and a server identity from 3.2 on, whether or not the
+        // authentication plugin is enabled, and exits without them. The key the server signs with is
+        // decoded from base64 and has to be at least 32 bytes long; the identity is what it presents
+        // to its peers.
+        variables["NACOS_AUTH_TOKEN"].ShouldBeOfType<string>()
+            .Length.ShouldBeGreaterThanOrEqualTo(32);
+
+        variables["NACOS_AUTH_IDENTITY_KEY"].ShouldBe("serverIdentity");
+        variables["NACOS_AUTH_IDENTITY_VALUE"].ShouldBe("security");
+    }
+
+    [Fact]
+    public void ReadinessPath_is_the_v3_admin_core_path()
+    {
+        // The earlier v1 console health path is one a Nacos 3.2 server no longer serves, so the
+        // built-in health check has to ask the v3 admin core API, and the client's container harness
+        // waits on the same path.
+        NacosBuilderExtensions.ReadinessPath.ShouldBe("/nacos/v3/admin/core/state/readiness");
     }
 
     [Fact]
