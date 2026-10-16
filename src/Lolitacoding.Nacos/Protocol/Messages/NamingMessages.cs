@@ -239,7 +239,10 @@ internal sealed class ServiceInfo
     /// <summary>Gets or sets the server timestamp of the last refresh.</summary>
     public long LastRefTime { get; set; }
 
-    /// <summary>Gets or sets the checksum the client uses to detect changes.</summary>
+    /// <summary>
+    /// Gets or sets the checksum the server reported for the list. Nacos 3.x leaves it empty in the
+    /// pushes it sends, so it cannot be used to detect changes.
+    /// </summary>
     public string? Checksum { get; set; } = string.Empty;
 
     /// <summary>
@@ -329,8 +332,11 @@ internal sealed class SubscribeServiceResponse : NacosResponse
 /// </summary>
 /// <remarks>
 /// This extends the Java <c>ServerRequest</c> base rather than the naming request base, so it
-/// declares its own namespace/service/group fields. It is pushed over the notification stream
-/// and carries the full instance list, which lets the client skip a follow-up query.
+/// declares its own namespace/service/group fields. The server leaves those unset: it builds the
+/// push from a service info alone (<c>NotifySubscriberRequest.buildNotifySubscriberRequest</c>), so
+/// the identity of the pushed service is only ever in <see cref="ServiceInfo"/>. It is pushed over
+/// the notification stream and carries the full instance list, which lets the client skip a
+/// follow-up query.
 /// </remarks>
 internal sealed class NotifySubscriberRequest : NacosRequest
 {

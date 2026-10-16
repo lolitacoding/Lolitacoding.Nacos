@@ -186,7 +186,7 @@ public sealed record NacosServiceInfo
     /// <param name="key">The service that was queried.</param>
     /// <param name="instances">The instances.</param>
     /// <param name="clusters">The cluster list reported by the server.</param>
-    /// <param name="checksum">The checksum used to detect changes.</param>
+    /// <param name="checksum">The checksum the server reported, when it reports one.</param>
     /// <param name="fromLocalCache">Whether the value came from a local cache.</param>
     internal NacosServiceInfo(
         NacosServiceKey key,
@@ -211,7 +211,11 @@ public sealed record NacosServiceInfo
     /// <summary>Gets the cluster list reported by the server.</summary>
     public string? Clusters { get; init; }
 
-    /// <summary>Gets the checksum used to detect changes.</summary>
+    /// <summary>
+    /// Gets the checksum the server reported with the state, when it reports one. Nacos 3.x leaves
+    /// it empty on the pushes it sends, so a change is detected by comparing the instance lists
+    /// rather than by comparing this value.
+    /// </summary>
     public string? Checksum { get; init; }
 
     /// <summary>
@@ -238,7 +242,9 @@ public sealed record NacosServiceChange
     /// Initializes a new instance of the <see cref="NacosServiceChange"/> record.
     /// </summary>
     /// <param name="service">The new service state.</param>
-    /// <param name="previousChecksum">The checksum of the state that was replaced.</param>
+    /// <param name="previousChecksum">
+    /// The checksum of the state that was replaced, when the server reported one.
+    /// </param>
     internal NacosServiceChange(NacosServiceInfo service, string? previousChecksum)
     {
         Service = service;
@@ -248,7 +254,10 @@ public sealed record NacosServiceChange
     /// <summary>Gets the new service state.</summary>
     public NacosServiceInfo Service { get; }
 
-    /// <summary>Gets the checksum of the state that was replaced.</summary>
+    /// <summary>
+    /// Gets the checksum of the state that was replaced, when the server reported one. Nacos 3.x
+    /// leaves the checksum out of its pushes, so this is usually empty.
+    /// </summary>
     public string? PreviousChecksum { get; }
 
     /// <summary>Gets the key of the service that changed.</summary>

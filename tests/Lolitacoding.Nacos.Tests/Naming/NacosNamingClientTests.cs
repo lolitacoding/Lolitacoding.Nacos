@@ -267,27 +267,29 @@ public sealed class NacosNamingClientTests
         initial.Service.Checksum.ShouldBe("sum-1");
 
         await harness.Client.OnServiceChangedAsync(
-            Push(checksum: "sum-2", ports: [8080, 8081]),
+            Push(checksum: "sum-2", ports: [8080, 8082]),
             TestContext.Current.CancellationToken);
 
         NacosServiceChange change = await subscription.NextAsync();
         change.PreviousChecksum.ShouldBe("sum-1");
         change.Service.Checksum.ShouldBe("sum-2");
         change.Instances.Count.ShouldBe(2);
+        change.Instances.ShouldContain(instance => instance.Port == 8082);
     }
 
     [Fact]
-    public async Task Subscribe_IgnoresAPushWhoseChecksumDidNotChange()
+    public async Task Subscribe_IgnoresAPushThatDoesNotChangeTheInstances()
     {
-        // The server notifies on changes it may already have delivered, so an unchanged checksum
-        // must not reach user code as a spurious change.
+        // The server notifies on changes it may already have delivered. It leaves the checksum out
+        // of what it sends, so the state itself is what decides: a push that repeats the instance
+        // list must not reach user code as a change, even though it carries another checksum.
         using NamingHarness harness = new();
 
         await using Subscription subscription = await harness.SubscribeAsync(Service);
         await subscription.NextAsync();
 
         await harness.Client.OnServiceChangedAsync(
-            Push(checksum: "sum-1", ports: [8080, 8081]),
+            Push(checksum: "sum-2", ports: [8080, 8081]),
             TestContext.Current.CancellationToken);
 
         (await subscription.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
@@ -371,11 +373,13 @@ public sealed class NacosNamingClientTests
         });
 
     /// <summary>Builds a full subscriber push for the default service.</summary>
+    /// <remarks>
+    /// The server only populates the service info, so the push deliberately leaves the request's own
+    /// namespace, service and group fields unset; a scripted push that filled them in would hide a
+    /// client that reads the identity from the wrong place.
+    /// </remarks>
     private static NotifySubscriberRequest Push(string checksum, IReadOnlyList<int> ports) => new()
     {
-        Namespace = "public",
-        ServiceName = "order-service",
-        GroupName = "DEFAULT_GROUP",
         ServiceInfo = new ServiceInfo
         {
             Name = "order-service",

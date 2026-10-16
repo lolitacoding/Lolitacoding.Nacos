@@ -219,7 +219,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             id, _ => new Subscription(resolved, clusters));
 
         subscription.Attach(queue.Writer);
-        subscription.Checksum = current.Checksum;
+        subscription.Delivered = current;
 
         try
         {
@@ -283,23 +283,30 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     /// <returns>A task that completes once subscribers were notified.</returns>
     /// <remarks>
     /// Unlike a configuration change, this push carries the complete state, so no follow-up query
-    /// is needed.
+    /// is needed. The request's own namespace, service and group fields are left unset by the
+    /// server, which builds it from a service info alone, so the identity is read back out of that
+    /// service info — the same way the Java handler does, by handing
+    /// <c>notifyRequest.getServiceInfo()</c> to the client's service info holder rather than
+    /// looking at the request's fields.
     /// </remarks>
     internal async Task OnServiceChangedAsync(NotifySubscriberRequest notification, CancellationToken ct = default)
     {
-        if (notification.ServiceInfo is null
-            || string.IsNullOrEmpty(notification.ServiceName)
-            || string.IsNullOrEmpty(notification.GroupName))
+        ServiceInfo? pushed = notification.ServiceInfo;
+
+        string? serviceName = notification.ServiceName ?? pushed?.Name;
+        string? groupName = notification.GroupName ?? pushed?.GroupName;
+
+        if (pushed is null || string.IsNullOrEmpty(serviceName) || string.IsNullOrEmpty(groupName))
         {
             return;
         }
 
         var key = new NacosServiceKey(
-            notification.ServiceName,
-            notification.GroupName,
+            serviceName,
+            groupName,
             string.IsNullOrEmpty(notification.Namespace) ? _options.Namespace : notification.Namespace);
 
-        NacosServiceInfo info = Materialize(key, notification.ServiceInfo, fromLocalCache: false);
+        NacosServiceInfo info = Materialize(key, pushed, fromLocalCache: false);
 
         // The cache is refreshed on every push, so a later outage has the freshest possible list
         // even if no query was ever issued.
@@ -318,22 +325,101 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
                 continue;
             }
 
-            // Duplicate notifications are normal, and the checksum is the server's own change
-            // marker, so comparing it is exactly the intended deduplication.
-            if (string.Equals(subscription.Checksum, info.Checksum, StringComparison.Ordinal))
+            if (pushed.LastRefTime < subscription.LastRefTime)
             {
-                NacosNamingLog.ChangeIgnored(_logger, key.ToString(), info.Checksum);
+                // Pushes arrive in order on one stream, but each one is applied on its own task, so
+                // an older state can finish after a newer one. Applying it would roll the consumer
+                // back to an instance list the server has already replaced.
+                NacosNamingLog.StaleChangeIgnored(
+                    _logger, key.ToString(), pushed.LastRefTime, subscription.LastRefTime);
+
                 continue;
             }
 
-            string? previous = subscription.Checksum;
-            subscription.Checksum = info.Checksum;
+            // Duplicate notifications are normal, and the server leaves the checksum out of the
+            // pushes it sends, so an unchanged state is detected by comparing the instance lists.
+            // That is the comparison the Java client makes: InstancesDiffer.doDiff keys the old and
+            // new lists by address and compares the instance descriptions.
+            if (SameInstances(subscription.Delivered, info))
+            {
+                NacosNamingLog.ChangeIgnored(_logger, key.ToString());
+                continue;
+            }
+
+            NacosServiceInfo? previous = subscription.Delivered;
+            subscription.Delivered = info;
+            subscription.LastRefTime = pushed.LastRefTime;
 
             NacosNamingLog.ServiceChanged(
-                _logger, key.ToString(), info.Instances.Count, previous, info.Checksum);
+                _logger, key.ToString(), info.Instances.Count, previous?.Instances.Count ?? 0);
 
-            subscription.Publish(new NacosServiceChange(info, previous));
+            subscription.Publish(new NacosServiceChange(info, previous?.Checksum));
         }
+    }
+
+    /// <summary>
+    /// Reports whether two service states describe the same instances.
+    /// </summary>
+    /// <param name="delivered">The state most recently delivered, or <see langword="null"/>.</param>
+    /// <param name="current">The state the server just supplied.</param>
+    /// <returns><see langword="true"/> when a consumer would see no difference.</returns>
+    /// <remarks>
+    /// The instances are compared by address and by their description, in any order, which is what
+    /// the Java client compares when it decides whether a push is a change.
+    /// </remarks>
+    private static bool SameInstances(NacosServiceInfo? delivered, NacosServiceInfo current)
+    {
+        if (delivered is null || delivered.Instances.Count != current.Instances.Count)
+        {
+            return false;
+        }
+
+        var byAddress = new Dictionary<string, NacosInstance>(delivered.Instances.Count, StringComparer.Ordinal);
+
+        foreach (NacosInstance instance in delivered.Instances)
+        {
+            byAddress[instance.Endpoint] = instance;
+        }
+
+        return current.Instances.All(
+            instance => byAddress.TryGetValue(instance.Endpoint, out NacosInstance? known)
+                && SameInstance(known, instance));
+    }
+
+    /// <summary>
+    /// Reports whether two instances of the same service describe the same state.
+    /// </summary>
+    /// <param name="delivered">The instance most recently delivered.</param>
+    /// <param name="current">The instance the server just supplied.</param>
+    /// <returns><see langword="true"/> when a consumer would see no difference.</returns>
+    private static bool SameInstance(NacosInstance delivered, NacosInstance current) =>
+        delivered.Weight == current.Weight
+        && string.Equals(delivered.ClusterName, current.ClusterName, StringComparison.Ordinal)
+        && delivered.Healthy == current.Healthy
+        && delivered.Enabled == current.Enabled
+        && delivered.Ephemeral == current.Ephemeral
+        && string.Equals(delivered.InstanceId, current.InstanceId, StringComparison.Ordinal)
+        && SameMetadata(delivered.Metadata, current.Metadata);
+
+    /// <summary>
+    /// Reports whether two metadata maps hold the same entries.
+    /// </summary>
+    /// <param name="delivered">The metadata most recently delivered.</param>
+    /// <param name="current">The metadata the server just supplied.</param>
+    /// <returns><see langword="true"/> when the entries match.</returns>
+    private static bool SameMetadata(
+        IReadOnlyDictionary<string, string>? delivered,
+        IReadOnlyDictionary<string, string>? current)
+    {
+        if (delivered is null || current is null)
+        {
+            return delivered is null && current is null;
+        }
+
+        return delivered.Count == current.Count
+            && delivered.All(
+                entry => current.TryGetValue(entry.Key, out string? value)
+                    && string.Equals(value, entry.Value, StringComparison.Ordinal));
     }
 
     /// <summary>
@@ -710,10 +796,16 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         public string? Clusters { get; }
 
         /// <summary>
-        /// Gets or sets the checksum of the state most recently delivered, used to suppress
-        /// duplicate notifications.
+        /// Gets or sets the state most recently delivered, used to suppress duplicate
+        /// notifications.
         /// </summary>
-        public string? Checksum { get; set; }
+        public NacosServiceInfo? Delivered { get; set; }
+
+        /// <summary>
+        /// Gets or sets the time the delivered state was built at, used to drop a push that
+        /// describes an older state than the one already applied.
+        /// </summary>
+        public long LastRefTime { get; set; }
 
         /// <summary>Gets a value indicating whether the subscription has no live consumers.</summary>
         public bool IsEmpty

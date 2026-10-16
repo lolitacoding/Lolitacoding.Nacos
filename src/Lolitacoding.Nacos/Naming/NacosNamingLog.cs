@@ -33,24 +33,22 @@ internal static partial class NacosNamingLog
     /// <param name="logger">The logger.</param>
     /// <param name="service">The service name.</param>
     /// <param name="count">The number of instances now known.</param>
-    /// <param name="previousChecksum">The previous checksum.</param>
-    /// <param name="currentChecksum">The new checksum.</param>
+    /// <param name="previousCount">The number of instances before the change.</param>
     [LoggerMessage(
         EventId = 5003,
         Level = LogLevel.Information,
-        Message = "The instance list of {Service} changed to {Count} instance(s), checksum {PreviousChecksum} -> {CurrentChecksum}.")]
+        Message = "The instance list of {Service} changed to {Count} instance(s), was {PreviousCount}.")]
     public static partial void ServiceChanged(
-        ILogger logger, string service, int count, string? previousChecksum, string? currentChecksum);
+        ILogger logger, string service, int count, int previousCount);
 
     /// <summary>Logs that a change notification was ignored because nothing changed.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="service">The service name.</param>
-    /// <param name="checksum">The unchanged checksum.</param>
     [LoggerMessage(
         EventId = 5004,
         Level = LogLevel.Debug,
-        Message = "Ignoring a notification for {Service}: the checksum {Checksum} is unchanged.")]
-    public static partial void ChangeIgnored(ILogger logger, string service, string? checksum);
+        Message = "Ignoring a notification for {Service}: the instance list is unchanged.")]
+    public static partial void ChangeIgnored(ILogger logger, string service);
 
     /// <summary>Logs that instances were re-registered after a reconnect.</summary>
     /// <param name="logger">The logger.</param>
@@ -119,4 +117,16 @@ internal static partial class NacosNamingLog
         Level = LogLevel.Warning,
         Message = "Failed to read the local snapshot for {Service}: {Reason}")]
     public static partial void SnapshotReadFailed(ILogger logger, string service, string reason);
+
+    /// <summary>Logs that a push describing an older state than the one already applied was dropped.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service name.</param>
+    /// <param name="pushTime">The time the pushed state was built at.</param>
+    /// <param name="appliedTime">The time of the state that is already applied.</param>
+    [LoggerMessage(
+        EventId = 5012,
+        Level = LogLevel.Warning,
+        Message = "Ignoring a notification for {Service}: it was built at {PushTime}, before the applied state at {AppliedTime}.")]
+    public static partial void StaleChangeIgnored(
+        ILogger logger, string service, long pushTime, long appliedTime);
 }
