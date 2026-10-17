@@ -265,7 +265,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
 - 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
-拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，随后 AgentSpec、Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
+拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，C5 AgentSpec 查询与订阅，随后 Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
 
 #### C1 · AI 基础设施 + MCP 查询/发布（✅ 已完成）
 
@@ -335,6 +335,20 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - harness：`NacosHttp` 新增 `SkillMarkdown` / `PublishSkillAsync`（新建走 `POST /draft`；新版本先按 `basedOnVersion` fork，再 `PUT /draft` 改内容，最后 `POST /force-publish`）/ `BindSkillLabelsAsync` / `OfflineSkillAsync`。三条实测记录：①标签接口是**整表覆盖**，只写 `{"stable":...}` 会把服务端维护的 `latest` 一起丢掉，之后不带选择器的读变成 `404`，集成用例因此显式写回 `latest`；②`publish` 只接受 `reviewing` 状态的版本，草稿必须走 `force-publish`；③错误体形如 `{"code":20004,"message":"resource not found","data":"Skill not found: x"}`。
 - 顺带修正一处 C3 遗留的测试竞态：两个订阅同时启动时，请求到达顺序不确定，断言 `[0]`/`[1]` 会偶发失败（Prompt 与 Skill 的“版本与标签同串”用例都改为断言选择器集合）。
 - 顺带修正一处更早的缺陷：`NacosOptions.ContextPath` 此前只是被校验、并未参与地址解析（`ParseAll` 没把默认上下文路径传下去），因此自定义上下文路径对 HTTP 登录与数据读取都不生效。现在工厂把 `options.ContextPath` 传给 `ParseAll`，`BuildHttpUri` 也会去掉基地址的尾斜杠，根路径部署不再拼出 `//v3/...`。
+
+#### C5 · AgentSpec 查询与订阅（✅ 已完成）
+
+- `Ai/NacosAgentSpec.cs`：`NacosAgentSpec`（`namespaceId` / `name` / `description` / `bizTags` / `content` / `resource` / `version` / `md5`）与 `NacosAgentSpecResource`（`name` / `type` / `content` / `metadata` / `resourceIdentifier`）。与 Skill 不同，服务器下发的不是归档而是 **v3 结果信封**（`{code,message,data}`），`data` 才是规格本体；`content` 是 `manifest.json` 的原文（字符串），`bizTags` 同样是存储形态的 JSON 数组字符串——两者都按“服务器怎么存就怎么给”透传，客户端不重新解释。
+- 传输：**仅 HTTP**，`GET {context}/v3/client/ai/agentspecs?namespaceId=&name=&version=&label=&md5=`。没有任何 `.proto` 声明 AgentSpec 服务，官方 `AiGrpcClient.queryAgentSpec` 直接抛 `SERVER_NOT_IMPLEMENTED`，因此读规格不打开 AI gRPC 连接。token 走 `accessToken` 头；管理 API 用 bearer 头。
+- 版本与哈希在**响应头**里（`X-Nacos-AgentSpec-Resolved-Version` / `X-Nacos-AgentSpec-Md5`），payload 不带，因此模型上的 `Version` / `Md5` 由响应头填充。**304 只回 md5、不回解析版本**——与 Skill 相反：`SkillRequestUtil.buildSkillNotModifiedResponse` 会把 resolvedVersion 带上，`AgentSpecRequestUtil.buildAgentSpecNotModifiedResponse` 传的是 `null`。
+- 选择器：**标签优先于版本**。`AiResourceManager.resolveVersion` 的顺序是 label → version → `latest`，未知标签**不报错**而是逐级回落；Prompt 的文档优先级是 `version > label > latest`，Skill 的未知标签直接判版本缺失。三种资源三种规则，集成用例显式断言了这一顺序。
+- 资源 map 的 key 是注册中心派生的标识符（`config_SOUL__md`），路径在 `resourceIdentifier`（`config::SOUL.md`）；`name` 只是文件名（`SOUL.md`），`type` 是目录（`config`）。按路径查 map 是查不到的。
+- **下线会被条件读掩盖**（本次发现并修掉的真实缺陷）：`queryAgentSpecForClient` 先解析选择器、再比对版本行里存的 md5，命中就直接回 304，**之后才**检查版本是否 ONLINE；而 `/offline` 不改动标签，`latest` 仍指向该版本，于是“带 md5 的读”对一个已下线的版本永远得到 304，订阅永远收不到撤回。Skill 不受影响：它的选择器走索引清单，下线即从清单移除，解析不到版本，也就没有 hash 可比。修复是把订阅的 `Hash` 提取器置空（`static _ => null`），每次刷新做**无条件读**，用 `IsSame`（整文档序列化比较）判定变化；代价是每周期传一次 body，换来“撤回能被看见”。
+- 读取 `GetAgentSpecAsync(name, version = null, label = null, ct)` 无条件读（`md5` 传 `null`）；`304` / `404` / `403` 分别映射为 `NacosServerException(304)` / `NacosServerException(404)` / `NacosAuthException(403)`；释放后调用抛 `ObjectDisposedException`。
+- 订阅 `IAsyncEnumerable<NacosAgentSpec?> SubscribeAgentSpecAsync(...)`：复用 C4 泛型化的 `NacosAiResourceCache<T>`，元素可为 `null`（下线 → `404` → 清缓存并投递 `null`）。
+- 日志事件：8016 变化（Debug）、8017 已撤回（Debug）、8018 刷新失败（Warning）、8019 结果缺失（Warning）。
+- 发布侧（仅集成夹具使用）：首版 `POST /upload`（multipart ZIP，名字取自 `manifest.json` 的 `worker.suggested_name`，版本由服务端定为 `0.0.1`）→ `force-publish`；后续版本 `POST /draft`（fork）→ `PUT /draft`（改内容）→ `force-publish`。三条实测：①`PUT /labels` 是**整表覆盖**，只写 `{"stable":…}` 会把服务端维护的 `latest` 一起丢掉，之后不带选择器的读变成 `404`；②`publish` 只接受 `reviewing` 状态的版本，草稿必须 `force-publish`；③`v3.2.4` 镜像自带 187 个内置规格，用例必须用唯一名字，否则撞名。
+- 验收：Release 构建零警告零错误；单元测试 **517 个全绿**（新增 33 个：模型与 JSON 形状/选择器透传/404 与 403 映射/非结果体/订阅首值/变化/撤回/缓存命中/退订停止轮询/无条件读不带 `md5`/304 视为未变化）；集成测试新增 5 个用例（整套 **41 个**），跑在 `nacos/nacos-server:v3.2.4` 上：上传 + 发布 → 读 latest 并核对 manifest 与资源标识符；发布两版 + 绑定标签 → latest / 指定版本 / 标签 / 标签+版本 四种读法；未知名字与未知版本回 `404`；订阅收到新版；`POST /offline` 后订阅收到 `null`。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

@@ -10,14 +10,15 @@ Two modules are younger than that release, so their tests choose a server of the
 
 - The **AI registry** is served in two waves. The **MCP server registry** is the first: Nacos **3.0.3**
   on, because the official API marks `getMcpServer` and `releaseMcpServer` `@Since("3.0.3")`, and a
-  3.0.2 server answers either one with `RequestHandler Not Found`. The **prompt** and **skill**
-  registries are the second: Nacos **3.2.0** on (`QueryPromptRequestHandler` and the
-  `GET /v3/client/ai/prompt` handler behind it are both marked `@Since("3.2.0")`, as is
-  `SkillClientController.get`). There is no ability key for either, so an older server is not refused in
-  advance — it answers `RequestHandler Not Found`, or, for a skill, does not serve the endpoint at all.
-  Skills are read over HTTP rather than over the AI connection, which is how the server exposes them.
-  The AI tests choose their server with `NACOS_AI_TEST_IMAGE`, which defaults to
-  `nacos/nacos-server:v3.2.4`, the oldest release all three parts have been checked against.
+  3.0.2 server answers either one with `RequestHandler Not Found`. The **prompt**, **skill** and
+  **agent-specification** registries are the second: Nacos **3.2.0** on (`QueryPromptRequestHandler`
+  and the `GET /v3/client/ai/prompt` handler behind it are both marked `@Since("3.2.0")`, as are
+  `SkillClientController.get` and `AgentSpecClientController.get`). There is no ability key for any of
+  them, so an older server is not refused in advance — it answers `RequestHandler Not Found`, or, for
+  a skill or an agent specification, does not serve the endpoint at all. Those two are read over HTTP
+  rather than over the AI connection, which is how the server exposes them. The AI tests choose their
+  server with `NACOS_AI_TEST_IMAGE`, which defaults to `nacos/nacos-server:v3.2.4`, the oldest release
+  all four parts have been checked against.
 - The distributed **lock** module belongs to Nacos **3.3**: lease renewal, the wait queue, explicit
   owners and the reentrant count are all from that release, and the lock module a 3.2 server ships
   only acquires and releases. Against a 3.2 server this client can therefore acquire and release a
@@ -243,7 +244,8 @@ The DI, configuration, service discovery and ASP.NET Core packages are ordinary
 
 Source-generated messages are grouped by subsystem: connection lifecycle in the `1000` range, push
 events in `2000`, reconnect recovery in `3000`, the configuration client in the `4000` range, the
-naming client in the `5000` range, and the service discovery integration in the `6000` range.
+naming client in the `5000` range, the service discovery integration in the `6000` range, the
+distributed lock in the `7000` range, and the AI registry in the `8000` range.
 
 ## How do I turn on logs?
 
@@ -280,3 +282,8 @@ registrations and the observability wiring. They use in-memory fakes and never t
 integration tests boot a real Nacos container with Testcontainers and are marked `Category=Integration`;
 they are what proves end-to-end behaviour against a live server. Which server each module runs against
 is described in [Which Nacos versions are supported?](#which-nacos-versions-are-supported).
+
+One environment note: if `HTTP_PROXY` / `HTTPS_PROXY` are set, the HTTP client honours them and tries
+to tunnel the gRPC connections through the proxy, which fails with `unable to establish HTTP/2
+connection` — while the tests that only speak HTTP keep passing, so the failure looks unrelated to the
+environment. Add the container host to `NO_PROXY` (or unset the variables) for the test run.

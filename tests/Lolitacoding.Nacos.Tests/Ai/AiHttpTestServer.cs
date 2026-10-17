@@ -73,6 +73,60 @@ internal sealed class AiHttpTestServer : HttpMessageHandler
     /// <returns>The decoded value, or <see langword="null"/> when the request did not carry it.</returns>
     public string? Query(int index, string name) => ReadQuery(Requests[index], name);
 
+    /// <summary>Builds an answer that carries an agent specification.</summary>
+    /// <param name="specification">The specification as JSON, without the envelope.</param>
+    /// <param name="md5">The published hash, or <see langword="null"/> to omit the header.</param>
+    /// <param name="version">The resolved version, or <see langword="null"/> to omit the header.</param>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// The body is the API's result envelope with the specification as its <c>data</c>, which is how
+    /// the endpoint answers: unlike a skill, this resource is JSON inside a result rather than a raw
+    /// body.
+    /// </remarks>
+    public static HttpResponseMessage AgentSpec(
+        string specification,
+        string? md5 = null,
+        string? version = null)
+    {
+        // The specification is an object inside the envelope, so the envelope is composed around it
+        // rather than serialized from a string, which would quote it.
+        string body = string.Concat("{\"code\":0,\"message\":\"success\",\"data\":", specification, "}");
+
+        var response = new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+
+        if (md5 is not null)
+        {
+            response.Headers.TryAddWithoutValidation("X-Nacos-AgentSpec-Md5", md5);
+            response.Headers.TryAddWithoutValidation("ETag", md5);
+        }
+
+        if (version is not null)
+        {
+            response.Headers.TryAddWithoutValidation("X-Nacos-AgentSpec-Resolved-Version", version);
+        }
+
+        return response;
+    }
+
+    /// <summary>Builds the not-modified answer a conditional agent-specification read gets.</summary>
+    /// <param name="md5">The published hash the server echoes.</param>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// Unlike a skill's, this answer carries no resolved version: the endpoint echoes only the hash,
+    /// which is why the cached copy's version is what a subscriber keeps reporting.
+    /// </remarks>
+    public static HttpResponseMessage AgentSpecNotModified(string md5)
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.NotModified);
+
+        response.Headers.TryAddWithoutValidation("X-Nacos-AgentSpec-Md5", md5);
+
+        return response;
+    }
+
     /// <summary>Builds an answer that carries a skill archive.</summary>
     /// <param name="archive">The archive bytes.</param>
     /// <param name="md5">The published hash, or <see langword="null"/> to omit the header.</param>

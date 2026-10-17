@@ -220,4 +220,75 @@ internal static partial class NacosAiLog
         string? version,
         string? label,
         string reason);
+
+    /// <summary>Logs that a subscribed agent specification changed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentSpecName">The specification name.</param>
+    /// <param name="version">The version the server resolved, when it stated one.</param>
+    /// <remarks>
+    /// Debug level: the change is delivered to the subscriber, so this only helps when working out
+    /// why a subscription did or did not fire.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8016,
+        Level = LogLevel.Debug,
+        Message = "AgentSpec {AgentSpecName} version {Version} changed.")]
+    public static partial void AgentSpecChanged(ILogger logger, string agentSpecName, string? version);
+
+    /// <summary>Logs that a subscribed agent specification stopped being served.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentSpecName">The specification name.</param>
+    /// <remarks>
+    /// A withdrawal is a change like any other and is delivered as one, so it is recorded at the same
+    /// level. A specification the server no longer serves is distinguishable from one that was never
+    /// published, so it is reported rather than waited out.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8017,
+        Level = LogLevel.Debug,
+        Message = "AgentSpec {AgentSpecName} is no longer served.")]
+    public static partial void AgentSpecWithdrawn(ILogger logger, string agentSpecName);
+
+    /// <summary>Logs that an agent-specification answer carried no specification.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentSpecName">The specification that was queried.</param>
+    /// <param name="version">The version that was named, if any.</param>
+    /// <param name="label">The label that was named, if any.</param>
+    /// <param name="code">The result code the envelope carried, or zero when there was no envelope.</param>
+    /// <remarks>
+    /// A missing specification is reported as a not-found status and an unchanged hash as the
+    /// not-modified one, so a successful status whose envelope carries no specification means the
+    /// reply did not match the contract rather than that the specification is absent.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8018,
+        Level = LogLevel.Warning,
+        Message = "The query for agent spec {AgentSpecName} version {Version} label {Label} carried no specification (code {Code}).")]
+    public static partial void AgentSpecDetailMissing(
+        ILogger logger,
+        string agentSpecName,
+        string? version,
+        string? label,
+        int code);
+
+    /// <summary>Logs that an agent-specification subscription refresh failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentSpecName">The specification being refreshed.</param>
+    /// <param name="version">The version being refreshed, if one was named.</param>
+    /// <param name="label">The label being refreshed, if one was named.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A refresh that fails leaves the cached copy in place and is retried on the next interval,
+    /// because a subscription is meant to survive an outage rather than fail with it.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8019,
+        Level = LogLevel.Warning,
+        Message = "Refreshing the subscription for agent spec {AgentSpecName} version {Version} label {Label} failed: {Reason}")]
+    public static partial void AgentSpecRefreshFailed(
+        ILogger logger,
+        string agentSpecName,
+        string? version,
+        string? label,
+        string reason);
 }

@@ -353,9 +353,9 @@ Three places where `nacos-develop` does something this client does not.
 > `SkillClientController.get` is marked `@Since("3.2.0")`, and the same release introduced the admin
 > API a skill is published through. An older server has no `/v3/client/ai/skills` endpoint at all.
 
-A skill is the one AI resource that is not served over the AI connection. The server exposes it as an
-ordinary OpenAPI endpoint, and the official client implements it only over HTTP — its gRPC client
-answers the request with `SERVER_NOT_IMPLEMENTED`. Skills and agent specifications are the two
+A skill is one of the two AI resources that are not served over the AI connection. The server exposes
+it as an ordinary OpenAPI endpoint, and the official client implements it only over HTTP — its gRPC
+client answers the request with `SERVER_NOT_IMPLEMENTED`. Skills and agent specifications are the two
 resources in that position; MCP and prompts have both paths.
 
 ```
@@ -423,6 +423,102 @@ One difference that is not a deviation but a consequence of the API shape: the o
 the ZIP bytes alone, while `GetSkillAsync` returns the archive together with the version that was
 resolved and the hash the server reported. Those two values are in the response headers either way,
 and a caller that wants to record what it received needs them.
+
+### Agent specifications
+
+> **Which server this describes.** The agent-specification registry is the Nacos **3.2.0** one or
+> newer: `AgentSpecClientController.get` is marked `@Since("3.2.0")`, and the same release introduced
+> the admin API a specification is published through. An older server has no
+> `/v3/client/ai/agentspecs` endpoint at all.
+
+An agent specification is the second AI resource served only over HTTP, next to a skill. No
+`.proto` declares an agent-specification service, and the official gRPC client answers the call with
+`SERVER_NOT_IMPLEMENTED` rather than forwarding it — so a read never opens the AI connection and only
+needs a reachable HTTP endpoint.
+
+```
+GET {context}/v3/client/ai/agentspecs?namespaceId={namespace}&name={name}[&version=…][&label=…][&md5=…]
+```
+
+| Answer | What it means |
+| --- | --- |
+| `200` | The body is the v3 result envelope; `data` is the specification. |
+| `304` | The `md5` that was sent is still the published one. No body. |
+| `404` | No such specification, no such version, or the version is not online. The detail is in the result's `data`. |
+| `403` | The token was rejected. |
+
+The headers that describe the body:
+
+| Header | Meaning |
+| --- | --- |
+| `X-Nacos-AgentSpec-Md5` | The hash of the published content. |
+| `ETag` | The same hash, quoted on a `200` and unquoted on a `304`. |
+| `X-Nacos-AgentSpec-Resolved-Version` | The version the selector resolved to. Sent on a `200` only. |
+
+- **The body is an envelope, not the package.** Unlike a skill, whose body is the archive itself, a
+  specification is answered inside the API's result: `{ "code": 0, "message": "success", "data": … }`.
+  The specification in `data` carries `name`, `description`, `bizTags`, `content` and `resource`.
+  `content` is the `manifest.json` as a JSON *string* — the registry keeps it opaque and hands it back
+  unchanged — and `bizTags` is likewise the stored JSON array in a string. The client reports both as
+  stored and never reinterprets them.
+- **The resource map is keyed by an identifier, not by a path.** A file at `config/SOUL.md` is keyed
+  `config_SOUL__md`, a name the registry derives from the resource's type and file name. The path is
+  in `resourceIdentifier` (`config::SOUL.md`); the resource's own `name` is only the file name
+  (`SOUL.md`) and its `type` is the directory (`config`). A caller that needs a path reads the
+  identifier, and a caller that looks the file up by path finds nothing.
+- **A label resolves before a version.** `AiResourceManager.resolveVersion` consults the labels
+  first, then the named version, then `latest` — and an unknown label is not an error: it falls
+  through to the version and then to `latest`. That is the opposite order to a prompt, whose
+  documented priority is `version > label > latest`, and the opposite strictness to a skill, where a
+  label that does not resolve makes the version missing. A read that names both therefore gets the
+  label's version here and the named version for a prompt.
+- **The version and the hash are headers.** The payload carries neither, which is why
+  `NacosAgentSpec.Version` and `NacosAgentSpec.Md5` are populated from the response rather than from
+  the body. The not-modified answer carries the hash alone — no resolved version — so a conditional
+  read that changed nothing cannot restate which version the copy is of. A skill's not-modified
+  answer does restate it; this one does not.
+- **A withdrawal is a `404`, and a conditional read cannot see it.** Taking a version offline leaves
+  the specification's labels untouched, so `latest` still resolves to that version; the server then
+  reads the stored hash of the version the selector resolved to and answers `304` *before* it checks
+  that the version is still online. A conditional read of a version that was taken offline is
+  therefore answered "not modified" indefinitely. A skill escapes this because its selector resolves
+  through an index manifest that an offline removes the version from, leaving no hash to compare.
+  This client's subscription consequently reads in full every interval and detects the withdrawal
+  through the `404` that a plain read gets; the hash is still reported on a `200`, for a caller that
+  wants to record what it received.
+- **The reason is in `data`, not `message`.** A v3 error is
+  `{ "code": 20004, "message": "resource not found", "data": "AgentSpec not found: hello" }`, exactly
+  as for a skill: `message` names the code and `data` carries the detail. A version that exists but is
+  offline is reported the same way, with `AgentSpec version not online: hello`.
+- **The token travels as `accessToken`** on the client OpenAPI, the header the plugin filter reads,
+  and as a bearer header on the admin API — the same split as a skill's.
+
+Publishing is an admin-API affair, and its shape explains why the fixture publishes the way it does:
+
+- A **first version is uploaded as a package**, not created from a card. `POST /upload` takes a
+  multipart ZIP whose `manifest.json` names the worker under `worker.suggested_name`, and the registry
+  numbers the version itself — the upload endpoint takes no version, and the first one becomes
+  `0.0.1`. The name cannot be passed separately: it comes from the manifest.
+- A **later version is forked, edited and published**: `POST /draft` with `basedOnVersion` and
+  `targetVersion`, `PUT /draft` with the edited card, then `POST /force-publish`. `publish` only
+  accepts a version in `reviewing`, so an unpublished draft has to be forced through.
+- `PUT /labels` **replaces the whole map**. Writing `{"stable":"0.0.1"}` alone drops the `latest`
+  label the server maintains, after which a read that names no selector resolves to nothing and is
+  answered `404`. A caller that binds one label has to write `latest` back in the same call.
+
+### Where this client deviates from the official client (agent specifications)
+
+The same three as the prompt and skill registries, for the same reasons.
+
+1. A subscription whose selector is already cached is answered from the cache without a read.
+2. The cached copy outlives its last subscriber; `GetAgentSpecAsync` never consults the cache, so it
+   always reports the server's word.
+3. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval`, where the official client
+   reads a per-resource interval of its own.
+
+One more, which is not a simplification but a consequence of the `304` above: the refresh reads the
+specification in full rather than conditionally, so it costs a body per interval instead of a `304`.
+The alternative was a subscription that can never report a withdrawal.
 
 ## Authentication
 

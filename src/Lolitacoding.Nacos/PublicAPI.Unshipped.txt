@@ -652,3 +652,37 @@ Lolitacoding.Nacos.Ai.NacosSkill.Name.set -> void
 Lolitacoding.Nacos.Ai.NacosSkill.NacosSkill() -> void
 Lolitacoding.Nacos.Ai.NacosSkill.Version.get -> string?
 Lolitacoding.Nacos.Ai.NacosSkill.Version.set -> void
+Lolitacoding.Nacos.Ai.INacosAiClient.AgentSpec.get -> Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry!
+Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry
+Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry.GetAgentSpecAsync(string! agentSpecName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosAgentSpec!>!
+Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry.SubscribeAgentSpecAsync(string! agentSpecName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosAgentSpec?>!
+Lolitacoding.Nacos.Ai.NacosAgentSpec
+Lolitacoding.Nacos.Ai.NacosAgentSpec.BizTags.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.BizTags.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Content.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Content.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Description.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Description.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Md5.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Md5.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.NacosAgentSpec() -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.NamespaceId.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.NamespaceId.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Resource.get -> System.Collections.Generic.Dictionary<string!, Lolitacoding.Nacos.Ai.NacosAgentSpecResource!>?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Resource.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Version.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpec.Version.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Content.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Content.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Metadata.get -> System.Text.Json.JsonElement?
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Metadata.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.NacosAgentSpecResource() -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.ResourceIdentifier.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.ResourceIdentifier.set -> void
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Type.get -> string?
+Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Type.set -> void

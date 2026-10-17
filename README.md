@@ -219,16 +219,26 @@ await foreach (NacosPrompt? prompt in
 NacosSkill skill = await client.Ai.Skill.GetSkillAsync("release-notes", ct: cancellationToken);
 
 Console.WriteLine($"{skill.Version} ({skill.Md5}), {skill.Archive.Length} bytes");
+
+// An agent specification is a package — a manifest plus the files the worker loads — served as one
+// JSON object, with the version and the hash in the response headers rather than in the body.
+NacosAgentSpec spec =
+    await client.Ai.AgentSpec.GetAgentSpecAsync("support-worker", ct: cancellationToken);
+
+Console.WriteLine($"{spec.Version} ({spec.Md5}), {spec.Resource?.Count} resource(s)");
+Console.WriteLine(spec.Content);   // the manifest, exactly as the registry stored it
 ```
 
 `client.Ai` reaches the Nacos AI registry. This release covers the MCP server registry —
 `GetServerAsync` reads one server, by name and optionally by version, `ReleaseServerAsync` publishes
 one version of one with its tool list, `SubscribeServerAsync` follows one and reports the changes, and
 `RegisterServerEndpointAsync` / `DeregisterServerEndpointAsync` publish the address a server is
-reachable at — and the prompt registry, where `GetPromptAsync` reads a prompt by version or by label
-and `SubscribePromptAsync` follows one, and the skill registry, where `GetSkillAsync` reads a skill's
-archive and `SubscribeSkillAsync` follows one. Agent specifications and agents follow the same shape;
-the MCP servers are the part the transport and the models were built for first.
+reachable at — the prompt registry, where `GetPromptAsync` reads a prompt by version or by label and
+`SubscribePromptAsync` follows one, the skill registry, where `GetSkillAsync` reads a skill's archive
+and `SubscribeSkillAsync` follows one, and the agent-specification registry, where `GetAgentSpecAsync`
+reads one version of a package and `SubscribeAgentSpecAsync` follows one. The agent registry itself —
+the A2A one — is the next slice; the MCP servers are the part the transport and the models were built
+for first.
 
 The models are the MCP protocol's own objects rather than a projection of them — a tool's JSON
 Schema stays JSON, and MCP's `_meta` member keeps its underscore — because Nacos stores what it is
@@ -237,13 +247,15 @@ server's current state and needs the server to be reachable; a subscription is t
 a local copy, and an endpoint is a Naming instance rather than an AI record, so it is discovered and
 health checked like any other instance. A prompt read is always the server's answer, including the
 version a label resolves to, while a prompt subscription re-reads on the interval and therefore has
-the same local copy an MCP subscription has. A skill is the one resource read over HTTP rather than
-over the AI connection, because the server exposes it as an OpenAPI endpoint that streams an archive;
-its subscription is the same kind of poll, and a skill that stops being served is reported the way a
-prompt is.
+the same local copy an MCP subscription has. A skill and an agent specification are the two resources
+read over HTTP rather than over the AI connection, because the server exposes them as OpenAPI
+endpoints; both subscriptions are the same kind of poll, and both report a resource that stops being
+served the way a prompt is. An agent specification is the one resource whose selector resolves a label
+*before* a version, and whose version and hash are reported in the response headers rather than in the
+payload — so a caller always learns which version it actually received.
 
-The AI registry is served from Nacos **3.0.3** on, and the prompt and skill registries from **3.2.0**
-on;
+The AI registry is served from Nacos **3.0.3** on, and the prompt, skill and agent-specification
+registries from **3.2.0** on;
 [the FAQ](docs/faq.md#which-nacos-versions-are-supported)
 says which server each module needs. The AI connection is opened on first use, like the lock
 connection, and carries the `ai` module label plus the per-client identifier Nacos records with
