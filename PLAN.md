@@ -265,7 +265,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
 - 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
-拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，C5 AgentSpec 查询与订阅，C6a A2A AgentCard，随后 RAD v1 Agent 注册、RAD watch、HTTP 回退与宿主/示例。
+拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，C5 AgentSpec 查询与订阅，C6a A2A AgentCard，C6b RAD v1 Agent 注册，随后 RAD watch、HTTP 回退与宿主/示例。
 
 #### C1 · AI 基础设施 + MCP 查询/发布（✅ 已完成）
 
@@ -362,6 +362,18 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 读取 `GetAgentCardAsync(agentName, version = null, registrationType = null, ct)`；订阅 `IAsyncEnumerable<NacosAgentCardDetail?>`，复用 `NacosAiResourceCache<T>`（卡片无哈希 → 每次无条件读，用整文档序列化比较判定变化；缓存的第三个选择器槽位承载 `registrationType`）。
 - 日志事件：8020 已发布（Info）、8021 结果缺失（Warning）、8022 变化（Debug）、8023 已撤回（Debug）、8024 刷新失败（Warning）、8025/8026 端点注册与注销（Info）、8027 重放（Info）、8028 重放失败（Warning）。
 - 验收：Release 构建零警告零错误；单元测试 **538 个全绿**（新增 21 个：请求字段与线上类型名 / 选择器透传 / 结果缺失 / 能力位拒绝与“未声明则照常尝试” / 发布默认 `SERVICE` 且不动 latest / 注册类型与 latest 透传 / 端点字段与默认值 / 端点前置校验 / 重放 / 拒绝不重放 / 注销后不重放 / 订阅首值·选择器·变化·撤回·缓存命中）；集成测试新增 5 个用例（整套 **46 个**），跑在 `nacos/nacos-server:v3.2.4` 上：发布 + 读回并核对 skills/capabilities、未知 agent 回 404、注册端点后读回的 `url` 与 `supportedInterfaces` 来自该端点、注销后回落到声明的 interface、订阅收到新版本。
+
+#### C6b · RAD v1 Agent 注册中心（✅ 已完成）
+
+- `Ai/NacosAgentRegistry.cs`：`NacosAgentPublishRequest`（metadata + `version` / `callInterfaces` / `author` / `changeDescription` / `basedOnVersion` / `autoSubmit`）、`NacosAgentVersionDetail`（+ `namespaceId` / `agentName` / `callInterfaces`）、`NacosAgentVersionSummary` / `NacosAgentVersionInfo` / `NacosAgentSummary`、`NacosAgentCallInterface` / `NacosAgentEndpointSet` / `NacosAgentRuntimeEndpoint` / `NacosAgentVersionBinding`、`NacosAgentSearchRequest` / `NacosAgentPage<T>`、`NacosAgentReference` / `NacosAgentDiscoveryRequest` / `NacosAgentDiscoveryFilter` / `NacosAgentDiscoveryResult`、`NacosAgentEndpointBatch`、`NacosAgentRegistryProvider`。`nativeDescriptor` / `extensions` 按 `JsonElement` 保留。
+- 传输：AI gRPC 连接，线上类型名 `AgentPublishRpcRequest` / `AgentSearchRpcRequest` / `AgentDiscoveryRpcRequest` / `AgentEndpointRegisterRpcRequest` / `AgentEndpointDeregisterRpcRequest`（及各自的 Response）。版本 `@Since("3.3.0")`，因此真机用 `v3.3.0-RC`（新增 `NACOS_AGENT_TEST_IMAGE`）。
+- **能力位是严格协商**（本模块唯一一处）：必须服务端明确 `radV1=true` 才发请求；只声明 `agent`（3.1/3.2 的 A2A 契约）→ 501 并说明需要 3.3；两者都没声明 → 500「无法判断」。其它 AI 资源是“未声明就照常尝试”，因为它们只有一个契约可试。
+- **publish 必须给 callInterfaces 或 basedOnVersion 之一，不能都给**（`validateDraft` 里 `directContent == copiedContent` 即拒）。callInterface 按描述符校验：`protocol`、`descriptorMediaType`（`<type>/<subtype>`）、非空 `nativeDescriptor`、发布侧还必须有 `endpointSourceOrder`；而**发现结果反过来不允许**带 `endpointSourceOrder`（此时顺序已生效）。
+- **首版发布即上线**：`AgentPublishApplicationService` 对首版无视 `autoSubmit` 直接 submit，默认流水线直接通过，所以 publish 返回 `online` 而不是 `draft`，发现立刻可解析；后续版本只有 `autoSubmit` 才提交，否则保持草稿。这也意味着对首版再 `force-publish` 是 400（已在线）。
+- **端点批次必须绑定版本区间**：端点自身没有 `bindings` 时继承批次的 `runtimeVersion` / `versionRange`，两者都不给即 `Invalid Agent version: null`。区间必须规范形式（`[1.0.0,2.0.0)`）且包含 runtimeVersion，批次内 bindings 必须严格有序。批次是“替换”单位——同一发布者同一协议再注册会覆盖上一批，这正是滚动发布安全的原因。
+- **移除按协议**而非按端点：请求只带 agentName + protocol，因为一个进程注册的端点只有作为集合才有意义。
+- 读取：`PublishAgentAsync` / `SearchAgentsAsync` / `DiscoverAgentAsync` / `RegisterEndpointsAsync` / `DeregisterEndpointsAsync`；客户端前置校验（publish 的 name+version、批次的 agent/protocol/非空端点），版本区间留给服务端规范化。日志事件：8029 已发布（Info）、8030 发布缺详情（Warning）、8031 发现缺结果（Warning）、8032/8033 端点批次注册与移除（Info）。
+- 验收：Release 构建零警告零错误；单元测试 **552 个全绿**（新增 14 个：发布字段与线上类型名 / 必填校验 / 缺详情 / 搜索与分页 / 发现与过滤器 / 缺结果 / 端点批次 / 空批次拒绝 / 按协议移除 / 能力位四态）；集成测试新增 5 个用例（整套 **51 个**），跑在 `nacos/nacos-server:v3.3.0-RC` 上：发布→搜索→发现闭环、搜索命中、未知 agent 报错、注册端点后成为发现结果里的 RUNTIME 端点、按协议移除后消失。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

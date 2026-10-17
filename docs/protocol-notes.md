@@ -581,6 +581,69 @@ states that it does not have it — a server that says nothing may still serve t
    endpoints keeps all of them either way. Registering one endpoint at a time is what this client's
    surface offers; the batch request exists in the protocol and is not exposed.
 
+### RAD agents
+
+> **Which server this describes.** The RAD agent registry is the Nacos **3.3.0** one or newer:
+> `AgentPublishRpcRequestHandler`, `AgentSearchRpcRequestHandler`, `AgentDiscoveryRpcRequestHandler`,
+> `AgentEndpointRegisterRpcRequestHandler` and `AgentEndpointDeregisterRpcRequestHandler` are all
+> marked `@Since("3.3.0")`. The watch that goes with it is 3.4, which this release does not cover.
+
+This is a second agent contract, not a newer version of the card one. A card is a document an agent
+publishes about itself; here an agent is a versioned resource with metadata, versions, call
+interfaces and runtime endpoints, managed the way a prompt or a skill is.
+
+| Operation | Request | Answer |
+| --- | --- | --- |
+| Publish a version | `AgentPublishRpcRequest` (`namespaceId`, `publishRequest`) | `AgentPublishRpcResponse` (`versionDetail`) |
+| Search | `AgentSearchRpcRequest` (`namespaceId`, `searchRequest`) | `AgentSearchResponse` (`page`) |
+| Discover | `AgentDiscoveryRpcRequest` (`discoveryRequest`) | `AgentDiscoveryResponse` (`discoveryResult`) |
+| Register endpoints | `AgentEndpointRegisterRpcRequest` (`namespaceId`, `registrationBatch`) | `AgentEndpointOperationResponse` |
+| Remove endpoints | `AgentEndpointDeregisterRpcRequest` (`namespaceId`, `agentName`, `protocol`) | `AgentEndpointOperationResponse` |
+
+- **The ability is negotiated strictly, unlike the others.** A server has to state `radV1` before any
+  of this is sent. A server that states the older `agent` ability instead is a 3.1 or 3.2 one and is
+  refused as not implementing RAD; a server that states neither is reported as one the client cannot
+  classify, because the two contracts need different payloads for the same intent and guessing would
+  send a payload the server may not route. The other AI resources treat an absent ability as "try it",
+  which works because there is only one contract to try.
+- **A publish must carry call interfaces or a base version, and never both.**
+  `AgentValidationUtils.validateDraft` refuses `directContent == copiedContent`, so a fresh version
+  names its interfaces and a derived version names `basedOnVersion`.
+- **A call interface is validated as a descriptor.** It needs a `protocol`, a `descriptorMediaType`
+  matching `<type>/<subtype>`, a non-null `nativeDescriptor`, and — on the publish side — an
+  `endpointSourceOrder`. A discovery result is the mirror image: it must *not* carry
+  `endpointSourceOrder`, because by then the order has been applied. One model therefore serves both,
+  and which fields are meaningful depends on which direction it travels.
+- **The first version of an agent goes online as it is published.** `AgentPublishApplicationService`
+  submits the version when it is the first one, regardless of `autoSubmit`, and the default pipeline
+  approves it — so a publish answers with `online` rather than `draft`, and a discovery resolves it
+  immediately. A later version of an existing agent is only submitted when `autoSubmit` is set, so it
+  stays a draft until something submits it. That is why the integration fixture needs no approval
+  step, and why forcing a publish of the first version is a `400`: it is already online.
+- **An endpoint batch is bound to a version range.** An endpoint that carries no `bindings` of its own
+  inherits the batch's `runtimeVersion` and `versionRange`, and a batch that names neither is refused
+  with `Invalid Agent version: null` — there is no version to bind the endpoints to. The range has to
+  be canonical (`[1.0.0,2.0.0)`) and has to contain the runtime version, and a batch's bindings have to
+  be strictly sorted. The registry replaces what the same publisher registered for the same agent and
+  protocol, which is what makes a redeploy safe.
+- **A removal is by protocol, not by endpoint.** The request carries the agent and the protocol alone,
+  because the endpoints a process registered are only meaningful as a set.
+- **The digest is the discovery fingerprint.** `contentDigest` is what tells a caller whether what it
+  holds is what the registry would serve now, and it is the same value the watch's fingerprint is
+  derived from.
+
+### Where this client deviates from the official client (RAD agents)
+
+1. The publish, search, discovery and endpoint operations are the whole surface: the official client
+   also routes some of these through the A2A adapter when the server only speaks the older contract,
+   which this client does not — it refuses instead, so a caller learns that the server is too old
+   rather than silently getting a different shape back.
+2. A publish is not retried. The official client sends it with `requestOnce` for the same reason: it
+   creates a version, so a retry after a timeout could create two.
+3. The client validates the endpoint batch's shape (agent, protocol, at least one endpoint) before
+   sending, and leaves the version binding to the server, which is the only side that can canonicalise
+   a range.
+
 ## Authentication
 
 - The client logs in over the HTTP OpenAPI and caches the access token, refreshing it before expiry.

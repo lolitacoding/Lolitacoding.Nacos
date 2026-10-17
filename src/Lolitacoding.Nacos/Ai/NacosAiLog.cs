@@ -424,4 +424,78 @@ internal static partial class NacosAiLog
         ILogger logger,
         string agentName,
         string reason);
+
+    /// <summary>Logs that a RAD agent version was published.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The version the registry created.</param>
+    /// <param name="status">The status the registry assigned it.</param>
+    /// <remarks>
+    /// A publish changes what other callers can discover, so it is recorded at the default level.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8029,
+        Level = LogLevel.Information,
+        Message = "Published agent {AgentName} version {Version} as {Status}.")]
+    public static partial void AgentPublished(
+        ILogger logger,
+        string agentName,
+        string? version,
+        string? status);
+
+    /// <summary>Logs that a publish succeeded but carried no version detail.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The version that was published.</param>
+    [LoggerMessage(
+        EventId = 8030,
+        Level = LogLevel.Warning,
+        Message = "The publish of agent {AgentName} version {Version} succeeded but carried no version detail.")]
+    public static partial void AgentPublishDetailMissing(
+        ILogger logger,
+        string agentName,
+        string? version);
+
+    /// <summary>Logs that a discovery succeeded but carried no result.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The version that was named, if any.</param>
+    /// <param name="label">The label that was named, if any.</param>
+    [LoggerMessage(
+        EventId = 8031,
+        Level = LogLevel.Warning,
+        Message = "The discovery of agent {AgentName} version {Version} label {Label} carried no result.")]
+    public static partial void AgentDiscoveryDetailMissing(
+        ILogger logger,
+        string agentName,
+        string? version,
+        string? label);
+
+    /// <summary>Logs that a batch of agent endpoints was registered.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="protocol">The protocol the endpoints serve.</param>
+    /// <param name="count">How many endpoints the batch carried.</param>
+    [LoggerMessage(
+        EventId = 8032,
+        Level = LogLevel.Information,
+        Message = "Registered {Count} endpoint(s) for agent {AgentName} over {Protocol}.")]
+    public static partial void AgentEndpointsRegistered(
+        ILogger logger,
+        string agentName,
+        string protocol,
+        int count);
+
+    /// <summary>Logs that a batch of agent endpoints was withdrawn.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="protocol">The protocol whose endpoints were removed.</param>
+    [LoggerMessage(
+        EventId = 8033,
+        Level = LogLevel.Information,
+        Message = "Removed the registered endpoints of agent {AgentName} over {Protocol}.")]
+    public static partial void AgentEndpointsDeregistered(
+        ILogger logger,
+        string agentName,
+        string protocol);
 }

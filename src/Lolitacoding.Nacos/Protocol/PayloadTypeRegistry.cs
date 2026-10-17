@@ -75,6 +75,17 @@ internal static class PayloadTypeRegistry
         ["AgentEndpointRequest"] = NacosJsonContext.Default.AgentEndpointRequest,
         ["AgentEndpointResponse"] = NacosJsonContext.Default.AgentEndpointResponse,
 
+        // AI registry (RAD agents).
+        ["AgentPublishRpcRequest"] = NacosJsonContext.Default.AgentPublishRpcRequest,
+        ["AgentPublishRpcResponse"] = NacosJsonContext.Default.AgentPublishRpcResponse,
+        ["AgentSearchRpcRequest"] = NacosJsonContext.Default.AgentSearchRpcRequest,
+        ["AgentSearchResponse"] = NacosJsonContext.Default.AgentSearchResponse,
+        ["AgentDiscoveryRpcRequest"] = NacosJsonContext.Default.AgentDiscoveryRpcRequest,
+        ["AgentDiscoveryResponse"] = NacosJsonContext.Default.AgentDiscoveryResponse,
+        ["AgentEndpointRegisterRpcRequest"] = NacosJsonContext.Default.AgentEndpointRegisterRpcRequest,
+        ["AgentEndpointDeregisterRpcRequest"] = NacosJsonContext.Default.AgentEndpointDeregisterRpcRequest,
+        ["AgentEndpointOperationResponse"] = NacosJsonContext.Default.AgentEndpointOperationResponse,
+
         // Transport and connection management.
         ["ServerCheckRequest"] = NacosJsonContext.Default.ServerCheckRequest,
         ["ServerCheckResponse"] = NacosJsonContext.Default.ServerCheckResponse,

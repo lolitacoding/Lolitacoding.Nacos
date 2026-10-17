@@ -392,7 +392,8 @@ connection for it.
 `client.Ai` reaches the AI registry, the part of Nacos that holds MCP servers, prompts, skills, agent
 specifications and agents. This release covers the MCP server registry — reading a released server,
 releasing one, following one, and publishing the address it is reachable at — the prompt registry, the
-skill registry, the agent-specification registry and the A2A agent card registry.
+skill registry, the agent-specification registry, the A2A agent card registry and the RAD agent
+registry.
 
 ```csharp
 using Lolitacoding.Nacos.Ai;
@@ -651,12 +652,95 @@ await foreach (NacosAgentCardDetail? change in
 Agent cards are served from Nacos **3.1.0** on. The registry refuses a call only when the server
 states that it has no agent registry, so an older server fails on the request itself.
 
+### RAD agents
+
+Nacos 3.3 adds a second agent contract, and it is a different surface rather than a newer card: an
+agent is a versioned resource with metadata, call interfaces and runtime endpoints, published and
+discovered the way the other AI resources are managed.
+
+```csharp
+NacosAgentVersionDetail published = await client.Ai.Agent.PublishAgentAsync(
+    new NacosAgentPublishRequest
+    {
+        AgentName = "support-agent",
+        Version = "1.0.0",
+        DisplayName = "Support agent",
+        Tags = ["support"],
+        CallInterfaces =
+        [
+            new NacosAgentCallInterface
+            {
+                Protocol = "a2a",
+                ProtocolVersion = "0.2.5",
+                DescriptorMediaType = "application/json",
+                NativeDescriptor = JsonSerializer.SerializeToElement(new { name = "support-agent" }),
+                EndpointSourceOrder = ["RUNTIME", "DECLARED"],
+            },
+        ],
+    },
+    cancellationToken);
+
+Console.WriteLine(published.Status);   // "online" for a first version
+```
+
+A publish must carry either call interfaces or a `BasedOnVersion` to copy from, and never both. The
+first version of an agent is submitted as it is published and the default pipeline puts it online, so
+a discovery resolves it straight away; a later version is a draft until it is submitted.
+
+Discovery is how a caller learns where to call the agent. The filter narrows the answer to the
+endpoints the caller can actually use:
+
+```csharp
+NacosAgentDiscoveryResult discovered = await client.Ai.Agent.DiscoverAgentAsync(
+    new NacosAgentReference { AgentName = "support-agent", Label = "stable" },
+    new NacosAgentDiscoveryFilter { Transports = ["JSONRPC"], EndpointSources = ["RUNTIME"] },
+    cancellationToken);
+
+foreach (NacosAgentCallInterface callInterface in discovered.CallInterfaces ?? [])
+{
+    Console.WriteLine($"{callInterface.Protocol} {callInterface.ProtocolVersion}");
+}
+```
+
+Registering the endpoints an agent runs at is a batch, and the batch is what the registry replaces —
+so a redeploy supersedes the previous set instead of accumulating beside it. The batch has to say
+which agent versions its endpoints serve:
+
+```csharp
+await client.Ai.Agent.RegisterEndpointsAsync(
+    new NacosAgentEndpointBatch
+    {
+        AgentName = "support-agent",
+        Protocol = "a2a",
+        RuntimeVersion = "1.0.0",
+        VersionRange = "[1.0.0,2.0.0)",
+        Endpoints =
+        [
+            new NacosAgentRuntimeEndpoint { Uri = "http://10.0.0.7:9000/a2a", Transport = "JSONRPC" },
+        ],
+    },
+    cancellationToken);
+```
+
+Searching browses the registry by name fragment, tags and protocols:
+
+```csharp
+NacosAgentPage<NacosAgentSummary> page = await client.Ai.Agent.SearchAgentsAsync(
+    new NacosAgentSearchRequest { AgentNameContains = "support", PageNo = 1, PageSize = 20 },
+    cancellationToken);
+```
+
+The RAD registry is served from Nacos **3.3** on, and it is the one AI surface that will not guess:
+a server has to state the RAD ability before anything is sent. A server that only has the A2A card
+contract is refused with the not-implemented code rather than sent a payload it may not route.
+
 Five things are worth knowing before relying on this:
 
-- The MCP registry is served from Nacos **3.0.3** on, the agent card registry from **3.1.0** on, and
-  the prompt, skill and agent-specification registries from **3.2.0** on. An older server answers a
-  query with `RequestHandler Not Found`; the
-  [FAQ](faq.md#which-nacos-versions-are-supported) says which server each module needs.
+- The MCP registry is served from Nacos **3.0.3** on, the agent card registry from **3.1.0** on, the
+  prompt, skill and agent-specification registries from **3.2.0** on, and the RAD agent registry from
+  **3.3** on. An older server answers a query with `RequestHandler Not Found`, or, for RAD, is refused
+  before anything is sent; the [FAQ](faq.md#which-nacos-versions-are-supported) says which server each
+  module needs.
 - `GetServerAsync` is a direct query, so it always reports the server's current state — and needs the
   server to be reachable. `SubscribeServerAsync` is the exception: it caches the last detail it read
   and re-reads the server every `NacosAiOptions.CacheRefreshInterval` (10 s by default), because there

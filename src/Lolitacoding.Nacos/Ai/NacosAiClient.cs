@@ -28,6 +28,7 @@ internal sealed class NacosAiClient : INacosAiClient
     private readonly NacosSkillClient _skill;
     private readonly NacosAgentSpecClient _agentSpec;
     private readonly NacosAgentCardClient _agentCard;
+    private readonly NacosAgentRegistryClient _agent;
 
     /// <summary>
     /// This process's AI publisher identity.
@@ -115,6 +116,9 @@ internal sealed class NacosAiClient : INacosAiClient
 
         _agentCard = new NacosAgentCardClient(
             this, options, timeProvider, loggerFactory.CreateLogger<NacosAgentCardClient>());
+
+        _agent = new NacosAgentRegistryClient(
+            this, options, loggerFactory.CreateLogger<NacosAgentRegistryClient>());
     }
 
     /// <inheritdoc />
@@ -131,6 +135,9 @@ internal sealed class NacosAiClient : INacosAiClient
 
     /// <inheritdoc />
     public INacosAgentCardRegistry AgentCard => _agentCard;
+
+    /// <inheritdoc />
+    public INacosAgentRegistry Agent => _agent;
 
     /// <summary>
     /// Gets the AI registry connection, creating it if this is the first use.

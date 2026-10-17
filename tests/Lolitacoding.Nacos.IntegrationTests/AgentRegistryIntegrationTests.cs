@@ -1,0 +1,300 @@
+using System.Text.Json;
+using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.Client;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Lolitacoding.Nacos.IntegrationTests;
+
+/// <summary>
+/// Verifies the RAD agent registry end to end against a real Nacos server.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is the 3.3 agent contract, so the suite runs it against the 3.3 image rather than the AI one.
+/// What the server decides is what is worth checking: that a published version is the one a discovery
+/// resolves, and that a registered endpoint batch is what a discovery reports — the batch is the unit
+/// the registry replaces, so publishing one is what makes an agent callable at a runtime address.
+/// </para>
+/// <para>
+/// The fixture publishes through the client alone. The first version of an agent is submitted as it is
+/// published and the default pipeline puts it online, so a discovery resolves it without an approval
+/// step; a later version of an existing agent is a draft until it is submitted.
+/// </para>
+/// </remarks>
+[Trait(NacosTraits.Category, NacosTraits.Integration)]
+public sealed class AgentRegistryIntegrationTests
+{
+    [Fact]
+    public async Task PublishSearchAndDiscover_RoundTripsThroughARealServer()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AgentImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string agentName = NacosHttp.UniqueId("rad");
+
+        NacosAgentVersionDetail published = await client.Ai.Agent.PublishAgentAsync(
+            new NacosAgentPublishRequest
+            {
+                AgentName = agentName,
+                Version = "1.0.0",
+                DisplayName = "Planner",
+                Description = "Plans things.",
+                Author = "integration-tests",
+                Tags = ["travel"],
+                CallInterfaces = [CallInterface()],
+            },
+            ct);
+
+        // The first version of an agent is submitted as it is published, and the default pipeline
+        // puts it online, so a discovery has something to resolve without an approval step.
+        published.Version.ShouldBe("1.0.0");
+        published.Status.ShouldBe(NacosAiStatus.VersionOnline);
+
+        NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
+            () => client.Ai.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName }, ct: ct),
+            value => value.Version == "1.0.0",
+            ct,
+            tolerateFailures: true);
+
+        discovered.AgentName.ShouldBe(agentName);
+        discovered.Version.ShouldBe("1.0.0");
+        discovered.ContentDigest.ShouldNotBeNullOrWhiteSpace();
+        discovered.CallInterfaces.ShouldNotBeNull().Single().Protocol.ShouldBe("a2a");
+    }
+
+    [Fact]
+    public async Task SearchAgentsAsync_FindsThePublishedAgent()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AgentImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string agentName = NacosHttp.UniqueId("rad-search");
+
+        await client.Ai.Agent.PublishAgentAsync(
+            new NacosAgentPublishRequest
+            {
+                AgentName = agentName,
+                Version = "1.0.0",
+                Description = "Searchable.",
+                Tags = ["travel"],
+                CallInterfaces = [CallInterface()],
+            },
+            ct);
+
+        // A search is a read of the registry's index, so it sees the agent as soon as the publish is
+        // recorded — an online version is not needed to find one.
+        NacosAgentPage<NacosAgentSummary> page = await NacosEventually.BecomesAsync(
+            () => client.Ai.Agent.SearchAgentsAsync(
+                new NacosAgentSearchRequest
+                {
+                    AgentNameContains = agentName,
+                    PageNo = 1,
+                    PageSize = 10,
+                },
+                ct),
+            value => value.TotalCount > 0,
+            ct,
+            tolerateFailures: true);
+
+        page.PageItems.ShouldNotBeNull()
+            .ShouldContain(agent => agent.AgentName == agentName);
+    }
+
+    [Fact]
+    public async Task DiscoverAgentAsync_ReportsAnUnknownAgent()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AgentImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+
+        await Should.ThrowAsync<NacosServerException>(
+            () => client.Ai.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = NacosHttp.UniqueId("rad-absent") }, ct: ct));
+    }
+
+    [Fact]
+    public async Task RegisterEndpointsAsync_BecomesWhatADiscoveryReports()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AgentImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string agentName = NacosHttp.UniqueId("rad-endpoints");
+
+        await client.Ai.Agent.PublishAgentAsync(
+            new NacosAgentPublishRequest
+            {
+                AgentName = agentName,
+                Version = "1.0.0",
+                Description = "Callable.",
+                CallInterfaces = [CallInterface()],
+            },
+            ct);
+
+        await NacosEventually.BecomesAsync(
+            () => client.Ai.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName }, ct: ct),
+            value => value.Version == "1.0.0",
+            ct,
+            tolerateFailures: true);
+
+        await client.Ai.Agent.RegisterEndpointsAsync(
+            new NacosAgentEndpointBatch
+            {
+                AgentName = agentName,
+                Protocol = "a2a",
+
+                // The batch says which agent versions its endpoints serve, and an endpoint without a
+                // binding inherits it. A registration that names neither has no version to bind to,
+                // which the registry refuses.
+                RuntimeVersion = "1.0.0",
+                VersionRange = "[1.0.0,2.0.0)",
+                Endpoints =
+                [
+                    new NacosAgentRuntimeEndpoint
+                    {
+                        Uri = "http://10.0.0.7:9000/a2a",
+                        Transport = "JSONRPC",
+                    },
+                ],
+            },
+            ct);
+
+        // The registered endpoint is what a caller is meant to reach, so it has to be what the
+        // discovery reports rather than something only the publisher can see.
+        NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
+            () => client.Ai.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName },
+                ct: ct),
+            value => RuntimeUris(value).Contains("http://10.0.0.7:9000/a2a"),
+            ct,
+            tolerateFailures: true);
+
+        RuntimeUris(discovered).ShouldContain("http://10.0.0.7:9000/a2a");
+    }
+
+    [Fact]
+    public async Task DeregisterEndpointsAsync_RemovesThemFromWhatADiscoveryReports()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AgentImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string agentName = NacosHttp.UniqueId("rad-withdraw");
+
+        await client.Ai.Agent.PublishAgentAsync(
+            new NacosAgentPublishRequest
+            {
+                AgentName = agentName,
+                Version = "1.0.0",
+                CallInterfaces = [CallInterface()],
+            },
+            ct);
+
+        await client.Ai.Agent.RegisterEndpointsAsync(
+            new NacosAgentEndpointBatch
+            {
+                AgentName = agentName,
+                Protocol = "a2a",
+
+                // The batch says which agent versions its endpoints serve, and an endpoint without a
+                // binding inherits it. A registration that names neither has no version to bind to,
+                // which the registry refuses.
+                RuntimeVersion = "1.0.0",
+                VersionRange = "[1.0.0,2.0.0)",
+                Endpoints =
+                [
+                    new NacosAgentRuntimeEndpoint
+                    {
+                        Uri = "http://10.0.0.8:9001/a2a",
+                        Transport = "JSONRPC",
+                    },
+                ],
+            },
+            ct);
+
+        await NacosEventually.BecomesAsync(
+            () => client.Ai.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName }, ct: ct),
+            value => RuntimeUris(value).Contains("http://10.0.0.8:9001/a2a"),
+            ct,
+            tolerateFailures: true);
+
+        await client.Ai.Agent.DeregisterEndpointsAsync(agentName, "a2a", ct);
+
+        // The removal is by protocol because the endpoints a process registered are only meaningful
+        // as a set, so what a discovery reports afterwards has none of them.
+        NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
+            () => client.Ai.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName },
+                ct: ct),
+            value => !RuntimeUris(value).Contains("http://10.0.0.8:9001/a2a"),
+            ct,
+            tolerateFailures: true);
+
+        RuntimeUris(discovered).ShouldNotContain("http://10.0.0.8:9001/a2a");
+    }
+
+    /// <summary>
+    /// Builds the call interface a test publishes.
+    /// </summary>
+    /// <returns>The interface.</returns>
+    /// <remarks>
+    /// A publish must carry either call interfaces or a base version to copy from, and never both, so
+    /// the interface is what makes a fresh version publishable at all.
+    /// </remarks>
+    private static NacosAgentCallInterface CallInterface() => new()
+    {
+        Protocol = "a2a",
+        ProtocolVersion = "0.2.5",
+
+        // The registry validates a call interface as a descriptor: it has to say what the descriptor
+        // is and carry one, so neither can be left out.
+        DescriptorMediaType = "application/json",
+        NativeDescriptor = JsonSerializer.SerializeToElement(new { name = "planner" }),
+
+        // Publishing needs the order the sources are consulted in; a discovery result is the one that
+        // must not carry it, because by then the order has been applied.
+        EndpointSourceOrder = ["RUNTIME", "DECLARED"],
+    };
+
+    /// <summary>
+    /// Collects the runtime endpoint URIs a discovery reported.
+    /// </summary>
+    /// <param name="result">The discovery result.</param>
+    /// <returns>The URIs.</returns>
+    private static List<string> RuntimeUris(NacosAgentDiscoveryResult result) =>
+        [.. (result.CallInterfaces ?? [])
+            .SelectMany(callInterface => callInterface.EndpointSets ?? [])
+            .Where(set => string.Equals(set.Source, "RUNTIME", StringComparison.Ordinal))
+            .SelectMany(set => set.Endpoints ?? [])
+            .Select(endpoint => endpoint.Uri)
+            .OfType<string>()];
+
+    private static NacosClientFactory CreateClient(NacosContainer container) =>
+        NacosClientFactory.Create(
+            new NacosOptions
+            {
+                ServerAddresses = [container.HttpAddress],
+                ConnectionTimeout = TimeSpan.FromSeconds(15),
+                Reconnect = new NacosReconnectOptions
+                {
+                    InitialDelay = TimeSpan.FromMilliseconds(500),
+                    MaxDelay = TimeSpan.FromSeconds(5),
+                    JitterFactor = 0.1,
+                },
+            },
+            httpClient: null,
+            channelFactory: null,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance);
+}

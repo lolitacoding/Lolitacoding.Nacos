@@ -59,6 +59,21 @@ internal static class NacosIntegrationImages
             : PinnedAiImage;
 
     /// <summary>
+    /// The image the RAD agent registry tests run against: <c>NACOS_AGENT_TEST_IMAGE</c> when it is
+    /// set, and the pinned release below otherwise.
+    /// </summary>
+    /// <remarks>
+    /// It is a separate image because the RAD agent contract is newer than the AI registry's: the
+    /// publish, search and discovery handlers are all <c>@Since("3.3.0")</c>, so a 3.2 server answers
+    /// them the way it answers a payload type it has no handler for. The pin is a release candidate
+    /// because that is what the 3.3 line has published so far.
+    /// </remarks>
+    public static readonly string AgentImage =
+        Environment.GetEnvironmentVariable("NACOS_AGENT_TEST_IMAGE") is { Length: > 0 } image
+            ? image
+            : PinnedAgentImage;
+
+    /// <summary>
     /// The pinned release the rest of the suite is checked against.
     /// </summary>
     /// <remarks>
@@ -86,6 +101,15 @@ internal static class NacosIntegrationImages
     /// far. Move this to the final release once there is one.
     /// </remarks>
     private const string PinnedLockImage = "nacos/nacos-server:v3.3.0-RC";
+
+    /// <summary>
+    /// The pinned release the RAD agent tests are checked against.
+    /// </summary>
+    /// <remarks>
+    /// The 3.3 line, of which a release candidate is what is published so far. Move this to the final
+    /// release once there is one.
+    /// </remarks>
+    private const string PinnedAgentImage = "nacos/nacos-server:v3.3.0-RC";
 
     /// <summary>The main HTTP port inside the container.</summary>
     public const int HttpPort = 8848;

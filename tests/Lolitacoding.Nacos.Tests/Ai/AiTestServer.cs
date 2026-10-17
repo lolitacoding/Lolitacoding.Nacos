@@ -34,6 +34,11 @@ internal sealed class AiTestServer
     private readonly List<QueryAgentCardRequest> _cards = [];
     private readonly List<ReleaseAgentCardRequest> _cardReleases = [];
     private readonly List<AgentEndpointRequest> _agentEndpoints = [];
+    private readonly List<AgentPublishRpcRequest> _agentPublishes = [];
+    private readonly List<AgentSearchRpcRequest> _agentSearches = [];
+    private readonly List<AgentDiscoveryRpcRequest> _agentDiscoveries = [];
+    private readonly List<AgentEndpointRegisterRpcRequest> _agentEndpointRegisters = [];
+    private readonly List<AgentEndpointDeregisterRpcRequest> _agentEndpointDeregisters = [];
 
     private readonly Dictionary<string, bool> _abilities;
     private readonly HttpMessageHandler? _httpHandler;
@@ -195,6 +200,86 @@ internal sealed class AiTestServer
     /// <summary>Gets or sets how the server answers an agent endpoint operation.</summary>
     public Func<AgentEndpointRequest, AgentEndpointResponse> OnAgentEndpoint { get; set; } =
         request => AiTest.AgentEndpoint(request.Type!);
+
+    /// <summary>Gets the RAD agent publishes the client sent, in order.</summary>
+    public IReadOnlyList<AgentPublishRpcRequest> AgentPublishes
+    {
+        get
+        {
+            lock (_agentPublishes)
+            {
+                return [.. _agentPublishes];
+            }
+        }
+    }
+
+    /// <summary>Gets the RAD agent searches the client sent, in order.</summary>
+    public IReadOnlyList<AgentSearchRpcRequest> AgentSearches
+    {
+        get
+        {
+            lock (_agentSearches)
+            {
+                return [.. _agentSearches];
+            }
+        }
+    }
+
+    /// <summary>Gets the RAD agent discoveries the client sent, in order.</summary>
+    public IReadOnlyList<AgentDiscoveryRpcRequest> AgentDiscoveries
+    {
+        get
+        {
+            lock (_agentDiscoveries)
+            {
+                return [.. _agentDiscoveries];
+            }
+        }
+    }
+
+    /// <summary>Gets the RAD endpoint registrations the client sent, in order.</summary>
+    public IReadOnlyList<AgentEndpointRegisterRpcRequest> AgentEndpointRegisters
+    {
+        get
+        {
+            lock (_agentEndpointRegisters)
+            {
+                return [.. _agentEndpointRegisters];
+            }
+        }
+    }
+
+    /// <summary>Gets the RAD endpoint removals the client sent, in order.</summary>
+    public IReadOnlyList<AgentEndpointDeregisterRpcRequest> AgentEndpointDeregisters
+    {
+        get
+        {
+            lock (_agentEndpointDeregisters)
+            {
+                return [.. _agentEndpointDeregisters];
+            }
+        }
+    }
+
+    /// <summary>Gets or sets how the server answers a RAD agent publish.</summary>
+    public Func<AgentPublishRpcRequest, AgentPublishRpcResponse> OnAgentPublish { get; set; } =
+        request => AiTest.AgentVersion(request.PublishRequest!);
+
+    /// <summary>Gets or sets how the server answers a RAD agent search.</summary>
+    public Func<AgentSearchRpcRequest, AgentSearchResponse> OnAgentSearch { get; set; } =
+        _ => throw new InvalidOperationException("The test did not script an answer for an agent search.");
+
+    /// <summary>Gets or sets how the server answers a RAD agent discovery.</summary>
+    public Func<AgentDiscoveryRpcRequest, AgentDiscoveryResponse> OnAgentDiscovery { get; set; } =
+        _ => throw new InvalidOperationException("The test did not script an answer for an agent discovery.");
+
+    /// <summary>Gets or sets how the server answers a RAD endpoint registration.</summary>
+    public Func<AgentEndpointRegisterRpcRequest, AgentEndpointOperationResponse> OnAgentEndpointRegister
+    { get; set; } = _ => new AgentEndpointOperationResponse();
+
+    /// <summary>Gets or sets how the server answers a RAD endpoint removal.</summary>
+    public Func<AgentEndpointDeregisterRpcRequest, AgentEndpointOperationResponse> OnAgentEndpointDeregister
+    { get; set; } = _ => new AgentEndpointOperationResponse();
 
     /// <summary>
     /// Builds an AI client that talks to this server.
@@ -364,6 +449,68 @@ internal sealed class AiTestServer
                 return PayloadCodec.Encode(OnAgentEndpoint(request));
             }
 
+            case "AgentPublishRpcRequest":
+            {
+                AgentPublishRpcRequest request = PayloadCodec.Decode<AgentPublishRpcRequest>(payload)!;
+
+                lock (_agentPublishes)
+                {
+                    _agentPublishes.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentPublish(request));
+            }
+
+            case "AgentSearchRpcRequest":
+            {
+                AgentSearchRpcRequest request = PayloadCodec.Decode<AgentSearchRpcRequest>(payload)!;
+
+                lock (_agentSearches)
+                {
+                    _agentSearches.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentSearch(request));
+            }
+
+            case "AgentDiscoveryRpcRequest":
+            {
+                AgentDiscoveryRpcRequest request = PayloadCodec.Decode<AgentDiscoveryRpcRequest>(payload)!;
+
+                lock (_agentDiscoveries)
+                {
+                    _agentDiscoveries.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentDiscovery(request));
+            }
+
+            case "AgentEndpointRegisterRpcRequest":
+            {
+                AgentEndpointRegisterRpcRequest request =
+                    PayloadCodec.Decode<AgentEndpointRegisterRpcRequest>(payload)!;
+
+                lock (_agentEndpointRegisters)
+                {
+                    _agentEndpointRegisters.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentEndpointRegister(request));
+            }
+
+            case "AgentEndpointDeregisterRpcRequest":
+            {
+                AgentEndpointDeregisterRpcRequest request =
+                    PayloadCodec.Decode<AgentEndpointDeregisterRpcRequest>(payload)!;
+
+                lock (_agentEndpointDeregisters)
+                {
+                    _agentEndpointDeregisters.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentEndpointDeregister(request));
+            }
+
             default:
                 throw new InvalidOperationException(
                     $"The AI server does not serve '{PayloadCodec.ReadTypeName(payload)}'.");
@@ -484,6 +631,55 @@ internal static class AiTest
         RegistrationType = registrationType,
         LatestVersion = true,
         Capabilities = new NacosAgentCapabilities { Streaming = true },
+    };
+
+    /// <summary>Builds a publish answer from the request it answers.</summary>
+    /// <param name="request">The publish request.</param>
+    /// <returns>The answer.</returns>
+    public static AgentPublishRpcResponse AgentVersion(NacosAgentPublishRequest request) => new()
+    {
+        VersionDetail = new NacosAgentVersionDetail
+        {
+            AgentName = request.AgentName,
+            NamespaceId = "public",
+            Version = request.Version,
+            Status = request.AutoSubmit ? "reviewing" : "draft",
+            Author = request.Author,
+            CallInterfaces = request.CallInterfaces,
+        },
+    };
+
+    /// <summary>Builds a search answer with one page of agents.</summary>
+    /// <param name="agents">The agents on the page.</param>
+    /// <returns>The answer.</returns>
+    public static AgentSearchResponse AgentPage(params NacosAgentSummary[] agents) => new()
+    {
+        Page = new NacosAgentPage<NacosAgentSummary>
+        {
+            TotalCount = agents.Length,
+            PageNumber = 1,
+            PagesAvailable = agents.Length == 0 ? 0 : 1,
+            PageItems = [.. agents],
+        },
+    };
+
+    /// <summary>Builds a discovery answer.</summary>
+    /// <param name="result">The result to return.</param>
+    /// <returns>The answer.</returns>
+    public static AgentDiscoveryResponse AgentDiscovery(NacosAgentDiscoveryResult result) => new()
+    {
+        DiscoveryResult = result,
+    };
+
+    /// <summary>Builds a failed discovery answer.</summary>
+    /// <param name="errorCode">The error code the server reports.</param>
+    /// <param name="message">The message the server reports.</param>
+    /// <returns>The answer.</returns>
+    public static AgentDiscoveryResponse AgentDiscoveryFailure(int errorCode, string message) => new()
+    {
+        ResultCode = NacosResponse.FailureCode,
+        ErrorCode = errorCode,
+        Message = message,
     };
 
     /// <summary>Builds a successful prompt query answer.</summary>

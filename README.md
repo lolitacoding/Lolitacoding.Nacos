@@ -243,11 +243,13 @@ one version of one with its tool list, `SubscribeServerAsync` follows one and re
 reachable at — the prompt registry, where `GetPromptAsync` reads a prompt by version or by label and
 `SubscribePromptAsync` follows one, the skill registry, where `GetSkillAsync` reads a skill's archive
 `SubscribeSkillAsync` follows one, the agent-specification registry, where `GetAgentSpecAsync` reads
-one version of a package and `SubscribeAgentSpecAsync` follows one, and the A2A agent card registry,
-where `GetAgentCardAsync` reads a card, `ReleaseAgentCardAsync` publishes one, `RegisterAgentEndpointAsync`
-makes a service-backed agent callable, and `SubscribeAgentCardAsync` follows one. The richer RAD agent
-registry that Nacos 3.3 adds is the next slice; the MCP servers are the part the transport and the
-models were built for first.
+one version of a package and `SubscribeAgentSpecAsync` follows one, the A2A agent card registry, where
+`GetAgentCardAsync` reads a card, `ReleaseAgentCardAsync` publishes one, `RegisterAgentEndpointAsync`
+makes a service-backed agent callable, and `SubscribeAgentCardAsync` follows one, and the RAD agent
+registry that Nacos 3.3 adds, where `PublishAgentAsync` publishes a version, `SearchAgentsAsync`
+browses, `DiscoverAgentAsync` resolves where to call an agent, and `RegisterEndpointsAsync` publishes
+the addresses it runs at. The MCP servers are the part the transport and the models were built for
+first.
 
 The models are the MCP protocol's own objects rather than a projection of them — a tool's JSON
 Schema stays JSON, and MCP's `_meta` member keeps its underscore — because Nacos stores what it is
@@ -263,8 +265,9 @@ served the way a prompt is. An agent specification is the one resource whose sel
 *before* a version, and whose version and hash are reported in the response headers rather than in the
 payload — so a caller always learns which version it actually received.
 
-The AI registry is served from Nacos **3.0.3** on, the agent card registry from **3.1.0** on, and the
-prompt, skill and agent-specification registries from **3.2.0** on;
+The AI registry is served from Nacos **3.0.3** on, the agent card registry from **3.1.0** on, the
+prompt, skill and agent-specification registries from **3.2.0** on, and the RAD agent registry from
+**3.3** on;
 [the FAQ](docs/faq.md#which-nacos-versions-are-supported)
 says which server each module needs. The AI connection is opened on first use, like the lock
 connection, and carries the `ai` module label plus the per-client identifier Nacos records with

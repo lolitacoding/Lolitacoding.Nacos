@@ -35,6 +35,9 @@ public interface INacosAiClient : IAsyncDisposable
 
     /// <summary>Gets the A2A agent card registry.</summary>
     INacosAgentCardRegistry AgentCard { get; }
+
+    /// <summary>Gets the RAD agent registry.</summary>
+    INacosAgentRegistry Agent { get; }
 }
 
 /// <summary>
@@ -621,5 +624,120 @@ public interface INacosAgentCardRegistry
     Task DeregisterAgentEndpointAsync(
         string agentName,
         NacosAgentEndpoint endpoint,
+        CancellationToken ct = default);
+}
+
+/// <summary>
+/// The RAD agent registry: where an agent is published as a versioned resource and discovered by the
+/// callers that want to use it.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is the agent contract Nacos **3.3** adds, and it is a different surface from the A2A card
+/// registry rather than a newer version of it. A card is a document an agent publishes about itself
+/// and other agents read; here an agent is a resource with metadata, versions, call interfaces and
+/// runtime endpoints, published and searched the way the other AI resources are.
+/// </para>
+/// <para>
+/// Publishing is not idempotent in the way a release is: a publish creates the version it names, and a
+/// version that already exists is refused rather than replaced. A version that is published without
+/// being submitted stays editable and is not served, which is how a caller stages one.
+/// </para>
+/// <para>
+/// Every operation needs the server to advertise the RAD ability. A server that implements only the
+/// A2A card contract is refused with the not-implemented code rather than with an unexplained failure,
+/// and a server that says nothing about either is reported as one the client cannot classify.
+/// </para>
+/// </remarks>
+public interface INacosAgentRegistry
+{
+    /// <summary>
+    /// Publishes one version of an agent.
+    /// </summary>
+    /// <param name="request">The version to publish. Its agent name and version are required.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The version detail the registry created.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is null.</exception>
+    /// <exception cref="ArgumentException">The request names no agent or no version.</exception>
+    /// <exception cref="NacosServerException">
+    /// The registry refused the publish, the reply carried no version detail, or the server does not
+    /// implement the RAD contract.
+    /// </exception>
+    Task<NacosAgentVersionDetail> PublishAgentAsync(
+        NacosAgentPublishRequest request,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Searches the agents of the configured namespace.
+    /// </summary>
+    /// <param name="request">The query. Every filter is optional and they combine.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>One page of matching agents.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="request"/> is null.</exception>
+    /// <exception cref="NacosServerException">
+    /// The server refused the search, or does not implement the RAD contract.
+    /// </exception>
+    Task<NacosAgentPage<NacosAgentSummary>> SearchAgentsAsync(
+        NacosAgentSearchRequest request,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Discovers one version of an agent, narrowed to what the caller can use.
+    /// </summary>
+    /// <param name="reference">The agent and the version or label to resolve.</param>
+    /// <param name="filter">What the caller can use, or <see langword="null"/> for everything.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>What was discovered, with the interfaces that survived the filter.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="reference"/> is null.</exception>
+    /// <exception cref="ArgumentException">The reference names no agent.</exception>
+    /// <exception cref="NacosServerException">
+    /// The agent or version does not exist, the reply carried no result, or the server does not
+    /// implement the RAD contract.
+    /// </exception>
+    Task<NacosAgentDiscoveryResult> DiscoverAgentAsync(
+        NacosAgentReference reference,
+        NacosAgentDiscoveryFilter? filter = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Registers one batch of runtime endpoints for an agent.
+    /// </summary>
+    /// <param name="batch">The batch to register. It must name an agent, a protocol and at least one
+    /// endpoint.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server accepted the batch.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="batch"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// The batch names no agent, no protocol, or carries no endpoint.
+    /// </exception>
+    /// <exception cref="NacosServerException">The server refused the batch.</exception>
+    /// <remarks>
+    /// The batch replaces what the same publisher registered for the same agent and protocol before,
+    /// which is what makes a redeploy safe: the new process supersedes the old set instead of
+    /// accumulating beside it. That is also why an empty batch is refused — it would withdraw the
+    /// endpoints rather than publish any.
+    /// </remarks>
+    Task RegisterEndpointsAsync(
+        NacosAgentEndpointBatch batch,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes every endpoint a publisher registered for one agent and protocol.
+    /// </summary>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="protocol">The protocol whose endpoints are removed.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server acknowledged the removal.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="agentName"/> or <paramref name="protocol"/> is null or whitespace.
+    /// </exception>
+    /// <exception cref="NacosServerException">The server refused the removal.</exception>
+    /// <remarks>
+    /// The removal is by protocol rather than by endpoint because the endpoints a process registered
+    /// are only meaningful as a set.
+    /// </remarks>
+    Task DeregisterEndpointsAsync(
+        string agentName,
+        string protocol,
         CancellationToken ct = default);
 }

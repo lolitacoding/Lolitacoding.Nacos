@@ -334,3 +334,123 @@ internal sealed class QueryAgentCardResponse : NacosResponse
     /// </remarks>
     public NacosAgentCardDetail? AgentCardDetailInfo { get; set; }
 }
+
+/// <summary>
+/// A request to publish one version of a RAD agent.
+/// </summary>
+/// <remarks>
+/// The publish carries the namespace beside the request rather than inside it, because the request is
+/// the caller's model of the agent while the namespace is where the client is pointed. The server
+/// answers with the version it created, which is the only way to learn the status and labels the
+/// registry assigned.
+/// </remarks>
+internal sealed class AgentPublishRpcRequest : AiRequest
+{
+    /// <summary>Gets or sets the namespace the agent belongs to.</summary>
+    public string? NamespaceId { get; set; }
+
+    /// <summary>Gets or sets the publish request.</summary>
+    public NacosAgentPublishRequest? PublishRequest { get; set; }
+}
+
+/// <summary>
+/// The reply to a publish.
+/// </summary>
+internal sealed class AgentPublishRpcResponse : NacosResponse
+{
+    /// <summary>Gets or sets the version the registry created.</summary>
+    /// <remarks>
+    /// Unset when the request failed, which the caller sees as the failure result code rather than as
+    /// a missing field.
+    /// </remarks>
+    public NacosAgentVersionDetail? VersionDetail { get; set; }
+}
+
+/// <summary>
+/// A request to search the agents of a namespace.
+/// </summary>
+internal sealed class AgentSearchRpcRequest : AiRequest
+{
+    /// <summary>Gets or sets the namespace to search.</summary>
+    public string? NamespaceId { get; set; }
+
+    /// <summary>Gets or sets the query.</summary>
+    public NacosAgentSearchRequest? SearchRequest { get; set; }
+}
+
+/// <summary>
+/// The reply to a search.
+/// </summary>
+internal sealed class AgentSearchResponse : NacosResponse
+{
+    /// <summary>Gets or sets the page of agents.</summary>
+    public NacosAgentPage<NacosAgentSummary>? Page { get; set; }
+}
+
+/// <summary>
+/// A request to discover one agent version.
+/// </summary>
+/// <remarks>
+/// The namespace travels inside the discovery request rather than beside it, because the request is
+/// also what a watch subscribes with: a watch has to describe its target completely on its own.
+/// </remarks>
+internal sealed class AgentDiscoveryRpcRequest : AiRequest
+{
+    /// <summary>Gets or sets the discovery request.</summary>
+    public NacosAgentDiscoveryRequest? DiscoveryRequest { get; set; }
+}
+
+/// <summary>
+/// The reply to a discovery.
+/// </summary>
+internal sealed class AgentDiscoveryResponse : NacosResponse
+{
+    /// <summary>Gets or sets what was discovered.</summary>
+    public NacosAgentDiscoveryResult? DiscoveryResult { get; set; }
+}
+
+/// <summary>
+/// A request to register one batch of runtime endpoints of an agent.
+/// </summary>
+/// <remarks>
+/// The batch is the unit the registry replaces: publishing it supersedes what the same publisher
+/// registered for the same protocol, so a redeploy does not leave the old endpoints behind.
+/// </remarks>
+internal sealed class AgentEndpointRegisterRpcRequest : AiRequest
+{
+    /// <summary>Gets or sets the namespace the agent belongs to.</summary>
+    public string? NamespaceId { get; set; }
+
+    /// <summary>Gets or sets the batch.</summary>
+    public NacosAgentEndpointBatch? RegistrationBatch { get; set; }
+}
+
+/// <summary>
+/// A request to remove every endpoint a publisher registered for one agent and protocol.
+/// </summary>
+/// <remarks>
+/// The removal is by protocol rather than by endpoint, because the endpoints a process registered are
+/// only meaningful as a set: the caller that withdraws them withdraws its whole set.
+/// </remarks>
+internal sealed class AgentEndpointDeregisterRpcRequest : AiRequest
+{
+    /// <summary>Gets or sets the namespace the agent belongs to.</summary>
+    public string? NamespaceId { get; set; }
+
+    /// <summary>Gets or sets the agent name.</summary>
+    public string? AgentName { get; set; }
+
+    /// <summary>Gets or sets the protocol whose endpoints are removed.</summary>
+    public string? Protocol { get; set; }
+}
+
+/// <summary>
+/// The reply to an endpoint operation.
+/// </summary>
+/// <remarks>
+/// Neither operation reports anything on success: the endpoints are the caller's own, and whether they
+/// took effect is what a later discovery shows.
+/// </remarks>
+internal sealed class AgentEndpointOperationResponse : NacosResponse
+{
+}

@@ -27,6 +27,9 @@ internal static class NacosHttp
     /// <summary>The admin agent-specification endpoint of the v3 HTTP API.</summary>
     private const string AgentSpecPath = "/nacos/v3/admin/ai/agentspecs";
 
+    /// <summary>The admin agent endpoint of the v3 HTTP API.</summary>
+    private const string AgentPath = "/nacos/v3/admin/ai/agents";
+
     /// <summary>The result code the v3 API reports for a resource that does not exist.</summary>
     private const int ResourceNotFoundCode = 20004;
 
@@ -617,6 +620,41 @@ internal static class NacosHttp
 
         await SendAdminAsync(
             http, HttpMethod.Post, string.Concat(baseAddress, AgentSpecPath, "/offline"),
+            accessToken, form, ct);
+    }
+
+    /// <summary>
+    /// Publishes a draft agent version, making it the version clients are served.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The version to publish.</param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    /// <remarks>
+    /// A client-side publish only creates the version — submitting it through the pipeline leaves it
+    /// waiting for a decision, and a version that is not online is not served. Forcing it through is
+    /// what the admin API is for, and it is what the fixture uses so that a discovery has something to
+    /// find.
+    /// </remarks>
+    public static async Task ForcePublishAgentAsync(
+        HttpClient http,
+        string baseAddress,
+        string agentName,
+        string version,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        using var form = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("agentName", agentName),
+            new KeyValuePair<string, string>("version", version),
+        ]);
+
+        await SendAdminAsync(
+            http, HttpMethod.Post, string.Concat(baseAddress, AgentPath, "/force-publish"),
             accessToken, form, ct);
     }
 

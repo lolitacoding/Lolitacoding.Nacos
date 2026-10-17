@@ -23,6 +23,11 @@ Two modules are younger than that release, so their tests choose a server of the
   rather than over the AI connection, which is how the server exposes them. The AI tests choose their
   server with `NACOS_AI_TEST_IMAGE`, which defaults to `nacos/nacos-server:v3.2.4`, the oldest release
   all five parts have been checked against.
+- The **RAD agent registry** is younger again: the publish, search, discovery and endpoint handlers are
+  all `@Since("3.3.0")`, so its tests run against `nacos/nacos-server:v3.3.0-RC` and are chosen with
+  `NACOS_AGENT_TEST_IMAGE`. Unlike the other AI resources it is negotiated strictly — a server has to
+  state the RAD ability before the client sends anything — so a 3.2 server is refused with the
+  not-implemented code rather than sent a payload it may not route.
 - The distributed **lock** module belongs to Nacos **3.3**: lease renewal, the wait queue, explicit
   owners and the reentrant count are all from that release, and the lock module a 3.2 server ships
   only acquires and releases. Against a 3.2 server this client can therefore acquire and release a
