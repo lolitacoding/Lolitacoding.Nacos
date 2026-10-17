@@ -265,7 +265,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
 - 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
-拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，C5 AgentSpec 查询与订阅，随后 Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
+拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，C5 AgentSpec 查询与订阅，C6a A2A AgentCard，随后 RAD v1 Agent 注册、RAD watch、HTTP 回退与宿主/示例。
 
 #### C1 · AI 基础设施 + MCP 查询/发布（✅ 已完成）
 
@@ -349,6 +349,19 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 日志事件：8016 变化（Debug）、8017 已撤回（Debug）、8018 刷新失败（Warning）、8019 结果缺失（Warning）。
 - 发布侧（仅集成夹具使用）：首版 `POST /upload`（multipart ZIP，名字取自 `manifest.json` 的 `worker.suggested_name`，版本由服务端定为 `0.0.1`）→ `force-publish`；后续版本 `POST /draft`（fork）→ `PUT /draft`（改内容）→ `force-publish`。三条实测：①`PUT /labels` 是**整表覆盖**，只写 `{"stable":…}` 会把服务端维护的 `latest` 一起丢掉，之后不带选择器的读变成 `404`；②`publish` 只接受 `reviewing` 状态的版本，草稿必须 `force-publish`；③`v3.2.4` 镜像自带 187 个内置规格，用例必须用唯一名字，否则撞名。
 - 验收：Release 构建零警告零错误；单元测试 **517 个全绿**（新增 33 个：模型与 JSON 形状/选择器透传/404 与 403 映射/非结果体/订阅首值/变化/撤回/缓存命中/退订停止轮询/无条件读不带 `md5`/304 视为未变化）；集成测试新增 5 个用例（整套 **41 个**），跑在 `nacos/nacos-server:v3.2.4` 上：上传 + 发布 → 读 latest 并核对 manifest 与资源标识符；发布两版 + 绑定标签 → latest / 指定版本 / 标签 / 标签+版本 四种读法；未知名字与未知版本回 `404`；订阅收到新版；`POST /offline` 后订阅收到 `null`。
+
+#### C6a · A2A AgentCard 查询、发布与端点注册（✅ 已完成）
+
+- `Ai/NacosAgentCard.cs`：`NacosAgentCard`（A2A 文档本体：`protocolVersion` / `name` / `description` / `version` / `iconUrl` / `capabilities` / `skills` / `url` / `preferredTransport` / `additionalInterfaces` / `supportedInterfaces` / `provider` / `documentationUrl` / `securitySchemes` / `security` / `defaultInputModes` / `defaultOutputModes` / `supportsAuthenticatedExtendedCard` / `signatures`）、`NacosAgentCardDetail`（+ `registrationType` / `latestVersion`）、`NacosAgentInterface` / `NacosAgentSkill` / `NacosAgentCapabilities` / `NacosAgentExtension` / `NacosAgentProvider`，以及公开常量 `NacosAgentRegistrationType.Url` / `.Service`。安全方案、签名、扩展参数这三处形状由协议开放，按 `JsonElement` 原样保留——投影成模型只会丢字段。
+- 传输：**走 AI gRPC 连接**（与 Skill/AgentSpec 相反）。线上类型名 `QueryAgentCardRequest` / `ReleaseAgentCardRequest` / `AgentEndpointRequest`；能力位 `agent`，且按“只有服务端明确说 false 才拒绝”的宽松规则判定——没声明不等于不支持。
+- 版本：`@Since("3.1.0")`（`QueryAgentCardRequestHandler` / `ReleaseAgentCardRequestHandler` / `AgentEndpointRequestHandler`），批量端点 `@Since("3.1.1")`。因此在 `v3.2.4` 上可真机验证。
+- **卡片先校验后存储，校验决定形状**：必须有 name + version，且满足两种描述之一——`supportedInterfaces`（每项都要有 url + protocolBinding + protocolVersion），或旧三元组 `protocolVersion` + `preferredTransport` + `url`。两者都不满足即 `Required parameter 'agentCard.supportedInterfaces' not present, and old protocol fields … are incomplete`。所以**服务型卡也必须声明一个 interface**，哪怕还没有运行时端点。
+- **`SERVICE` 卡的地址是读时合成的**：读卡时按 `{agentName}::{version}` 去 `AGENT_ENDPOINT_GROUP` 下找 Naming 服务，有实例就用它们覆盖 `supportedInterfaces` / `additionalInterfaces` / `url` / `preferredTransport` / `protocolVersion`；没有实例则声明的 interface 透出。`URL` 卡跳过这一步，自己的 `url` 就是地址。
+- **端点必须绑定卡片版本**：注册会变成名为 `{name}::{version}` 的服务实例，服务端拒绝空版本（`Required parameter 'endpoint.version' can't be empty or null`），客户端也前置校验（版本 / 地址 / 端口范围），与官方客户端一致。其余字段带默认值：transport `JSONRPC`、protocol `HTTP`。
+- 端点即 Naming 实例，随注册它的连接消亡，因此 `NacosAgentEndpointPublication` 记录并按 `agent::address:port/path` 逐条重放；**被服务端拒绝的注册不重放**（调用方已经看到失败）。`protocolVersion` / `tenant` 存于保留元数据键 `__nacos.agent.endpoint.protocolVersion__` / `__nacos.agent.endpoint.tenant__`。
+- 读取 `GetAgentCardAsync(agentName, version = null, registrationType = null, ct)`；订阅 `IAsyncEnumerable<NacosAgentCardDetail?>`，复用 `NacosAiResourceCache<T>`（卡片无哈希 → 每次无条件读，用整文档序列化比较判定变化；缓存的第三个选择器槽位承载 `registrationType`）。
+- 日志事件：8020 已发布（Info）、8021 结果缺失（Warning）、8022 变化（Debug）、8023 已撤回（Debug）、8024 刷新失败（Warning）、8025/8026 端点注册与注销（Info）、8027 重放（Info）、8028 重放失败（Warning）。
+- 验收：Release 构建零警告零错误；单元测试 **538 个全绿**（新增 21 个：请求字段与线上类型名 / 选择器透传 / 结果缺失 / 能力位拒绝与“未声明则照常尝试” / 发布默认 `SERVICE` 且不动 latest / 注册类型与 latest 透传 / 端点字段与默认值 / 端点前置校验 / 重放 / 拒绝不重放 / 注销后不重放 / 订阅首值·选择器·变化·撤回·缓存命中）；集成测试新增 5 个用例（整套 **46 个**），跑在 `nacos/nacos-server:v3.2.4` 上：发布 + 读回并核对 skills/capabilities、未知 agent 回 404、注册端点后读回的 `url` 与 `supportedInterfaces` 来自该端点、注销后回落到声明的 interface、订阅收到新版本。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

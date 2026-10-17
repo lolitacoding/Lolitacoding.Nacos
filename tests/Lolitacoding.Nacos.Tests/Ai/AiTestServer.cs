@@ -31,6 +31,9 @@ internal sealed class AiTestServer
     private readonly List<ReleaseMcpServerRequest> _releases = [];
     private readonly List<McpServerEndpointRequest> _endpoints = [];
     private readonly List<QueryPromptRequest> _prompts = [];
+    private readonly List<QueryAgentCardRequest> _cards = [];
+    private readonly List<ReleaseAgentCardRequest> _cardReleases = [];
+    private readonly List<AgentEndpointRequest> _agentEndpoints = [];
 
     private readonly Dictionary<string, bool> _abilities;
     private readonly HttpMessageHandler? _httpHandler;
@@ -144,6 +147,54 @@ internal sealed class AiTestServer
     /// <summary>Gets or sets how the server answers a prompt query.</summary>
     public Func<QueryPromptRequest, QueryPromptResponse> OnPrompt { get; set; } =
         _ => throw new InvalidOperationException("The test did not script an answer for a prompt query.");
+
+    /// <summary>Gets the agent card queries the client sent, in order.</summary>
+    public IReadOnlyList<QueryAgentCardRequest> Cards
+    {
+        get
+        {
+            lock (_cards)
+            {
+                return [.. _cards];
+            }
+        }
+    }
+
+    /// <summary>Gets the agent card releases the client sent, in order.</summary>
+    public IReadOnlyList<ReleaseAgentCardRequest> CardReleases
+    {
+        get
+        {
+            lock (_cardReleases)
+            {
+                return [.. _cardReleases];
+            }
+        }
+    }
+
+    /// <summary>Gets the agent endpoint operations the client sent, in order.</summary>
+    public IReadOnlyList<AgentEndpointRequest> AgentEndpoints
+    {
+        get
+        {
+            lock (_agentEndpoints)
+            {
+                return [.. _agentEndpoints];
+            }
+        }
+    }
+
+    /// <summary>Gets or sets how the server answers an agent card query.</summary>
+    public Func<QueryAgentCardRequest, QueryAgentCardResponse> OnCard { get; set; } =
+        _ => throw new InvalidOperationException("The test did not script an answer for a card query.");
+
+    /// <summary>Gets or sets how the server answers an agent card release.</summary>
+    public Func<ReleaseAgentCardRequest, ReleaseAgentCardResponse> OnCardRelease { get; set; } =
+        _ => new ReleaseAgentCardResponse();
+
+    /// <summary>Gets or sets how the server answers an agent endpoint operation.</summary>
+    public Func<AgentEndpointRequest, AgentEndpointResponse> OnAgentEndpoint { get; set; } =
+        request => AiTest.AgentEndpoint(request.Type!);
 
     /// <summary>
     /// Builds an AI client that talks to this server.
@@ -277,6 +328,42 @@ internal sealed class AiTestServer
                 return PayloadCodec.Encode(OnPrompt(request));
             }
 
+            case "QueryAgentCardRequest":
+            {
+                QueryAgentCardRequest request = PayloadCodec.Decode<QueryAgentCardRequest>(payload)!;
+
+                lock (_cards)
+                {
+                    _cards.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnCard(request));
+            }
+
+            case "ReleaseAgentCardRequest":
+            {
+                ReleaseAgentCardRequest request = PayloadCodec.Decode<ReleaseAgentCardRequest>(payload)!;
+
+                lock (_cardReleases)
+                {
+                    _cardReleases.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnCardRelease(request));
+            }
+
+            case "AgentEndpointRequest":
+            {
+                AgentEndpointRequest request = PayloadCodec.Decode<AgentEndpointRequest>(payload)!;
+
+                lock (_agentEndpoints)
+                {
+                    _agentEndpoints.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentEndpoint(request));
+            }
+
             default:
                 throw new InvalidOperationException(
                     $"The AI server does not serve '{PayloadCodec.ReadTypeName(payload)}'.");
@@ -341,6 +428,62 @@ internal static class AiTest
         Description = description,
         VersionDetail = new NacosMcpVersionDetail { Version = version, IsLatest = isLatest },
         Status = NacosMcpStatus.Active,
+    };
+
+    /// <summary>Builds a successful agent endpoint answer.</summary>
+    /// <param name="type">The operation the server performed.</param>
+    /// <returns>The answer.</returns>
+    public static AgentEndpointResponse AgentEndpoint(string type) => new() { Type = type };
+
+    /// <summary>Builds a failed agent endpoint answer.</summary>
+    /// <param name="errorCode">The error code the server reports.</param>
+    /// <param name="message">The message the server reports.</param>
+    /// <returns>The answer.</returns>
+    public static AgentEndpointResponse AgentEndpointFailure(int errorCode, string message) => new()
+    {
+        ResultCode = NacosResponse.FailureCode,
+        ErrorCode = errorCode,
+        Message = message,
+    };
+
+    /// <summary>Builds a successful agent card query answer.</summary>
+    /// <param name="card">The card to return.</param>
+    /// <returns>The answer.</returns>
+    public static QueryAgentCardResponse Card(NacosAgentCardDetail card) => new()
+    {
+        AgentCardDetailInfo = card,
+    };
+
+    /// <summary>Builds a failed agent card query answer.</summary>
+    /// <param name="errorCode">The error code the server reports.</param>
+    /// <param name="message">The message the server reports.</param>
+    /// <returns>The answer.</returns>
+    public static QueryAgentCardResponse CardFailure(int errorCode, string message) => new()
+    {
+        ResultCode = NacosResponse.FailureCode,
+        ErrorCode = errorCode,
+        Message = message,
+    };
+
+    /// <summary>Builds an agent card.</summary>
+    /// <param name="name">The agent name.</param>
+    /// <param name="version">The card version.</param>
+    /// <param name="description">An optional description, used to make two versions differ.</param>
+    /// <param name="registrationType">How the card was registered.</param>
+    /// <returns>The card.</returns>
+    public static NacosAgentCardDetail CreateCard(
+        string name = "planner",
+        string version = "1.0.0",
+        string? description = null,
+        string? registrationType = NacosA2a.EndpointTypeService) => new()
+    {
+        Name = name,
+        Version = version,
+        Description = description,
+        ProtocolVersion = "0.2.5",
+        RegistrationType = registrationType,
+        LatestVersion = true,
+        Capabilities = new NacosAgentCapabilities { Streaming = true },
     };
 
     /// <summary>Builds a successful prompt query answer.</summary>

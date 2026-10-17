@@ -32,6 +32,9 @@ public interface INacosAiClient : IAsyncDisposable
 
     /// <summary>Gets the agent-specification registry.</summary>
     INacosAgentSpecRegistry AgentSpec { get; }
+
+    /// <summary>Gets the A2A agent card registry.</summary>
+    INacosAgentCardRegistry AgentCard { get; }
 }
 
 /// <summary>
@@ -479,5 +482,144 @@ public interface INacosMcpRegistry
         string name,
         string address,
         int port,
+        CancellationToken ct = default);
+}
+
+/// <summary>
+/// The A2A agent card registry: where an agent advertises itself and where its runtime endpoints are
+/// registered.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A card is the A2A protocol's own document — what the agent is, what it can do, and where to call
+/// it. Nacos stores it under the agent's name and the card's own version, and serves it back
+/// unchanged. Publishing the same agent with a new version adds a version rather than replacing what
+/// other agents are already resolving.
+/// </para>
+/// <para>
+/// A card registered as a <c>SERVICE</c> carries no address: the agent is reached through the
+/// endpoints registered against it, which is how an agent that runs inside a Nacos-registered process
+/// is callable at an address only known at runtime. A card registered as a <c>URL</c> carries the
+/// address itself and needs no endpoint.
+/// </para>
+/// <para>
+/// This is the contract Nacos has served since 3.1. Nacos 3.3 adds a second, richer agent contract —
+/// the RAD registry — which is a separate surface; a card remains how an A2A agent advertises itself.
+/// </para>
+/// </remarks>
+public interface INacosAgentCardRegistry
+{
+    /// <summary>
+    /// Reads one version of an agent card.
+    /// </summary>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The card version to read, or <see langword="null"/> for the latest one.</param>
+    /// <param name="registrationType">
+    /// The registration type to read, <c>URL</c> or <c>SERVICE</c>, or <see langword="null"/> to let
+    /// the server answer with the card as stored.
+    /// </param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The resolved card.</returns>
+    /// <exception cref="ArgumentException"><paramref name="agentName"/> is null or whitespace.</exception>
+    /// <exception cref="NacosAuthException">The server rejected the request's credentials.</exception>
+    /// <exception cref="NacosServerException">
+    /// The agent or version does not exist, the reply carried no card, or the server does not
+    /// implement the agent registry.
+    /// </exception>
+    Task<NacosAgentCardDetail> GetAgentCardAsync(
+        string agentName,
+        string? version = null,
+        string? registrationType = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Publishes one version of an agent card.
+    /// </summary>
+    /// <param name="card">The card to publish. Its name and version are required.</param>
+    /// <param name="registrationType">
+    /// How the card is registered, <c>URL</c> or <c>SERVICE</c>. Unset registers it as a service,
+    /// which is what an agent whose address is only known at runtime wants.
+    /// </param>
+    /// <param name="setAsLatest">
+    /// Whether this version becomes the one a read without a version resolves to. Unset publishes the
+    /// card without moving that pointer, which is how a version is staged without redirecting
+    /// callers to it.
+    /// </param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server accepted the card.</returns>
+    /// <exception cref="ArgumentException">The card, its name, or its version is missing.</exception>
+    /// <exception cref="NacosServerException">The server refused the release.</exception>
+    Task ReleaseAgentCardAsync(
+        NacosAgentCard card,
+        string? registrationType = null,
+        bool setAsLatest = false,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Subscribes to one version of an agent card.
+    /// </summary>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The card version to watch, or <see langword="null"/> for the latest one.</param>
+    /// <param name="registrationType">The registration type to watch, or <see langword="null"/> for any.</param>
+    /// <param name="ct">A token that ends the subscription. Leaving the enumerable ends it too.</param>
+    /// <returns>
+    /// The current card as the first element — or <see langword="null"/> when it is not published —
+    /// then the card again on every change, with <see langword="null"/> reporting that it stopped
+    /// being served.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="agentName"/> is null or whitespace.</exception>
+    /// <exception cref="NacosServerException">
+    /// The read that seeds the subscription failed for a reason other than the agent not existing.
+    /// </exception>
+    /// <remarks>
+    /// Nacos pushes no card changes, so a subscription is served by re-reading the card on the
+    /// interval configured by <see cref="NacosAiOptions.CacheRefreshInterval"/> and yielding it when
+    /// it differs from the cached copy. A card carries no content hash, so the read is always
+    /// unconditional. A read that fails does not end the subscription: the last known copy stays
+    /// cached and the read is retried.
+    /// </remarks>
+    IAsyncEnumerable<NacosAgentCardDetail?> SubscribeAgentCardAsync(
+        string agentName,
+        string? version = null,
+        string? registrationType = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Registers one runtime endpoint of an agent.
+    /// </summary>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="endpoint">The endpoint to register.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server accepted the endpoint.</returns>
+    /// <exception cref="ArgumentException"><paramref name="agentName"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="endpoint"/> is null.</exception>
+    /// <exception cref="NacosServerException">The server refused the registration.</exception>
+    /// <remarks>
+    /// The registration is a Naming instance owned by the connection that made it, so it is removed
+    /// when that connection closes and republished after a reconnect. A registration the server
+    /// refused is not replayed: the caller saw the failure.
+    /// </remarks>
+    Task RegisterAgentEndpointAsync(
+        string agentName,
+        NacosAgentEndpoint endpoint,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes one runtime endpoint of an agent.
+    /// </summary>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="endpoint">The endpoint to remove.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server acknowledged the removal.</returns>
+    /// <exception cref="ArgumentException"><paramref name="agentName"/> is null or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="endpoint"/> is null.</exception>
+    /// <remarks>
+    /// The endpoint is sent whole rather than by address alone, because the version and protocol it
+    /// was registered for are what the server resolves the instance by. Removing an endpoint that is
+    /// not there is not an error.
+    /// </remarks>
+    Task DeregisterAgentEndpointAsync(
+        string agentName,
+        NacosAgentEndpoint endpoint,
         CancellationToken ct = default);
 }

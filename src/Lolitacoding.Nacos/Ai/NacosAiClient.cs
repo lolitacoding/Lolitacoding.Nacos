@@ -27,6 +27,7 @@ internal sealed class NacosAiClient : INacosAiClient
     private readonly NacosPromptClient _prompt;
     private readonly NacosSkillClient _skill;
     private readonly NacosAgentSpecClient _agentSpec;
+    private readonly NacosAgentCardClient _agentCard;
 
     /// <summary>
     /// This process's AI publisher identity.
@@ -111,6 +112,9 @@ internal sealed class NacosAiClient : INacosAiClient
         _skill = new NacosSkillClient(http, options, timeProvider, loggerFactory.CreateLogger<NacosSkillClient>());
         _agentSpec = new NacosAgentSpecClient(
             http, options, timeProvider, loggerFactory.CreateLogger<NacosAgentSpecClient>());
+
+        _agentCard = new NacosAgentCardClient(
+            this, options, timeProvider, loggerFactory.CreateLogger<NacosAgentCardClient>());
     }
 
     /// <inheritdoc />
@@ -124,6 +128,9 @@ internal sealed class NacosAiClient : INacosAiClient
 
     /// <inheritdoc />
     public INacosAgentSpecRegistry AgentSpec => _agentSpec;
+
+    /// <inheritdoc />
+    public INacosAgentCardRegistry AgentCard => _agentCard;
 
     /// <summary>
     /// Gets the AI registry connection, creating it if this is the first use.
@@ -152,6 +159,7 @@ internal sealed class NacosAiClient : INacosAiClient
         }
 
         await _mcp.RestoreAsync(ct).ConfigureAwait(false);
+        await _agentCard.RestoreAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -166,6 +174,7 @@ internal sealed class NacosAiClient : INacosAiClient
 
         // The subscriptions are stopped first: their refresh loops talk over the connection, and
         // completing them ends the enumerations a caller may still be reading.
+        await _agentCard.DisposeAsync().ConfigureAwait(false);
         await _agentSpec.DisposeAsync().ConfigureAwait(false);
         await _skill.DisposeAsync().ConfigureAwait(false);
         await _prompt.DisposeAsync().ConfigureAwait(false);

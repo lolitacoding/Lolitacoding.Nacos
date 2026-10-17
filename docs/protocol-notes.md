@@ -520,6 +520,67 @@ One more, which is not a simplification but a consequence of the `304` above: th
 specification in full rather than conditionally, so it costs a body per interval instead of a `304`.
 The alternative was a subscription that can never report a withdrawal.
 
+### A2A agent cards
+
+> **Which server this describes.** The agent card registry is the Nacos **3.1.0** one or newer:
+> `QueryAgentCardRequestHandler`, `ReleaseAgentCardRequestHandler` and
+> `AgentEndpointRequestHandler` are all marked `@Since("3.1.0")`, and the batch endpoint handler
+> `@Since("3.1.1")`. A server older than 3.1 has no handler for any of them.
+
+An agent card is the A2A protocol's own document, and Nacos serves it over the AI connection rather
+than over HTTP. The client advertises the `agent` ability and refuses a call only when the server
+states that it does not have it — a server that says nothing may still serve the request.
+
+| Operation | Request | Answer |
+| --- | --- | --- |
+| Read a card | `QueryAgentCardRequest` (`namespaceId`, `agentName`, `version`, `registrationType`) | `QueryAgentCardResponse` (`agentCardDetailInfo`) |
+| Publish a card | `ReleaseAgentCardRequest` (`agentCard`, `registrationType`, `setAsLatest`) | `ReleaseAgentCardResponse` |
+| Register or remove an endpoint | `AgentEndpointRequest` (`endpoint`, `type`) | `AgentEndpointResponse` (`type`) |
+
+- **A card is validated before it is stored, and the validation decides its shape.** A card must name
+  a name and a version, and it must be describable in one of two ways: either `supportedInterfaces`,
+  where every entry names a URL, a protocol binding and a protocol version, or the older triple
+  `protocolVersion` + `preferredTransport` + `url`. A card that satisfies neither is refused with
+  `Required parameter 'agentCard.supportedInterfaces' not present, and old protocol fields … are
+  incomplete`. That is why a card published for a service endpoint still declares an interface even
+  though no runtime endpoint exists yet.
+- **A `SERVICE` card's address is assembled at read time.** The card is stored as it was published,
+  and the read then looks up the Naming service named after `{agentName}::{version}` in the agent
+  endpoint group. When that service has instances, they replace the card's `supportedInterfaces`,
+  `additionalInterfaces`, `url`, `preferredTransport` and `protocolVersion` — so the declared
+  interface is a fallback that shows through while nothing is registered, not the address callers
+  get once something is. A `URL` card skips this entirely: its own `url` is the address.
+- **An endpoint must name the card version it serves.** The registration becomes an instance of a
+  service named after the card's name and version, so the server refuses an endpoint without one
+  (`Required parameter 'endpoint.version' can't be empty or null`) and the client refuses it before
+  sending. The address and a port in the TCP range are required for the same reason. The other
+  members carry defaults: `JSONRPC` for the transport and `HTTP` for the protocol, so an endpoint
+  built from an address, a port and a version is already the usual A2A endpoint.
+- **An endpoint lives and dies with the connection.** It is a Naming instance, not an AI record, so
+  the server removes it when the connection that registered it closes, and the client replays the
+  registrations it still owns after a reconnect. A registration the server refused is not replayed:
+  the caller saw the failure.
+- **The reserved metadata keys are not the endpoint's.** An endpoint's `protocolVersion` and `tenant`
+  are stored in the metadata under `__nacos.agent.endpoint.protocolVersion__` and
+  `__nacos.agent.endpoint.tenant__`, which the server strips from the user metadata and reads as
+  fields of their own. A caller that sets them through the model does not have to know that.
+- **A missing agent is a `404`.** The read is answered with the not-found result code, which is what a
+  subscription turns into the null element that announces a withdrawal.
+
+### Where this client deviates from the official client (agent cards)
+
+1. A subscription whose selector is already cached is answered from the cache without a read, and the
+   cached card outlives its last subscriber; `GetAgentCardAsync` never consults the cache, so it
+   always reports the server's word.
+2. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval`. A card carries no content
+   hash, so every refresh is an unconditional read — there is no conditional form of the request to
+   use instead.
+3. The replay record is one entry per endpoint — keyed by agent name, address, port and path — and
+   each is republished on its own. The official client records one batch per agent and republishes
+   the batch, which is the same guarantee with a coarser unit: an agent that publishes several
+   endpoints keeps all of them either way. Registering one endpoint at a time is what this client's
+   surface offers; the batch request exists in the protocol and is not exposed.
+
 ## Authentication
 
 - The client logs in over the HTTP OpenAPI and caches the access token, refreshing it before expiry.

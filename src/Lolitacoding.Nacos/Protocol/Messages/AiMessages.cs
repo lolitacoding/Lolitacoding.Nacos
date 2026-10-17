@@ -213,3 +213,124 @@ internal sealed class QueryPromptResponse : NacosResponse
     /// </remarks>
     public NacosPrompt? PromptInfo { get; set; }
 }
+
+/// <summary>
+/// Base type for the requests that address one A2A agent by name.
+/// </summary>
+/// <remarks>
+/// The A2A binding is the older of the two agent contracts and is addressed by the agent's name
+/// alone — the card's own version travels as a separate field rather than as part of the key. The
+/// namespace is sent beside the name for the same reason it is for an MCP server: the server resolves
+/// the pair, while every client operation is written in terms of the name.
+/// </remarks>
+internal abstract class AgentRequest : AiRequest
+{
+    /// <summary>Gets or sets the namespace the agent belongs to.</summary>
+    public string? NamespaceId { get; set; }
+
+    /// <summary>Gets or sets the agent name.</summary>
+    public string? AgentName { get; set; }
+}
+
+/// <summary>
+/// A request for one A2A agent card.
+/// </summary>
+internal sealed class QueryAgentCardRequest : AgentRequest
+{
+    /// <summary>Gets or sets the card version to read.</summary>
+    /// <remarks>Unset asks for the card the registry currently serves as the agent's latest.</remarks>
+    public string? Version { get; set; }
+
+    /// <summary>
+    /// Gets or sets how the card was registered, <c>URL</c> or <c>SERVICE</c>.
+    /// </summary>
+    /// <remarks>
+    /// Unset lets the server answer with the card as stored. It matters because the two kinds of
+    /// card differ in where the address comes from: a <c>URL</c> card carries it in
+    /// <see cref="NacosAgentCard.Url"/>, while a <c>SERVICE</c> card is reached through the
+    /// endpoints registered against it.
+    /// </remarks>
+    public string? RegistrationType { get; set; }
+}
+
+/// <summary>
+/// A request to publish one version of an A2A agent card.
+/// </summary>
+/// <remarks>
+/// Releasing is a publish rather than an update: the card carries its own version, and publishing
+/// the same name with a new version adds one rather than replacing what callers are already using.
+/// </remarks>
+internal sealed class ReleaseAgentCardRequest : AgentRequest
+{
+    /// <summary>Gets or sets the card to publish.</summary>
+    public NacosAgentCard? AgentCard { get; set; }
+
+    /// <summary>
+    /// Gets or sets how the card is registered, <c>SERVICE</c> unless the caller says otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <c>SERVICE</c> is the default because an agent published from inside a Nacos-registered
+    /// process is normally reachable at an address only known at runtime.
+    /// </remarks>
+    public string? RegistrationType { get; set; } = NacosA2a.EndpointTypeService;
+
+    /// <summary>Gets or sets a value indicating whether this card becomes the latest one.</summary>
+    /// <remarks>
+    /// Unset publishes the card without moving the label a read without a version resolves to, which
+    /// is how a card is staged without redirecting callers to it.
+    /// </remarks>
+    public bool SetAsLatest { get; set; }
+}
+
+/// <summary>
+/// The reply to a card release.
+/// </summary>
+/// <remarks>
+/// A release reports nothing on success: the card's identity is its name and version, both of which
+/// the caller already has.
+/// </remarks>
+internal sealed class ReleaseAgentCardResponse : NacosResponse
+{
+}
+
+/// <summary>
+/// A request to register or remove one runtime endpoint of an A2A agent.
+/// </summary>
+/// <remarks>
+/// Like an MCP endpoint, this is a Naming instance registration rather than an AI record: the server
+/// ties it to the connection that made it, so a client replays the registrations it still owns after
+/// a reconnect.
+/// </remarks>
+internal sealed class AgentEndpointRequest : AgentRequest
+{
+    /// <summary>Gets or sets the endpoint.</summary>
+    public NacosAgentEndpoint? Endpoint { get; set; }
+
+    /// <summary>
+    /// Gets or sets the operation, <see cref="NacosAiRemote.RegisterEndpoint"/> or
+    /// <see cref="NacosAiRemote.DeregisterEndpoint"/>.
+    /// </summary>
+    public string? Type { get; set; }
+}
+
+/// <summary>
+/// The reply to an A2A endpoint request.
+/// </summary>
+internal sealed class AgentEndpointResponse : NacosResponse
+{
+    /// <summary>Gets or sets the operation the server performed.</summary>
+    public string? Type { get; set; }
+}
+
+/// <summary>
+/// The reply to a request for an A2A agent card.
+/// </summary>
+internal sealed class QueryAgentCardResponse : NacosResponse
+{
+    /// <summary>Gets or sets the resolved card.</summary>
+    /// <remarks>
+    /// Unset when the request failed, which the caller sees as the failure result code rather than
+    /// as a missing field.
+    /// </remarks>
+    public NacosAgentCardDetail? AgentCardDetailInfo { get; set; }
+}

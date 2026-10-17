@@ -392,7 +392,7 @@ connection for it.
 `client.Ai` reaches the AI registry, the part of Nacos that holds MCP servers, prompts, skills, agent
 specifications and agents. This release covers the MCP server registry — reading a released server,
 releasing one, following one, and publishing the address it is reachable at — the prompt registry, the
-skill registry and the agent-specification registry.
+skill registry, the agent-specification registry and the A2A agent card registry.
 
 ```csharp
 using Lolitacoding.Nacos.Ai;
@@ -571,10 +571,91 @@ of a prompt's `version > label > latest`; an unknown label does not fail, it fal
 version and then to `latest`. Agent specifications are served from Nacos **3.2.0** on, by
 `/v3/client/ai/agentspecs`.
 
+### A2A agent cards
+
+An agent card is how an A2A agent advertises itself: what it is, what it can do, and where to call
+it. Unlike a skill or an agent specification it is served over the AI connection, so reading one
+opens it:
+
+```csharp
+NacosAgentCardDetail card =
+    await client.Ai.AgentCard.GetAgentCardAsync("support-agent", ct: cancellationToken);
+
+Console.WriteLine($"{card.Name} {card.Version} -> {card.Url}");
+
+foreach (NacosAgentSkill skill in card.Skills ?? [])
+{
+    Console.WriteLine($"{skill.Id}: {skill.Name}");
+}
+```
+
+Publishing a card is a release: the card carries its own version, and publishing the same name again
+with a new version adds one rather than replacing what other agents are resolving. A card has to be
+describable — either through `SupportedInterfaces`, where each entry names a URL, a binding and a
+protocol version, or through the older `ProtocolVersion` + `PreferredTransport` + `Url` triple:
+
+```csharp
+var card = new NacosAgentCard
+{
+    Name = "support-agent",
+    Version = "1.0.0",
+    Description = "Answers support questions.",
+    SupportedInterfaces =
+    [
+        new NacosAgentInterface
+        {
+            Url = "http://support-agent:8080/a2a",
+            Transport = "JSONRPC",
+            ProtocolBinding = "JSONRPC",
+            ProtocolVersion = "0.2.5",
+        },
+    ],
+};
+
+await client.Ai.AgentCard.ReleaseAgentCardAsync(
+    card, registrationType: NacosAgentRegistrationType.Service, setAsLatest: true, ct: cancellationToken);
+```
+
+A card registered as a `SERVICE` is reached through the endpoints registered against it, because the
+address of an agent that runs inside a Nacos-registered process is only known at runtime. The
+declared interface is what the card falls back to while nothing is registered; once an endpoint is,
+the registry assembles the card's address from it:
+
+```csharp
+await client.Ai.AgentCard.RegisterAgentEndpointAsync(
+    "support-agent",
+    new NacosAgentEndpoint
+    {
+        Address = "10.0.0.7",
+        Port = 9000,
+        Path = "/a2a",
+        Version = "1.0.0",          // the card version the endpoint serves — required
+        ProtocolVersion = "0.2.5",
+    },
+    cancellationToken);
+```
+
+An endpoint must name the card version it serves, because the registration becomes an instance of a
+service named after the pair. It also lives and dies with the connection that registered it, so it is
+republished after a reconnect and a refused registration is not. Following a card is the same poll as
+following a prompt, with the same `null` element for one that stopped being served:
+
+```csharp
+await foreach (NacosAgentCardDetail? change in
+    client.Ai.AgentCard.SubscribeAgentCardAsync("support-agent", ct: cancellationToken))
+{
+    Console.WriteLine(change is null ? "(withdrawn)" : change.Version);
+}
+```
+
+Agent cards are served from Nacos **3.1.0** on. The registry refuses a call only when the server
+states that it has no agent registry, so an older server fails on the request itself.
+
 Five things are worth knowing before relying on this:
 
-- The MCP registry is served from Nacos **3.0.3** on, and the prompt, skill and agent-specification
-  registries from **3.2.0** on. An older server answers a query with `RequestHandler Not Found`; the
+- The MCP registry is served from Nacos **3.0.3** on, the agent card registry from **3.1.0** on, and
+  the prompt, skill and agent-specification registries from **3.2.0** on. An older server answers a
+  query with `RequestHandler Not Found`; the
   [FAQ](faq.md#which-nacos-versions-are-supported) says which server each module needs.
 - `GetServerAsync` is a direct query, so it always reports the server's current state — and needs the
   server to be reachable. `SubscribeServerAsync` is the exception: it caches the last detail it read
@@ -588,7 +669,8 @@ Five things are worth knowing before relying on this:
   label plus a per-client `aiClientUuid` that Nacos records with everything the client publishes.
 - A skill and an agent specification are read over HTTP rather than over that connection, so a caller
   that only reads or follows those never opens it. The HTTP path presents the same access token, in
-  the `accessToken` header the client OpenAPI reads rather than as a bearer header.
+  the `accessToken` header the client OpenAPI reads rather than as a bearer header. An agent card is
+  the opposite: it is served over the AI connection, so reading one opens it.
 
 ## Next steps
 

@@ -291,4 +291,137 @@ internal static partial class NacosAiLog
         string? version,
         string? label,
         string reason);
+
+    /// <summary>Logs that an A2A agent card was published.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The card version that was published.</param>
+    /// <param name="registrationType">How the card was registered.</param>
+    /// <remarks>
+    /// Publishing changes what other agents resolve, so it is recorded at the default level; reading
+    /// a card is left to the caller.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8020,
+        Level = LogLevel.Information,
+        Message = "Published agent card {AgentName} version {Version} as {RegistrationType}.")]
+    public static partial void AgentCardReleased(
+        ILogger logger,
+        string agentName,
+        string version,
+        string registrationType);
+
+    /// <summary>Logs that a successful card query carried no card.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name that was queried.</param>
+    /// <param name="version">The version that was queried, if one was named.</param>
+    /// <param name="registrationType">The registration type that was named, if any.</param>
+    /// <remarks>
+    /// A missing agent or version is reported as a failure result code, so a success with no card
+    /// means the reply did not match the contract rather than that the agent is absent.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8021,
+        Level = LogLevel.Warning,
+        Message = "The query for agent card {AgentName} version {Version} registration type {RegistrationType} carried no card.")]
+    public static partial void AgentCardDetailMissing(
+        ILogger logger,
+        string agentName,
+        string? version,
+        string? registrationType);
+
+    /// <summary>Logs that a subscribed agent card changed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The card version that is now served.</param>
+    [LoggerMessage(
+        EventId = 8022,
+        Level = LogLevel.Debug,
+        Message = "Agent card {AgentName} changed to version {Version}.")]
+    public static partial void AgentCardChanged(ILogger logger, string agentName, string? version);
+
+    /// <summary>Logs that a subscribed agent card stopped being served.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    [LoggerMessage(
+        EventId = 8023,
+        Level = LogLevel.Debug,
+        Message = "Agent card {AgentName} is no longer served.")]
+    public static partial void AgentCardWithdrawn(ILogger logger, string agentName);
+
+    /// <summary>Logs that an agent card subscription refresh failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent being refreshed.</param>
+    /// <param name="version">The version being refreshed, if one was named.</param>
+    /// <param name="registrationType">The registration type being refreshed, if any.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A refresh that fails leaves the cached copy in place and is retried on the next interval,
+    /// because a subscription is meant to survive an outage rather than fail with it.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8024,
+        Level = LogLevel.Warning,
+        Message = "Refreshing the subscription for agent card {AgentName} version {Version} registration type {RegistrationType} failed: {Reason}")]
+    public static partial void AgentCardRefreshFailed(
+        ILogger logger,
+        string agentName,
+        string? version,
+        string? registrationType,
+        string reason);
+
+    /// <summary>Logs that an agent endpoint was registered.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="address">The endpoint address.</param>
+    /// <param name="port">The endpoint port.</param>
+    [LoggerMessage(
+        EventId = 8025,
+        Level = LogLevel.Information,
+        Message = "Registered agent endpoint {Address}:{Port} for {AgentName}.")]
+    public static partial void AgentEndpointRegistered(
+        ILogger logger,
+        string agentName,
+        string address,
+        int port);
+
+    /// <summary>Logs that an agent endpoint was removed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="address">The endpoint address.</param>
+    /// <param name="port">The endpoint port.</param>
+    [LoggerMessage(
+        EventId = 8026,
+        Level = LogLevel.Information,
+        Message = "Removed agent endpoint {Address}:{Port} of {AgentName}.")]
+    public static partial void AgentEndpointDeregistered(
+        ILogger logger,
+        string agentName,
+        string address,
+        int port);
+
+    /// <summary>Logs that the agent endpoints were replayed after a reconnect.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">How many endpoints were republished.</param>
+    [LoggerMessage(
+        EventId = 8027,
+        Level = LogLevel.Information,
+        Message = "Republished {Count} agent endpoint(s) after reconnecting.")]
+    public static partial void AgentEndpointsRestored(ILogger logger, int count);
+
+    /// <summary>Logs that one agent endpoint could not be replayed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent the endpoint belongs to.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// The endpoint stays recorded, so the next reconnect tries it again rather than losing it.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8028,
+        Level = LogLevel.Warning,
+        Message = "Republishing an endpoint of agent {AgentName} failed: {Reason}")]
+    public static partial void AgentEndpointRestoreFailed(
+        ILogger logger,
+        string agentName,
+        string reason);
 }

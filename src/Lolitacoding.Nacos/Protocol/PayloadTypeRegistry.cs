@@ -67,6 +67,14 @@ internal static class PayloadTypeRegistry
         ["QueryPromptRequest"] = NacosJsonContext.Default.QueryPromptRequest,
         ["QueryPromptResponse"] = NacosJsonContext.Default.QueryPromptResponse,
 
+        // AI registry (A2A agent cards).
+        ["QueryAgentCardRequest"] = NacosJsonContext.Default.QueryAgentCardRequest,
+        ["QueryAgentCardResponse"] = NacosJsonContext.Default.QueryAgentCardResponse,
+        ["ReleaseAgentCardRequest"] = NacosJsonContext.Default.ReleaseAgentCardRequest,
+        ["ReleaseAgentCardResponse"] = NacosJsonContext.Default.ReleaseAgentCardResponse,
+        ["AgentEndpointRequest"] = NacosJsonContext.Default.AgentEndpointRequest,
+        ["AgentEndpointResponse"] = NacosJsonContext.Default.AgentEndpointResponse,
+
         // Transport and connection management.
         ["ServerCheckRequest"] = NacosJsonContext.Default.ServerCheckRequest,
         ["ServerCheckResponse"] = NacosJsonContext.Default.ServerCheckResponse,
