@@ -693,6 +693,41 @@ unacknowledged notification.
 `LockResult` also serialises a computed `waiting` flag. It is exactly `waitPosition >= 0`, and a
 read-only property would be dropped on the way back in, so the client derives it instead.
 
+### 3.14 AI registry payloads (MCP)
+
+`ai/.../remote/handler/**` and `api/.../ai/remote/**` define the registry, which is served over a
+connection labelled `ai` (`AiConnectionBasedClientManager`). The request base class is
+`AbstractMcpRequest`, whose `getModule()` returns `Constants.AI.AI_MODULE` = `"ai"`.
+
+This is the **3.0.3** contract: `McpService` marks `getMcpServer` and `releaseMcpServer`
+`@Since("3.0.3")`, and a 3.0.2 server answers either one with `RequestHandler Not Found` (§2). What
+that means for a caller is recorded in the
+[protocol notes](protocol-notes.md#ai-registry-specifics).
+
+| Request `metadata.type` | Response `metadata.type` | Request fields |
+| --- | --- | --- |
+| `QueryMcpServerRequest` | `QueryMcpServerResponse` | `namespaceId`, `mcpId`, `mcpName`, `version` |
+| `ReleaseMcpServerRequest` | `ReleaseMcpServerResponse` | `namespaceId`, `mcpId`, `mcpName`, `serverSpecification`, `toolSpecification`, `resourceSpecification`, `endpointSpecification`, `createDraft` |
+
+`QueryMcpServerResponse` carries one field, `mcpServerDetailInfo` (`McpServerDetailInfo`).
+`ReleaseMcpServerResponse` carries `mcpId`. `McpServerDetailInfo` extends `McpServerBasicInfo` with
+`backendEndpoints`, `frontendEndpoints`, `toolSpec`, `resourceSpec` and `allVersions`.
+
+Field names that break the camel-case policy every other payload follows:
+
+| Java member | JSON name | Why |
+| --- | --- | --- |
+| `McpTool.meta` | `_meta` | The MCP protocol's own extension member. |
+| `ServerVersionDetail.release_date`, `is_latest` | as written | The official registry's version object, stored verbatim; its other fields are camel case. |
+| `McpCapability.TOOL` / `PROMPT` / `RESOURCE` | upper case | The enum member names. |
+| `KeyValueInput.isRequired`, `isSecret` | as written | The registry's input object keeps the `is` prefix the rest of the payload drops. |
+| `Icon.mimeType`, `theme` | `image/png`, `dark` | Enum values rather than member names. |
+
+Server-reported errors worth expecting: the registry's own `MCP_SERVER_NOT_FOUND` (`50000`) and
+`MCP_SEVER_VERSION_NOT_FOUND` (`50001` — the typo is upstream's). Both are raised as
+`NacosApiException(NacosException.NOT_FOUND, …)`, and it is the outer code — `404` — that a client
+reads off the error response, alongside the message (`MCP server not found`).
+
 ---
 
 ## 4. The gRPC port

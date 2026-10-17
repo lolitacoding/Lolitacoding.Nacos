@@ -1066,15 +1066,17 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// </para>
     /// <para>
     /// This transport does not implement fuzzy watch, so it is advertised as unsupported rather than
-    /// claiming a capability it cannot honour. The distributed lock is implemented, so it is
-    /// advertised: the server reads the flag to decide whether a lock notification may be pushed to
-    /// this connection.
+    /// claiming a capability it cannot honour. The distributed lock and the MCP server registry are
+    /// implemented, so they are advertised: the server reads the flags to decide whether a lock
+    /// notification may be pushed to this connection, and whether an MCP release should be served by
+    /// the gRPC binding rather than the HTTP one.
     /// </para>
     /// </remarks>
     private static Dictionary<string, bool> BuildAbilityTable() => new(StringComparer.Ordinal)
     {
         ["fuzzyWatch"] = false,
         ["lock"] = true,
+        ["mcp"] = true,
     };
 
     /// <summary>

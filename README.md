@@ -1,7 +1,7 @@
 # Lolitacoding.Nacos
 
 Modern **.NET 10** client SDK for [Nacos](https://nacos.io) 3.x — configuration center,
-service registration & discovery, and distributed locking.
+service registration & discovery, distributed locking, and the AI registry.
 
 [![CI](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml/badge.svg)](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml)
 
@@ -20,7 +20,7 @@ service registration & discovery, and distributed locking.
 
 | Project | Purpose |
 | --- | --- |
-| `Lolitacoding.Nacos` | Core: protocol, transport, Config, Naming and Lock clients. |
+| `Lolitacoding.Nacos` | Core: protocol, transport, Config, Naming, Lock and AI clients. |
 | `Lolitacoding.Nacos.Extensions.DependencyInjection` | `AddNacos(...)`, options binding and validation, lifetime management. |
 | `Lolitacoding.Nacos.Extensions.Configuration` | `AddNacosConfiguration(...)` configuration provider with change tokens. |
 | `Lolitacoding.Nacos.Extensions.ServiceDiscovery` | `AddNacosServiceDiscovery()` integration for `Microsoft.Extensions.ServiceDiscovery`. |
@@ -184,6 +184,37 @@ caller that needs its own owner. See
 The lock service this speaks to is the one Nacos **3.3** introduced. A 3.2 server's lock module only
 acquires and releases, so renewals and queued waiting need a 3.3 server;
 [the FAQ](docs/faq.md#which-nacos-versions-are-supported) says what happens without one.
+
+### AI registry
+
+```csharp
+using Lolitacoding.Nacos.Ai;
+
+// What the server currently serves, with the tools, resources and endpoints it resolved.
+NacosMcpServerDetail server = await client.Ai.Mcp.GetServerAsync("weather", cancellationToken);
+
+foreach (NacosMcpTool tool in server.ToolSpec?.Tools ?? [])
+{
+    Console.WriteLine(tool.Name);
+}
+```
+
+`client.Ai` reaches the Nacos AI registry. This release covers the MCP server registry —
+`GetServerAsync` reads one server, by name and optionally by version, and `ReleaseServerAsync`
+publishes one version of one with its tool list. Prompts, skills, agent specifications and agents
+follow the same shape; the MCP servers are the part the transport and the models were built for
+first.
+
+The models are the MCP protocol's own objects rather than a projection of them — a tool's JSON
+Schema stays JSON, and MCP's `_meta` member keeps its underscore — because Nacos stores what it is
+given and serves it back to MCP clients unchanged. Reading is a direct query rather than a
+subscription, so it reports the server's current state and needs the server to be reachable.
+
+The AI registry is served from Nacos **3.0.3** on; [the FAQ](docs/faq.md#which-nacos-versions-are-supported)
+says which server each module needs. The AI connection is opened on first use, like the lock
+connection, and carries the `ai` module label plus the per-client identifier Nacos records with
+everything the client publishes. See
+[quick start §11](docs/quickstart.md#11-use-the-ai-registry).
 
 ### Observability
 

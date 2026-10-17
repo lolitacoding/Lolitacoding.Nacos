@@ -55,6 +55,12 @@ internal static class PayloadTypeRegistry
         ["LockNotificationRequest"] = NacosJsonContext.Default.LockNotificationRequest,
         ["LockNotificationResponse"] = NacosJsonContext.Default.LockNotificationResponse,
 
+        // AI registry (MCP servers).
+        ["QueryMcpServerRequest"] = NacosJsonContext.Default.QueryMcpServerRequest,
+        ["QueryMcpServerResponse"] = NacosJsonContext.Default.QueryMcpServerResponse,
+        ["ReleaseMcpServerRequest"] = NacosJsonContext.Default.ReleaseMcpServerRequest,
+        ["ReleaseMcpServerResponse"] = NacosJsonContext.Default.ReleaseMcpServerResponse,
+
         // Transport and connection management.
         ["ServerCheckRequest"] = NacosJsonContext.Default.ServerCheckRequest,
         ["ServerCheckResponse"] = NacosJsonContext.Default.ServerCheckResponse,

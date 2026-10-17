@@ -7,7 +7,8 @@
 # Both instances run the newest stable 3.x release. The distributed lock's full semantics — lease
 # renewal, the wait queue, explicit owners — belong to the 3.3 lock service, so point an instance at
 # a 3.3 image (nacos/nacos-server:v3.3.0-RC for now) to exercise those; a 3.2 server only acquires
-# and releases. See docs/faq.md.
+# and releases. The MCP registry the AI client speaks to arrived after the oldest 3.x release but
+# before this one, so it works against these instances as they stand. See docs/faq.md.
 
 services:
   nacos-3x:

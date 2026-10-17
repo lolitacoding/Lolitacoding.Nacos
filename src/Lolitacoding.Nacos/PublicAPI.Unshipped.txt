@@ -337,3 +337,277 @@ static Lolitacoding.Nacos.Naming.NacosServiceInfo.operator !=(Lolitacoding.Nacos
 static Lolitacoding.Nacos.Naming.NacosServiceInfo.operator ==(Lolitacoding.Nacos.Naming.NacosServiceInfo? left, Lolitacoding.Nacos.Naming.NacosServiceInfo? right) -> bool
 static Lolitacoding.Nacos.Naming.NacosServiceKey.operator !=(Lolitacoding.Nacos.Naming.NacosServiceKey? left, Lolitacoding.Nacos.Naming.NacosServiceKey? right) -> bool
 static Lolitacoding.Nacos.Naming.NacosServiceKey.operator ==(Lolitacoding.Nacos.Naming.NacosServiceKey? left, Lolitacoding.Nacos.Naming.NacosServiceKey? right) -> bool
+const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.Address = "address" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.GroupName = "groupName" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.NamespaceId = "namespaceId" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.Port = "port" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.ServiceName = "serviceName" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpEndpointType.Direct = "DIRECT" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpEndpointType.Ref = "REF" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Dubbo = "dubbo" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Http = "http" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Sse = "mcp-sse" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Stdio = "stdio" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Streamable = "mcp-streamable" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpStatus.Active = "active" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpStatus.Deleted = "deleted" -> string!
+const Lolitacoding.Nacos.Ai.NacosMcpStatus.Deprecated = "deprecated" -> string!
+Lolitacoding.Nacos.Ai.INacosAiClient
+Lolitacoding.Nacos.Ai.INacosAiClient.Mcp.get -> Lolitacoding.Nacos.Ai.INacosMcpRegistry!
+Lolitacoding.Nacos.Ai.INacosMcpRegistry
+Lolitacoding.Nacos.Ai.INacosMcpRegistry.GetServerAsync(string! name, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosMcpServerDetail!>!
+Lolitacoding.Nacos.Ai.INacosMcpRegistry.ReleaseServerAsync(Lolitacoding.Nacos.Ai.NacosMcpServer! server, Lolitacoding.Nacos.Ai.NacosMcpToolSpecification? tools = null, Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification? resources = null, Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec? endpoint = null, bool createDraft = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Lolitacoding.Nacos.Ai.NacosMcpCapability
+Lolitacoding.Nacos.Ai.NacosMcpCapability.Prompt = 1 -> Lolitacoding.Nacos.Ai.NacosMcpCapability
+Lolitacoding.Nacos.Ai.NacosMcpCapability.Resource = 2 -> Lolitacoding.Nacos.Ai.NacosMcpCapability
+Lolitacoding.Nacos.Ai.NacosMcpCapability.Tool = 0 -> Lolitacoding.Nacos.Ai.NacosMcpCapability
+Lolitacoding.Nacos.Ai.NacosMcpEncryptObject
+Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.Data.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.Data.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.EncryptInfo.get -> System.Collections.Generic.IDictionary<string!, string!>?
+Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.EncryptInfo.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.NacosMcpEncryptObject() -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointData
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Address.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Address.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Headers.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput!>?
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Headers.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.NacosMcpEndpointInfo() -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Path.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Path.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Port.get -> int
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Port.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Protocol.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Protocol.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec
+Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Data.get -> System.Collections.Generic.IDictionary<string!, string!>?
+Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Data.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.NacosMcpEndpointSpec() -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Type.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Type.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpEndpointType
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointData.get -> System.Text.Json.Nodes.JsonNode?
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointData.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointType.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointType.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Headers.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput!>?
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Headers.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.NacosMcpFrontEndpointConfig() -> void
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Path.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Path.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Protocol.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Protocol.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Type.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Type.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpIcon
+Lolitacoding.Nacos.Ai.NacosMcpIcon.MimeType.get -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType?
+Lolitacoding.Nacos.Ai.NacosMcpIcon.MimeType.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpIcon.NacosMcpIcon() -> void
+Lolitacoding.Nacos.Ai.NacosMcpIcon.Sizes.get -> System.Collections.Generic.IList<string!>?
+Lolitacoding.Nacos.Ai.NacosMcpIcon.Sizes.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpIcon.Src.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpIcon.Src.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpIcon.Theme.get -> Lolitacoding.Nacos.Ai.NacosMcpIconTheme?
+Lolitacoding.Nacos.Ai.NacosMcpIcon.Theme.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
+Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageJpeg = 1 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
+Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageJpg = 2 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
+Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImagePng = 0 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
+Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageSvgXml = 3 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
+Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageWebp = 4 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
+Lolitacoding.Nacos.Ai.NacosMcpIconTheme
+Lolitacoding.Nacos.Ai.NacosMcpIconTheme.Dark = 1 -> Lolitacoding.Nacos.Ai.NacosMcpIconTheme
+Lolitacoding.Nacos.Ai.NacosMcpIconTheme.Light = 0 -> Lolitacoding.Nacos.Ai.NacosMcpIconTheme
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Choices.get -> System.Collections.Generic.IList<string!>?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Choices.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.DefaultValue.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.DefaultValue.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Description.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Description.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Format.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Format.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsRequired.get -> bool?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsRequired.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsSecret.get -> bool?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsSecret.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.NacosMcpKeyValueInput() -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Placeholder.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Placeholder.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Value.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Value.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Variables.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Variables.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpProtocol
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ExportPath.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ExportPath.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.FrontEndpointConfigList.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig!>?
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.FrontEndpointConfigList.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.NacosMcpRemoteServiceConfig() -> void
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ServiceRef.get -> Lolitacoding.Nacos.Ai.NacosMcpServiceRef?
+Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ServiceRef.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpRepository
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Id.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Id.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpRepository.NacosMcpRepository() -> void
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Source.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Source.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Subfolder.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Subfolder.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Url.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpRepository.Url.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.EncryptData.get -> Lolitacoding.Nacos.Ai.NacosMcpEncryptObject?
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.EncryptData.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Extensions.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Extensions.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.NacosMcpResourceSpecification() -> void
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Resources.get -> System.Text.Json.Nodes.JsonArray?
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Resources.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.ResourceTemplates.get -> System.Text.Json.Nodes.JsonArray?
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.ResourceTemplates.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.SpecificationType.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.SpecificationType.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.DefaultCredential.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.DefaultCredential.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Id.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Id.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.In.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.In.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.NacosMcpSecurityScheme() -> void
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Scheme.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Scheme.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Type.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Type.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer
+Lolitacoding.Nacos.Ai.NacosMcpServer.Capabilities.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpCapability>?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Capabilities.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Description.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Description.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Enabled.get -> bool
+Lolitacoding.Nacos.Ai.NacosMcpServer.Enabled.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.FrontProtocol.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.FrontProtocol.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Icons.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpIcon!>?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Icons.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Id.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Id.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.LocalServerConfig.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpServer.LocalServerConfig.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.NacosMcpServer() -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.NamespaceId.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.NamespaceId.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Packages.get -> System.Text.Json.Nodes.JsonArray?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Packages.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Protocol.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Protocol.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.RemoteServerConfig.get -> Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig?
+Lolitacoding.Nacos.Ai.NacosMcpServer.RemoteServerConfig.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Repository.get -> Lolitacoding.Nacos.Ai.NacosMcpRepository?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Repository.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Status.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Status.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.Version.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.Version.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.VersionDetail.get -> Lolitacoding.Nacos.Ai.NacosMcpVersionDetail?
+Lolitacoding.Nacos.Ai.NacosMcpServer.VersionDetail.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServer.WebsiteUrl.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServer.WebsiteUrl.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.AllVersions.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpVersionDetail!>?
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.AllVersions.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.BackendEndpoints.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo!>?
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.BackendEndpoints.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.FrontendEndpoints.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo!>?
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.FrontendEndpoints.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.NacosMcpServerDetail() -> void
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ResourceSpec.get -> Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification?
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ResourceSpec.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ToolSpec.get -> Lolitacoding.Nacos.Ai.NacosMcpToolSpecification?
+Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ToolSpec.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.GroupName.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.GroupName.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.NacosMcpServiceRef() -> void
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.NamespaceId.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.NamespaceId.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.ServiceName.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.ServiceName.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.TransportProtocol.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpServiceRef.TransportProtocol.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpStatus
+Lolitacoding.Nacos.Ai.NacosMcpTool
+Lolitacoding.Nacos.Ai.NacosMcpTool.Annotations.get -> Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations?
+Lolitacoding.Nacos.Ai.NacosMcpTool.Annotations.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpTool.Description.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpTool.Description.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpTool.InputSchema.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpTool.InputSchema.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpTool.Meta.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpTool.Meta.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpTool.NacosMcpTool() -> void
+Lolitacoding.Nacos.Ai.NacosMcpTool.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpTool.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpTool.OutputSchema.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpTool.OutputSchema.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.DestructiveHint.get -> bool?
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.DestructiveHint.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.IdempotentHint.get -> bool?
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.IdempotentHint.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.NacosMcpToolAnnotations() -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.OpenWorldHint.get -> bool?
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.OpenWorldHint.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.ReadOnlyHint.get -> bool?
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.ReadOnlyHint.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.Title.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.Title.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Enabled.get -> bool
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Enabled.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta.InvokeContext.get -> System.Collections.Generic.IDictionary<string!, string!>?
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta.InvokeContext.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta.NacosMcpToolMeta() -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Templates.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Templates.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.EncryptData.get -> Lolitacoding.Nacos.Ai.NacosMcpEncryptObject?
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.EncryptData.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Extensions.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Extensions.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.NacosMcpToolSpecification() -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SecuritySchemes.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme!>?
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SecuritySchemes.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SpecificationType.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SpecificationType.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Tools.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpTool!>?
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Tools.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.ToolsMeta.get -> System.Collections.Generic.IDictionary<string!, Lolitacoding.Nacos.Ai.NacosMcpToolMeta!>?
+Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.ToolsMeta.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.IsLatest.get -> bool?
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.IsLatest.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.NacosMcpVersionDetail() -> void
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.ReleaseDate.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.ReleaseDate.set -> void
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.Version.get -> string?
+Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.Version.set -> void
+Lolitacoding.Nacos.Client.NacosClient.Ai.get -> Lolitacoding.Nacos.Ai.INacosAiClient!
+Lolitacoding.Nacos.NacosAiOptions
+Lolitacoding.Nacos.NacosAiOptions.CacheRefreshInterval.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosAiOptions.CacheRefreshInterval.set -> void
+Lolitacoding.Nacos.NacosAiOptions.EnableLocalCache.get -> bool
+Lolitacoding.Nacos.NacosAiOptions.EnableLocalCache.set -> void
+Lolitacoding.Nacos.NacosAiOptions.NacosAiOptions() -> void
+Lolitacoding.Nacos.NacosOptions.Ai.get -> Lolitacoding.Nacos.NacosAiOptions!
+Lolitacoding.Nacos.NacosOptions.Ai.set -> void

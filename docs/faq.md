@@ -6,14 +6,21 @@ Nacos **3.x**. The transport speaks the Nacos gRPC protocol, which is unchanged 
 and the v3 HTTP OpenAPI for authentication. The integration suite runs against
 `nacos/nacos-server:v3.0.2` unless `NACOS_TEST_IMAGE` names another server.
 
-The distributed **lock** module is the exception. Lease renewal, the wait queue, explicit owners and
-the reentrant count belong to the lock service Nacos **3.3** introduced, and the one a 3.2 server
-ships only acquires and releases. Against a 3.2 server this client can therefore acquire and release
-a lock, but it cannot renew one — a refused renewal ends the lease locally, so the caller learns
-about it rather than holding a lock the server has already dropped — and a request that would queue
-is refused instead. The lock tests choose their server with `NACOS_LOCK_TEST_IMAGE`, which defaults
-to `nacos/nacos-server:v3.3.0-RC`. Which is which is described in
-[the protocol notes](protocol-notes.md#distributed-lock-specifics).
+Two modules are younger than that release, so their tests choose a server of their own:
+
+- The **MCP server registry** — the first part of the AI registry — is served from Nacos **3.0.3**:
+  the official API marks `getMcpServer` and `releaseMcpServer` `@Since("3.0.3")`, and a 3.0.2 server
+  answers either one with `RequestHandler Not Found`. The AI tests choose their server with
+  `NACOS_AI_TEST_IMAGE`, which defaults to `nacos/nacos-server:v3.2.4`, the oldest release the
+  registry has been checked against.
+- The distributed **lock** module belongs to Nacos **3.3**: lease renewal, the wait queue, explicit
+  owners and the reentrant count are all from that release, and the lock module a 3.2 server ships
+  only acquires and releases. Against a 3.2 server this client can therefore acquire and release a
+  lock, but it cannot renew one — a refused renewal ends the lease locally, so the caller learns about
+  it rather than holding a lock the server has already dropped — and a request that would queue is
+  refused instead. The lock tests choose their server with `NACOS_LOCK_TEST_IMAGE`, which defaults to
+  `nacos/nacos-server:v3.3.0-RC`. Which is which is described in
+  [the protocol notes](protocol-notes.md#distributed-lock-specifics).
 
 The `test` type label and the payload type names differ subtly between upstream versions and Java
 SDK releases; the details, with file references, are in
@@ -263,7 +270,8 @@ MinVer derives the version from git tags. Before the first `v*` tag, builds are 
 ## The integration tests need Docker. What does the unit suite cover?
 
 The unit tests cover the protocol codec, handshake sequencing, request/response error handling,
-reconnect decisions, naming and configuration logic, the DI registrations and the observability
-wiring. They use in-memory fakes and never touch the network. The integration tests boot a real
-Nacos container with Testcontainers and are marked `Category=Integration`; they are what proves
-end-to-end behaviour against a live server.
+reconnect decisions, naming and configuration logic, the lock and MCP client contracts, the DI
+registrations and the observability wiring. They use in-memory fakes and never touch the network. The
+integration tests boot a real Nacos container with Testcontainers and are marked `Category=Integration`;
+they are what proves end-to-end behaviour against a live server. Which server each module runs against
+is described in [Which Nacos versions are supported?](#which-nacos-versions-are-supported).

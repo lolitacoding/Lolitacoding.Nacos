@@ -387,6 +387,65 @@ finally
 The lock connection is opened on first use, so an application that never takes one does not carry a
 connection for it.
 
+## 11. Use the AI registry
+
+`client.Ai` reaches the AI registry, the part of Nacos that holds MCP servers, prompts, skills, agent
+specifications and agents. This release covers the MCP server registry: reading a released server and
+releasing one.
+
+```csharp
+using Lolitacoding.Nacos.Ai;
+
+// A read is a direct query: it reports what the server holds at that moment. The version is
+// optional — leaving it out asks for the one the server currently serves.
+NacosMcpServerDetail server = await client.Ai.Mcp.GetServerAsync("weather", cancellationToken);
+
+foreach (NacosMcpTool tool in server.ToolSpec?.Tools ?? [])
+{
+    Console.WriteLine(tool.Name);
+}
+
+foreach (NacosMcpEndpointInfo endpoint in server.BackendEndpoints ?? [])
+{
+    Console.WriteLine($"{endpoint.Protocol}://{endpoint.Address}:{endpoint.Port}{endpoint.Path}");
+}
+```
+
+A release publishes one version of a server. The version is what the release creates and what a later
+read pins, so it is required, and the tools and resources travel as the MCP protocol's own objects:
+
+```csharp
+var specification = new NacosMcpServer
+{
+    Name = "weather",
+    Protocol = NacosMcpProtocol.Streamable,
+    Description = "Weather tools for the support agent.",
+    VersionDetail = new NacosMcpVersionDetail { Version = "1.2.0", IsLatest = true },
+    Version = "1.2.0", // the plain string older servers read
+    RemoteServerConfig = new NacosMcpRemoteServiceConfig
+    {
+        ServiceRef = new NacosMcpServiceRef { ServiceName = "weather-backend" },
+    },
+};
+
+var tools = new NacosMcpToolSpecification
+{
+    Tools = [new NacosMcpTool { Name = "forecast", Description = "Tomorrow's weather." }],
+};
+
+string? id = await client.Ai.Mcp.ReleaseServerAsync(specification, tools, cancellationToken);
+```
+
+Three things are worth knowing before relying on this:
+
+- The registry is served from Nacos **3.0.3** on. A 3.0.2 server answers a query or a release with
+  `RequestHandler Not Found`; the [FAQ](faq.md#which-nacos-versions-are-supported) says which server
+  each module needs.
+- Reading is a direct query rather than a locally cached snapshot, so it always reports the server's
+  current state — and needs the server to be reachable.
+- The AI connection is opened on first use, like the lock connection, and carries the `ai` module
+  label plus a per-client `aiClientUuid` that Nacos records with everything the client publishes.
+
 ## Next steps
 
 - [Configuration reference](configuration.md) — every option, with defaults.

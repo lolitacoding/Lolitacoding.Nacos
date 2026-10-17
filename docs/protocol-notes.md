@@ -99,8 +99,9 @@ labels, such as the AI client's UUID, through the `extraLabels` argument; they a
 standard ones.
 
 Configuration and naming are connected eagerly because nearly every application uses them. The lock
-connection is opened on first use instead: an application that never takes a lock would otherwise
-carry a handshake, a heartbeat and one socket per cluster node for a module it never calls.
+and AI connections are opened on first use instead: an application that never takes a lock and never
+asks the registry for anything would otherwise carry a handshake, a heartbeat and one socket per
+cluster node for a module it never calls.
 
 ## Server-initiated messages
 
@@ -201,6 +202,44 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
   Renewal is the client's job, and this client does it on the cadence Nacos' own client uses —
   `max(1s, min(lease / 3, 10s))` — with a lease left to the server assumed to be the server's 30
   seconds. See `NacosLockWatchdog`.
+
+## AI registry specifics
+
+> **Which server this describes.** The MCP registry is the Nacos **3.0.3** one or newer:
+> `McpService` in the official API marks `getMcpServer` and `releaseMcpServer` `@Since("3.0.3")`, and
+> a 3.0.2 server — the oldest release the rest of the suite runs against — answers both with
+> `RequestHandler Not Found`, the error `GrpcRequestAcceptor` reports for a payload type it has no
+> handler for. The handshake does not stand in for the request: the client refuses a registry call
+> only when the server explicitly denies the `mcp` ability, so against a server that predates the
+> registry the failure is the one the request itself reports.
+
+- The module label is `ai` and the connection carries an extra label of its own, `aiClientUuid`, a
+  UUID minted once per client instance rather than per connection. Nacos records it with every MCP or
+  agent endpoint a connection publishes, which is what lets an endpoint that outlived its publisher be
+  attributed and cleaned up, so it has to survive a reconnect.
+- A read is `QueryMcpServerRequest` (`namespaceId`, `mcpId`, `mcpName`, `version`) answered with
+  `QueryMcpServerResponse` (`mcpServerDetailInfo`). A release is `ReleaseMcpServerRequest`
+  (`namespaceId`, `mcpId`, `mcpName`, `serverSpecification`, `toolSpecification`,
+  `resourceSpecification`, `endpointSpecification`, `createDraft`) answered with
+  `ReleaseMcpServerResponse` (`mcpId`). `mcpName` is what the server routes on and is taken from the
+  specification, so the two cannot disagree.
+- The version is what a release creates and what a later read pins. Nacos moved it out of the plain
+  `version` string into `versionDetail`, the official registry's object, whose members are snake case
+  (`release_date`, `is_latest`) unlike every other field in the payload; the plain string is kept for
+  compatibility. The client reads the structured form first and refuses a release that carries neither,
+  because a server left to invent a version is one the caller cannot name again.
+- The tool, resource and endpoint objects are the MCP protocol's rather than Nacos' own, and Nacos
+  stores and serves them verbatim, so the client passes the caller's objects through instead of
+  re-shaping them: `_meta` keeps its underscore, capabilities keep the enum's upper-case names
+  (`TOOL`), and a tool's JSON Schema stays JSON.
+- A server that does not exist is a business error rather than an empty answer. Nacos reports it with
+  the generic not-found code (`404`) and a message naming the cause; a successful reply with no detail
+  would therefore be a contract violation, and is reported as one rather than as a missing server.
+- Two ability keys gate the registry: `mcp` and `mcpDraftRelease`. Only an explicit `false` is a
+  rejection — the client refuses locally with `NacosServerException(501)` — because a key the server
+  never mentioned says nothing, and a server that predates the key still serves the registry.
+  `createDraft` is gated on its own key because a server that does not know the field would read it as
+  unknown and publish the version directly, which is the opposite of what the caller asked for.
 
 ## Authentication
 

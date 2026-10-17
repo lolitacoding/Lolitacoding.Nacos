@@ -265,6 +265,21 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
 - 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
-- 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用。
+拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，随后 Prompt、Skill、AgentSpec、Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
+
+#### C1 · AI 基础设施 + MCP 查询/发布（✅ 已完成）
+
+- `src/Lolitacoding.Nacos/Ai/`：`INacosAiClient` / `INacosMcpRegistry`、`NacosAiClient`（持有 AI 连接，复用 `NacosLazyModuleConnection` 惰性创建）、`NacosMcpClient`、能力位常量（`NacosAiServerAbility`）与 MCP 模型。
+- 线路契约：`QueryMcpServerRequest` / `QueryMcpServerResponse`（`mcpServerDetailInfo`）与 `ReleaseMcpServerRequest` / `ReleaseMcpServerResponse`（`mcpId`），`type` 为 Java 简单类名，模块 `"ai"`；连接标签为 `source` / `module` / `AppName` 加上每客户端实例生成一次的 `aiClientUuid`（对应 `AiGrpcClient`），随客户端而非连接存活。
+- 模型直接作为线路负载（与 Java 用 `McpServerBasicInfo` 一致），不做近似映射；MCP 自身的 `_meta`、官方注册表的 `release_date` / `is_latest`、大写能力值（`TOOL` / `PROMPT` / `RESOURCE`）、`isRequired` / `isSecret` 等非常规字段名逐一按上游保留。
+- 能力位门禁：`mcp` 与 `mcpDraftRelease`，只有服务器**显式**声明 `false` 才本地抛 `NacosServerException(501)`；未声明即未知，照常发请求。`createDraft` 单独门禁，因为不识别该字段的服务器会把它当未知字段丢掉而直接发布，恰与调用方意图相反。
+- 版本解析：优先 `versionDetail.version`，回退旧 `version` 字符串；两者皆无则拒绝发布——服务端自行编造的版本调用方无法再次指名。
+- 失败语义：不存在的 MCP 服务器是业务错误（服务器回 `404` + `MCP server not found`，注册表自身的 `MCP_SERVER_NOT_FOUND` 为 `50000`）；因此“成功但无 detail”按契约破坏（`NacosServerException`）处理，而不是当成空结果。
+- 关键发现：MCP 客户端契约属于 **3.0.3**（`McpService` 标注 `@Since("3.0.3")`），而套件固化的最老 3.x（`v3.0.2`）对查询与发布都回 `RequestHandler Not Found`。AI 集成用例改用独立镜像（`NACOS_AI_TEST_IMAGE`，默认 `v3.2.4`——已验证可服务注册表的最老版本），其余套件仍为 `v3.0.2`。
+- 选项 `NacosAiOptions`（`EnableLocalCache` / `CacheRefreshInterval`）随本阶段引入，本地缓存的实际落地与 C2 的订阅同步；在此之前查询直接读服务器，配置项不改变行为。
+- 这一阶段暂不做 gRPC↔HTTP 自动回退：服务器缺失能力位时按上述 501 语义报错即可，回退留到 C8。
+- 验收：Release 构建零警告零错误；单元测试 **386 个全绿**（新增 26 个：查询/发布的字段映射与参数校验、能力位门禁与“未声明即放行”、服务器错误码上抛、`createDraft` 省略、模型 JSON 契约与整条详情往返）；集成测试新增 2 个用例，在 `nacos/nacos-server:v3.2.4` 上全绿（发布 → 查询（含 `allVersions` 与工具清单）→ 按版本再查；未发布的名字回业务错误且先发布一次以证明注册表确实在服务）。
+
+- 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

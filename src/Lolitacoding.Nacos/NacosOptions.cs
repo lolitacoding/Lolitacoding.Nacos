@@ -128,6 +128,11 @@ public sealed class NacosOptions
     public NacosNamingOptions Naming { get; set; } = new();
 
     /// <summary>
+    /// Gets or sets the AI registry specific options.
+    /// </summary>
+    public NacosAiOptions Ai { get; set; } = new();
+
+    /// <summary>
     /// Gets or sets the TLS settings applied to servers configured with the <c>https</c> scheme.
     /// </summary>
     /// <remarks>
@@ -202,6 +207,7 @@ public sealed class NacosOptions
         ValidateNamespace();
         Config.Validate();
         Naming.Validate();
+        Ai.Validate();
         Tls.Validate();
         Reconnect.Validate();
     }
@@ -366,6 +372,45 @@ public sealed class NacosConfigOptions
         {
             throw new NacosConfigurationException(
                 "NacosConfigOptions.DefaultContentType cannot be empty.");
+        }
+    }
+}
+
+/// <summary>
+/// Tunes the AI registry client.
+/// </summary>
+/// <remarks>
+/// The AI registry keeps a locally cached copy of every resource a process asks for, so that a
+/// restart during a control-plane outage still finds the MCP servers, prompts and agents it needs.
+/// </remarks>
+public sealed class NacosAiOptions
+{
+    /// <summary>
+    /// Gets or sets a value indicating whether AI resources are cached locally for failover.
+    /// </summary>
+    public bool EnableLocalCache { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets the interval at which a cached AI resource is refreshed in the background.
+    /// </summary>
+    /// <remarks>
+    /// A Nacos server pushes a change to a subscriber but does not replay one the client missed, so
+    /// a cached resource is also re-read on this interval. The official client's
+    /// <c>nacosAiMcpServerCacheUpdateInterval</c> and its siblings default to ten seconds
+    /// (<c>AiConstants.DEFAULT_AI_CACHE_UPDATE_INTERVAL</c>).
+    /// </remarks>
+    public TimeSpan CacheRefreshInterval { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Validates the AI options.
+    /// </summary>
+    /// <exception cref="NacosConfigurationException">A value is invalid.</exception>
+    internal void Validate()
+    {
+        if (CacheRefreshInterval <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosAiOptions.CacheRefreshInterval must be greater than zero.");
         }
     }
 }

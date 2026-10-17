@@ -1,3 +1,4 @@
+using Lolitacoding.Nacos.Ai;
 using Lolitacoding.Nacos.Auth;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Internal;
@@ -33,6 +34,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     private readonly NacosConfigClient _config;
     private readonly NacosNamingClient _naming;
     private readonly NacosLockClient _lock;
+    private readonly NacosAiClient _ai;
     private readonly ILogger<NacosClientFactory> _logger;
 
     private bool _disposed;
@@ -44,6 +46,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         NacosConfigClient config,
         NacosNamingClient naming,
         NacosLockClient @lock,
+        NacosAiClient ai,
         ILogger<NacosClientFactory> logger)
     {
         _options = options;
@@ -52,6 +55,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         _config = config;
         _naming = naming;
         _lock = @lock;
+        _ai = ai;
         _logger = logger;
     }
 
@@ -67,6 +71,13 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// costs nothing to an application that never takes a lock.
     /// </remarks>
     public INacosLockClient Lock => _lock;
+
+    /// <summary>Gets the AI registry client.</summary>
+    /// <remarks>
+    /// Like the lock client this one is not connected until it is first used, so an application
+    /// that never asks the registry for anything pays nothing for it.
+    /// </remarks>
+    public INacosAiClient Ai => _ai;
 
     /// <summary>
     /// Creates the clients and their per-module connections.
@@ -156,8 +167,17 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             random,
             authProvider);
 
+        var ai = new NacosAiClient(
+            options,
+            servers,
+            channels,
+            clock,
+            loggerFactory,
+            random,
+            authProvider);
+
         var factory = new NacosClientFactory(
-            options, configConnection, namingConnection, config, naming, @lock,
+            options, configConnection, namingConnection, config, naming, @lock, ai,
             loggerFactory.CreateLogger<NacosClientFactory>());
 
         // Domain pushes arrive on the connection of the module that owns them; routing them here
@@ -177,7 +197,8 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// The connections are attempted concurrently so one slow server cannot serialise startup
     /// behind the other. With <see cref="NacosOptions.Optional"/> set, an unreachable server is
     /// tolerated on every connection. A module whose connection is opened on first use — the
-    /// distributed lock — is not connected here, because nothing has asked for it yet.
+    /// distributed lock and the AI registry — is not connected here, because nothing has asked for
+    /// it yet.
     /// </remarks>
     public Task ConnectAsync(CancellationToken ct = default) =>
         Task.WhenAll(_configConnection.ConnectAsync(ct), _namingConnection.ConnectAsync(ct));
@@ -195,7 +216,9 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         _configConnection.ServerRequestReceived -= OnConfigServerRequestAsync;
         _namingConnection.ServerRequestReceived -= OnNamingServerRequestAsync;
 
-        // The lock client disposes its own connection, which only exists if it was ever used.
+        // The lock and AI clients dispose their own connection, which only exists if they were ever
+        // used.
+        await _ai.DisposeAsync().ConfigureAwait(false);
         await _lock.DisposeAsync().ConfigureAwait(false);
         await _naming.DisposeAsync().ConfigureAwait(false);
         await _config.DisposeAsync().ConfigureAwait(false);

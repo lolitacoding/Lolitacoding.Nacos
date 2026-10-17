@@ -4,9 +4,10 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// Shared constants describing the Nacos containers the integration tests run against.
 /// </summary>
 /// <remarks>
-/// Two images are exercised, because the modules did not all arrive at once: the lock service the
-/// client speaks to belongs to the 3.3 line, and the lock module a 3.2 server ships is an earlier
-/// contract that can neither renew a lease nor queue a waiter. Which image a test runs against is
+/// Three images are exercised, because the modules did not all arrive at once: the lock service the
+/// client speaks to belongs to the 3.3 line, the lock module a 3.2 server ships is an earlier
+/// contract that can neither renew a lease nor queue a waiter, and the AI registry is younger than
+/// the oldest server the rest of the suite runs against. Which image a test runs against is
 /// therefore part of what it is testing.
 /// </remarks>
 internal static class NacosIntegrationImages
@@ -41,6 +42,23 @@ internal static class NacosIntegrationImages
             : PinnedLockImage;
 
     /// <summary>
+    /// The image the AI registry tests run against: <c>NACOS_AI_TEST_IMAGE</c> when it is set, and
+    /// the pinned release below otherwise.
+    /// </summary>
+    /// <remarks>
+    /// It is a separate image because the AI registry is younger than the server the rest of the
+    /// suite is pinned to: the client contract for MCP servers was added in 3.0.3
+    /// (<c>McpService</c> marks its operations <c>@Since("3.0.3")</c>), and a 3.0.2 server answers a
+    /// query and a release with <c>RequestHandler Not Found</c>. The pin is the oldest release the
+    /// suite is checked against that serves the registry; the newer releases are checked through
+    /// this same variable.
+    /// </remarks>
+    public static readonly string AiImage =
+        Environment.GetEnvironmentVariable("NACOS_AI_TEST_IMAGE") is { Length: > 0 } image
+            ? image
+            : PinnedAiImage;
+
+    /// <summary>
     /// The pinned release the rest of the suite is checked against.
     /// </summary>
     /// <remarks>
@@ -49,6 +67,16 @@ internal static class NacosIntegrationImages
     /// code change.
     /// </remarks>
     private const string PinnedV3Image = "nacos/nacos-server:v3.0.2";
+
+    /// <summary>
+    /// The pinned release the AI registry tests are checked against.
+    /// </summary>
+    /// <remarks>
+    /// The oldest release the AI registry has been verified against. Move this down to 3.0.3 once a
+    /// run has confirmed that release serves the whole contract, or up when a newer feature — the
+    /// agent registry in particular — needs a newer server.
+    /// </remarks>
+    private const string PinnedAiImage = "nacos/nacos-server:v3.2.4";
 
     /// <summary>
     /// The pinned release the lock tests are checked against.

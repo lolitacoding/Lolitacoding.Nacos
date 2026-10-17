@@ -31,6 +31,7 @@ and `Naming`.
 | `Reconnect` | `NacosReconnectOptions` | see below | Reconnect policy. |
 | `Config` | `NacosConfigOptions` | see below | Configuration-centre options. |
 | `Naming` | `NacosNamingOptions` | see below | Naming options. |
+| `Ai` | `NacosAiOptions` | see below | AI registry options. |
 
 ### `NacosReconnectOptions`
 
@@ -63,6 +64,16 @@ drops.
 | `DefaultCluster` | `string` | `"DEFAULT"` | Cluster attached to registered instances when none is given. Cannot be empty. |
 | `Ephemeral` | `bool` | `true` | Register instances as ephemeral by default. |
 | `EnableLocalCache` | `bool` | `true` | Write the last known service list to disk so a restart during an outage can still resolve it. |
+
+### `NacosAiOptions`
+
+| Property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `EnableLocalCache` | `bool` | `true` | Keep the AI resources this client holds on disk, so a restart during a control-plane outage can still find the MCP servers, prompts and agents it needs. |
+| `CacheRefreshInterval` | `TimeSpan` | 10 s | How often a cached resource is re-read in the background. A server pushes a change to the clients that are connected at the time but does not replay one that was missed, so the cached copy is refreshed on this interval as well. Must be positive. |
+
+The cache is what a subscription populates; a plain query is served directly from the server and
+always reports what the server currently holds.
 
 ## `NacosConfigurationSourceOptions`
 

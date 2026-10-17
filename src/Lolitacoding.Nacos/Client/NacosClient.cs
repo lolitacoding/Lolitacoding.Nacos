@@ -1,3 +1,4 @@
+using Lolitacoding.Nacos.Ai;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Locking;
 using Lolitacoding.Nacos.Naming;
@@ -14,8 +15,8 @@ namespace Lolitacoding.Nacos.Client;
 /// <para>
 /// The client owns one gRPC connection per module. Nacos routes each connection by the
 /// <c>module</c> label it declares, and the naming, lock and AI servers discard connections that
-/// did not declare them, so configuration and naming do not share a stream. The lock connection is
-/// opened the first time a lock is used rather than at startup.
+/// did not declare them, so configuration and naming do not share a stream. The lock and AI
+/// connections are opened the first time one is used rather than at startup.
 /// </para>
 /// <para>
 /// A client is safe for concurrent use and is intended to live for the lifetime of the process.
@@ -40,6 +41,13 @@ public sealed class NacosClient : IAsyncDisposable, IDisposable
     /// nothing to an application that never takes one.
     /// </remarks>
     public INacosLockClient Lock => _factory.Lock;
+
+    /// <summary>Gets the AI registry client.</summary>
+    /// <remarks>
+    /// Like the lock client it is not connected until the first AI operation, so reading this
+    /// property costs nothing to an application that never uses the registry.
+    /// </remarks>
+    public INacosAiClient Ai => _factory.Ai;
 
     /// <summary>
     /// Creates a client from the supplied options.
