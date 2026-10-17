@@ -64,4 +64,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.TestHost" Version="10.0.13" />
   </ItemGroup>
 
+  <ItemGroup Label="Transitive dependencies pinned past a security advisory">
+    <!-- Aspire.Hosting brings in StreamJsonRpc, which resolves MessagePack 2.5.302, and NuGet's audit
+         reports that release as vulnerable (GHSA-qhrr-8q5h-9q3h). 2.5.303 is the first patched release
+         in the line, and central transitive pinning is what lifts it into every project that would
+         otherwise have resolved the flagged one. -->
+    <PackageVersion Include="MessagePack" Version="2.5.303" />
+  </ItemGroup>
+
 </Project>
