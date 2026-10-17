@@ -802,6 +802,12 @@ service:
 | Content missing from storage | `404` | `Prompt content not found: {promptKey}@{version}` |
 | Hash still matches | `304` | `prompt data is up to date` |
 
+**Skills and agent specifications have no payloads here.** Both are served only over HTTP — the skill
+endpoint is `GET /v3/client/ai/skills` and the agent-specification endpoint is
+`GET /v3/client/ai/agentspecs` — and the official gRPC client answers either request with
+`SERVER_NOT_IMPLEMENTED`. The skill endpoint's contract, including its headers and its archive layout,
+is recorded in the [protocol notes](protocol-notes.md#skills).
+
 ---
 
 ## 4. The gRPC port

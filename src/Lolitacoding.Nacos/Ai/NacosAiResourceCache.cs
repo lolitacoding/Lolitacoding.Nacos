@@ -1,47 +1,106 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using System.Text.Json;
 using System.Threading.Channels;
-using Lolitacoding.Nacos.Protocol;
 using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Ai;
 
 /// <summary>
-/// Holds the prompt versions a process is subscribed to, and keeps them current.
+/// The inputs a <see cref="NacosAiResourceCache{T}"/> is built from.
 /// </summary>
+/// <typeparam name="T">The resource the cache holds.</typeparam>
+/// <remarks>
+/// The cache owns the machinery every AI subscription shares — one refresh loop per selector, one
+/// cached copy per selector, one queue per consumer — and takes the parts that differ per resource
+/// as delegates. Prompts are compared by their serialized form and skills by their archive, and the
+/// two log through different event ids, so none of that belongs in the loop.
+/// </remarks>
+internal sealed class NacosAiResourceCacheOptions<T>
+    where T : class
+{
+    /// <summary>
+    /// Gets the read that fetches one selector.
+    /// </summary>
+    /// <remarks>
+    /// The arguments are the resource name, the version, the label and the hash of the copy that is
+    /// already cached (or <see langword="null"/> when there is none). The read is expected to report
+    /// a resource that does not exist as a <see cref="NacosServerException"/> with the not-found code
+    /// and an unchanged copy with the not-modified code.
+    /// </remarks>
+    public required Func<string, string?, string?, string?, CancellationToken, Task<T>> Query { get; init; }
+
+    /// <summary>
+    /// Gets the comparison that decides whether a read changed anything.
+    /// </summary>
+    /// <remarks>
+    /// Both sides came from the server, so the representation is stable and a faithful comparison is
+    /// a faithful "did anything change". Two absent states are the same state, which is what keeps a
+    /// resource that is still missing from being announced again on every refresh.
+    /// </remarks>
+    public required Func<T?, T?, bool> IsSame { get; init; }
+
+    /// <summary>
+    /// Gets the content hash a conditional read carries.
+    /// </summary>
+    /// <remarks>
+    /// The hash of the cached copy is what makes an unchanged resource cost a round trip rather than
+    /// a body: the server answers "not modified" when it still applies. A resource type that carries
+    /// no hash returns <see langword="null"/>, which turns every refresh into an unconditional read.
+    /// </remarks>
+    public required Func<T, string?> Hash { get; init; }
+
+    /// <summary>Gets the log call for a changed resource.</summary>
+    /// <remarks>
+    /// The arguments are the resource and its name.
+    /// </remarks>
+    public required Action<T, string> Changed { get; init; }
+
+    /// <summary>Gets the log call for a resource that stopped being served.</summary>
+    public required Action<string> Withdrawn { get; init; }
+
+    /// <summary>Gets the log call for a refresh that failed.</summary>
+    public required Action<string, string?, string?, string> RefreshFailed { get; init; }
+
+    /// <summary>Gets the interval between two refreshes of a subscribed selector.</summary>
+    public required TimeSpan RefreshInterval { get; init; }
+
+    /// <summary>Gets the clock the refresh interval is measured with.</summary>
+    public required TimeProvider TimeProvider { get; init; }
+
+    /// <summary>Gets the logger.</summary>
+    public required ILogger Logger { get; init; }
+}
+
+/// <summary>
+/// Holds the AI resources a process is subscribed to, and keeps them current.
+/// </summary>
+/// <typeparam name="T">The resource the cache holds.</typeparam>
 /// <remarks>
 /// <para>
-/// Nacos does not push prompt changes either. A change is discovered by re-reading the prompt on an
-/// interval and comparing the answer with the copy that was cached, which is why a subscription is
-/// served by a refresh loop per subscribed selector rather than by a stream of server-initiated
-/// events. The read is conditional: the hash of the cached copy is sent with it, and the server
-/// answers "not modified" when it still applies, so an unchanged prompt costs a round trip rather
-/// than a body.
+/// Nacos does not push AI resource changes. Its own client discovers one by re-reading the resource
+/// on an interval and comparing the answer with the copy that was cached, and there is no
+/// notification request on the wire to subscribe to, so a subscription here is a cached copy kept
+/// current by a loop rather than a stream of server-initiated events. The read is conditional: the
+/// hash of the cached copy is sent with it, and the server answers "not modified" when it still
+/// applies, so an unchanged resource costs a round trip rather than a body.
 /// </para>
 /// <para>
-/// A selector is a key with an optional version and an optional label, and only one of the two is
+/// A selector is a name with an optional version and an optional label, and only one of the two is
 /// resolved: the server prefers the version, falls back to the label, and takes the version labelled
 /// <c>latest</c> when neither is named. The cache keys the copy by the selector that asked for it
-/// rather than by the version that came back, so <c>{key}::latest</c>, <c>{key}::version:1.0.0</c>
-/// and <c>{key}::label:stable</c> are three independent subscriptions that may be answered with the
-/// same content.
+/// rather than by the version that came back, so <c>{name}::latest</c>,
+/// <c>{name}::version:1.0.0</c> and <c>{name}::label:stable</c> are three independent subscriptions
+/// that may be answered with the same content.
 /// </para>
 /// <para>
-/// The comparison is made over the serialized prompt rather than over a field list, so a change to
-/// any part of it — the template, the hash, or a variable's metadata — is seen. Both sides of the
-/// comparison came from the server, so the representation is stable and a byte comparison is a
-/// faithful "did anything change".
-/// </para>
-/// <para>
-/// A prompt that stops being served is reported, unlike an MCP server: the server answers a missing
-/// prompt and a missing version with the same not-found code, so there is no "not published yet" to
-/// confuse a withdrawal with, and a subscriber that never learned of one would keep rendering a
-/// prompt that no longer exists. The withdrawal is delivered as a change whose prompt is
-/// <see langword="null"/>.
+/// A resource that stops being served is reported: the server answers a missing resource and a
+/// missing version with the same not-found code, so there is no "not published yet" to confuse a
+/// withdrawal with, and a subscriber that never learned of one would keep using content that no
+/// longer exists. The withdrawal is delivered as a change whose resource is <see langword="null"/>.
 /// </para>
 /// </remarks>
-internal sealed class NacosPromptCache : IAsyncDisposable
+internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
+    where T : class
 {
     /// <summary>The label a subscription without a version or a label resolves to.</summary>
     public const string LatestVersion = "latest";
@@ -52,80 +111,60 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     /// <summary>The prefix that marks the part of a key that came from a version.</summary>
     private const string VersionPrefix = "version:";
 
-    /// <summary>The error code Nacos uses for a prompt or version that does not exist.</summary>
+    /// <summary>The error code Nacos uses for a resource or version that does not exist.</summary>
     private const int NotFoundErrorCode = 404;
 
     /// <summary>The error code Nacos uses for a conditional read whose hash still matches.</summary>
     private const int NotModifiedErrorCode = 304;
 
-    private readonly Func<string, string?, string?, string?, CancellationToken, Task<NacosPrompt>> _query;
-    private readonly TimeSpan _refreshInterval;
-    private readonly TimeProvider _timeProvider;
-    private readonly ILogger _logger;
+    private readonly NacosAiResourceCacheOptions<T> _options;
 
-    private readonly ConcurrentDictionary<string, NacosPrompt> _prompts = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, T> _resources = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _refreshes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new(StringComparer.Ordinal);
 
     private volatile bool _disposed;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="NacosPromptCache"/> class.
+    /// Initializes a new instance of the <see cref="NacosAiResourceCache{T}"/> class.
     /// </summary>
-    /// <param name="query">Reads one prompt selector from the registry.</param>
-    /// <param name="refreshInterval">How long to wait between refreshes of a subscribed selector.</param>
-    /// <param name="timeProvider">The clock the refresh interval is measured with.</param>
-    /// <param name="logger">The logger.</param>
-    /// <remarks>
-    /// The read is passed the hash of the copy that is already cached, or <see langword="null"/> when
-    /// there is none, and is expected to report a prompt that does not exist as a
-    /// <see cref="NacosServerException"/> with the not-found code and an unchanged one with the
-    /// not-modified code.
-    /// </remarks>
-    public NacosPromptCache(
-        Func<string, string?, string?, string?, CancellationToken, Task<NacosPrompt>> query,
-        TimeSpan refreshInterval,
-        TimeProvider timeProvider,
-        ILogger logger)
+    /// <param name="options">The query, comparison, logging and timing the cache runs on.</param>
+    public NacosAiResourceCache(NacosAiResourceCacheOptions<T> options)
     {
-        ArgumentNullException.ThrowIfNull(query);
-        ArgumentNullException.ThrowIfNull(timeProvider);
-        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(options);
 
-        _query = query;
-        _refreshInterval = refreshInterval;
-        _timeProvider = timeProvider;
-        _logger = logger;
+        _options = options;
     }
 
     /// <summary>
-    /// Subscribes to one prompt selector.
+    /// Subscribes to one selector.
     /// </summary>
-    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="name">The resource name.</param>
     /// <param name="version">The version to watch, or <see langword="null"/> for none.</param>
     /// <param name="label">The label to watch, or <see langword="null"/> for none.</param>
     /// <param name="ct">A token that ends the subscription.</param>
     /// <returns>
-    /// The current prompt as the first element — or <see langword="null"/> when it is not published —
-    /// then the prompt again on every change, with <see langword="null"/> reporting that it stopped
-    /// being served.
+    /// The current resource as the first element — or <see langword="null"/> when it is not
+    /// published — then the resource again on every change, with <see langword="null"/> reporting
+    /// that it stopped being served.
     /// </returns>
     /// <remarks>
     /// Leaving the enumeration ends the subscription, and the last subscriber of a selector stops
-    /// its refresh loop. A first read that reports the prompt as missing is not an error here: it is
-    /// the state the subscription starts from, and the loop announces the prompt when it appears.
+    /// its refresh loop. A first read that reports the resource as missing is not an error here: it
+    /// is the state the subscription starts from, and the loop announces the resource when it
+    /// appears.
     /// </remarks>
-    public async IAsyncEnumerable<NacosPrompt?> SubscribeAsync(
-        string promptKey,
+    public async IAsyncEnumerable<T?> SubscribeAsync(
+        string name,
         string? version,
         string? label,
         [EnumeratorCancellation] CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        string key = Key(promptKey, version, label);
+        string key = Key(name, version, label);
 
-        var queue = Channel.CreateBounded<NacosPrompt?>(
+        var queue = Channel.CreateBounded<T?>(
             new BoundedChannelOptions(16)
             {
                 // The newest state is the one that matters, so an overwhelmed consumer loses
@@ -139,15 +178,15 @@ internal sealed class NacosPromptCache : IAsyncDisposable
 
         try
         {
-            EnsureRefresh(key, promptKey, version, label);
+            EnsureRefresh(key, name, version, label);
 
             // The cached copy answers a subscription that is already current, so the first read only
             // goes to the server when nothing was cached for this selector yet.
-            NacosPrompt? current = Lookup(key);
+            T? current = Lookup(key);
 
             if (current is null)
             {
-                current = await TryQueryAsync(promptKey, version, label, key, ct).ConfigureAwait(false);
+                current = await TryQueryAsync(name, version, label, key, ct).ConfigureAwait(false);
             }
 
             // The read above publishes through the same path a refresh does, so it may already have
@@ -157,7 +196,7 @@ internal sealed class NacosPromptCache : IAsyncDisposable
                 yield return current;
             }
 
-            await foreach (NacosPrompt? change in queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            await foreach (T? change in queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
                 yield return change;
             }
@@ -175,14 +214,14 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     }
 
     /// <summary>
-    /// Reads a cached prompt.
+    /// Reads a cached resource.
     /// </summary>
-    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="name">The resource name.</param>
     /// <param name="version">The version, or <see langword="null"/> for none.</param>
     /// <param name="label">The label, or <see langword="null"/> for none.</param>
-    /// <returns>The cached prompt, or <see langword="null"/> when this selector was never served.</returns>
-    public NacosPrompt? Lookup(string promptKey, string? version, string? label)
-        => Lookup(Key(promptKey, version, label));
+    /// <returns>The cached resource, or <see langword="null"/> when this selector was never served.</returns>
+    public T? Lookup(string name, string? version, string? label)
+        => Lookup(Key(name, version, label));
 
     /// <inheritdoc />
     public ValueTask DisposeAsync()
@@ -212,9 +251,9 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     }
 
     /// <summary>
-    /// Builds the key that identifies one prompt selector.
+    /// Builds the key that identifies one selector.
     /// </summary>
-    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="name">The resource name.</param>
     /// <param name="version">The version, or <see langword="null"/> for none.</param>
     /// <param name="label">The label, or <see langword="null"/> for none.</param>
     /// <returns>The cache key.</returns>
@@ -224,44 +263,44 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     /// are named, matching the key the official client builds — which resolves the version first on
     /// the wire, so the two selectors address different versions notwithstanding the shared key.
     /// </remarks>
-    private static string Key(string promptKey, string? version, string? label)
+    private static string Key(string name, string? version, string? label)
     {
         if (!string.IsNullOrWhiteSpace(label))
         {
-            return string.Concat(promptKey, "::", LabelPrefix, label);
+            return string.Concat(name, "::", LabelPrefix, label);
         }
 
         if (!string.IsNullOrWhiteSpace(version))
         {
-            return string.Concat(promptKey, "::", VersionPrefix, version);
+            return string.Concat(name, "::", VersionPrefix, version);
         }
 
-        return string.Concat(promptKey, "::", LatestVersion);
+        return string.Concat(name, "::", LatestVersion);
     }
 
     /// <summary>
-    /// Reads a cached prompt by key.
+    /// Reads a cached resource by key.
     /// </summary>
     /// <param name="key">The cache key.</param>
-    /// <returns>The cached prompt, or <see langword="null"/>.</returns>
-    private NacosPrompt? Lookup(string key)
-        => _prompts.TryGetValue(key, out NacosPrompt? prompt) ? prompt : null;
+    /// <returns>The cached resource, or <see langword="null"/>.</returns>
+    private T? Lookup(string key)
+        => _resources.TryGetValue(key, out T? resource) ? resource : null;
 
     /// <summary>
     /// Reads one selector from the registry, storing and announcing what it returns.
     /// </summary>
-    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="name">The resource name.</param>
     /// <param name="version">The version, or <see langword="null"/> for none.</param>
     /// <param name="label">The label, or <see langword="null"/> for none.</param>
     /// <param name="key">The cache key the answer belongs to.</param>
     /// <param name="ct">A token that cancels the read.</param>
-    /// <returns>The prompt, or <see langword="null"/> when the server serves none for the selector.</returns>
+    /// <returns>The resource, or <see langword="null"/> when the server serves none for the selector.</returns>
     /// <remarks>
     /// This is the seeding read, and it is unconditional: there is nothing to compare against yet, so
     /// asking for the content is the only useful question.
     /// </remarks>
-    private async Task<NacosPrompt?> TryQueryAsync(
-        string promptKey,
+    private async Task<T?> TryQueryAsync(
+        string name,
         string? version,
         string? label,
         string key,
@@ -269,9 +308,9 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     {
         try
         {
-            NacosPrompt prompt = await _query(promptKey, version, label, null, ct).ConfigureAwait(false);
-            Process(key, prompt);
-            return prompt;
+            T resource = await _options.Query(name, version, label, null, ct).ConfigureAwait(false);
+            Process(key, resource);
+            return resource;
         }
         catch (NacosServerException ex) when (ex.ErrorCode == NotFoundErrorCode)
         {
@@ -283,89 +322,69 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     }
 
     /// <summary>
-    /// Stores a prompt and announces it when it differs from the copy that was cached.
+    /// Stores a resource and announces it when it differs from the copy that was cached.
     /// </summary>
-    /// <param name="key">The cache key the prompt belongs to.</param>
-    /// <param name="prompt">The prompt the server returned, or <see langword="null"/> when it serves none.</param>
+    /// <param name="key">The cache key the resource belongs to.</param>
+    /// <param name="resource">The resource the server returned, or <see langword="null"/> when it serves none.</param>
     /// <remarks>
-    /// A prompt that is not served removes the cached copy and announces the removal, which is how a
-    /// subscriber learns that what it was rendering is gone. Nothing is announced when the state did
-    /// not change, so a prompt that was never there does not produce a stream of empty updates.
+    /// A resource that is not served removes the cached copy and announces the removal, which is how
+    /// a subscriber learns that what it was using is gone. Nothing is announced when the state did
+    /// not change, so a resource that was never there does not produce a stream of empty updates.
     /// </remarks>
-    private void Process(string key, NacosPrompt? prompt)
+    private void Process(string key, T? resource)
     {
-        NacosPrompt? previous = Lookup(key);
-        bool changed = !IsSame(previous, prompt);
+        T? previous = Lookup(key);
+        bool changed = !_options.IsSame(previous, resource);
 
-        if (prompt is null)
+        if (resource is null)
         {
-            _prompts.TryRemove(key, out _);
+            _resources.TryRemove(key, out _);
         }
         else
         {
-            _prompts[key] = prompt;
+            _resources[key] = resource;
         }
 
         if (changed)
         {
-            Publish(key, prompt);
+            Publish(key, resource);
         }
     }
 
     /// <summary>
-    /// Compares two prompts by their serialized form.
-    /// </summary>
-    /// <param name="left">The cached prompt.</param>
-    /// <param name="right">The prompt just read.</param>
-    /// <returns><see langword="true"/> when the two are the same state.</returns>
-    /// <remarks>
-    /// Two absent states are the same state, which is what keeps a prompt that is still missing from
-    /// being announced again on every refresh.
-    /// </remarks>
-    private static bool IsSame(NacosPrompt? left, NacosPrompt? right)
-    {
-        if (left is null || right is null)
-        {
-            return left is null && right is null;
-        }
-
-        return string.Equals(
-            JsonSerializer.Serialize(left, NacosJsonContext.Default.NacosPrompt),
-            JsonSerializer.Serialize(right, NacosJsonContext.Default.NacosPrompt),
-            StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// Delivers a changed prompt to every subscriber of one key.
+    /// Delivers a changed resource to every subscriber of one key.
     /// </summary>
     /// <param name="key">The cache key the change belongs to.</param>
-    /// <param name="prompt">The changed prompt, or <see langword="null"/> when it was removed.</param>
-    private void Publish(string key, NacosPrompt? prompt)
+    /// <param name="resource">The changed resource, or <see langword="null"/> when it was removed.</param>
+    private void Publish(string key, T? resource)
     {
         if (_subscriptions.TryGetValue(key, out Subscription? subscription))
         {
-            subscription.Publish(prompt);
+            subscription.Publish(resource);
         }
 
-        if (prompt is null)
+        string name = NameOf(key);
+
+        if (resource is null)
         {
-            NacosAiLog.PromptWithdrawn(_logger, PromptKeyOf(key));
+            _options.Withdrawn(name);
         }
-        else if (prompt.Version is not null)
+        else
         {
-            NacosAiLog.PromptChanged(_logger, prompt.PromptKey ?? PromptKeyOf(key), prompt.Version);
+            _options.Changed(resource, name);
         }
     }
 
     /// <summary>
-    /// Reads the prompt key back out of a cache key.
+    /// Reads the resource name back out of a cache key.
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <returns>The part of the key before the selector.</returns>
     /// <remarks>
-    /// Only used for logging, and only for a removal, where there is no prompt to read the key from.
+    /// Only used for logging, and only for a removal, where there is no resource to read the name
+    /// from.
     /// </remarks>
-    private static string PromptKeyOf(string key)
+    private static string NameOf(string key)
     {
         int separator = key.LastIndexOf("::", StringComparison.Ordinal);
 
@@ -376,12 +395,12 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     /// Starts a refresh loop for a subscribed selector.
     /// </summary>
     /// <param name="key">The cache key.</param>
-    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="name">The resource name.</param>
     /// <param name="version">The version, or <see langword="null"/> for none.</param>
     /// <param name="label">The label, or <see langword="null"/> for none.</param>
-    private void EnsureRefresh(string key, string promptKey, string? version, string? label)
+    private void EnsureRefresh(string key, string name, string? version, string? label)
     {
-        CancellationTokenSource source = _refreshes.GetOrAdd(key, _ => StartRefresh(promptKey, version, label, key));
+        CancellationTokenSource source = _refreshes.GetOrAdd(key, _ => StartRefresh(name, version, label, key));
 
         // Disposal can race the first subscription and cancel the loops that already exist; the one
         // created above would otherwise run on after the client was closed.
@@ -394,16 +413,16 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     /// <summary>
     /// Creates the cancellation source and task of a refresh loop.
     /// </summary>
-    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="name">The resource name.</param>
     /// <param name="version">The version, or <see langword="null"/> for none.</param>
     /// <param name="label">The label, or <see langword="null"/> for none.</param>
     /// <param name="key">The cache key the loop keeps current.</param>
     /// <returns>The source the loop is cancelled with.</returns>
-    private CancellationTokenSource StartRefresh(string promptKey, string? version, string? label, string key)
+    private CancellationTokenSource StartRefresh(string name, string? version, string? label, string key)
     {
         var source = new CancellationTokenSource();
 
-        _ = Task.Run(() => RefreshAsync(promptKey, version, label, key, source), CancellationToken.None);
+        _ = Task.Run(() => RefreshAsync(name, version, label, key, source), CancellationToken.None);
 
         return source;
     }
@@ -423,20 +442,20 @@ internal sealed class NacosPromptCache : IAsyncDisposable
     /// <summary>
     /// Re-reads a subscribed selector on an interval until it is cancelled.
     /// </summary>
-    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="name">The resource name.</param>
     /// <param name="version">The version, or <see langword="null"/> for none.</param>
     /// <param name="label">The label, or <see langword="null"/> for none.</param>
     /// <param name="key">The cache key the loop keeps current.</param>
     /// <param name="source">The source that ends the loop.</param>
     /// <returns>A task that completes once the loop ends.</returns>
     /// <remarks>
-    /// The loop is the only thing that makes a subscription fire, because Nacos has no prompt change
+    /// The loop is the only thing that makes a subscription fire, because Nacos has no AI change
     /// push. A read that fails leaves the cached copy in place — a subscription outlives an outage
-    /// rather than failing with it — while a prompt the server no longer serves is a change and is
+    /// rather than failing with it — while a resource the server no longer serves is a change and is
     /// announced as one.
     /// </remarks>
     private async Task RefreshAsync(
-        string promptKey,
+        string name,
         string? version,
         string? label,
         string key,
@@ -446,26 +465,27 @@ internal sealed class NacosPromptCache : IAsyncDisposable
         {
             while (true)
             {
-                await Task.Delay(_refreshInterval, _timeProvider, source.Token).ConfigureAwait(false);
+                await Task.Delay(_options.RefreshInterval, _options.TimeProvider, source.Token)
+                    .ConfigureAwait(false);
 
                 try
                 {
                     // The read itself is not cancelled: it is already in flight when the last
                     // subscriber leaves, and letting it finish keeps the cache consistent.
-                    NacosPrompt prompt = await _query(
-                        promptKey,
+                    T resource = await _options.Query(
+                        name,
                         version,
                         label,
-                        Lookup(key)?.Md5,
+                        Lookup(key) is { } cached ? _options.Hash(cached) : null,
                         CancellationToken.None).ConfigureAwait(false);
 
-                    Process(key, prompt);
+                    Process(key, resource);
                 }
                 catch (NacosServerException ex) when (ex.ErrorCode == NotFoundErrorCode)
                 {
                     // Withdrawn, or a version that is no longer served. A subscriber is told, because
-                    // unlike an MCP server a prompt that is gone is not indistinguishable from one
-                    // that has not arrived yet.
+                    // a resource that is gone is not indistinguishable from one that has not
+                    // arrived yet.
                     Process(key, null);
                 }
                 catch (NacosServerException ex) when (ex.ErrorCode == NotModifiedErrorCode)
@@ -476,7 +496,7 @@ internal sealed class NacosPromptCache : IAsyncDisposable
                 {
                     if (!_disposed)
                     {
-                        NacosAiLog.PromptRefreshFailed(_logger, promptKey, version, ex.Message);
+                        _options.RefreshFailed(name, version, label, ex.Message);
                     }
                 }
             }
@@ -520,7 +540,7 @@ internal sealed class NacosPromptCache : IAsyncDisposable
         /// </summary>
         /// <param name="writer">The queue to publish to.</param>
         /// <returns>The consumer handle the caller keeps.</returns>
-        public Consumer Attach(ChannelWriter<NacosPrompt?> writer)
+        public Consumer Attach(ChannelWriter<T?> writer)
         {
             var consumer = new Consumer(writer);
 
@@ -547,8 +567,8 @@ internal sealed class NacosPromptCache : IAsyncDisposable
         /// <summary>
         /// Queues a changed state for every consumer.
         /// </summary>
-        /// <param name="prompt">The changed prompt, or <see langword="null"/> when it was removed.</param>
-        public void Publish(NacosPrompt? prompt)
+        /// <param name="resource">The changed resource, or <see langword="null"/> when it was removed.</param>
+        public void Publish(T? resource)
         {
             Consumer[] consumers;
 
@@ -559,7 +579,7 @@ internal sealed class NacosPromptCache : IAsyncDisposable
 
             foreach (Consumer consumer in consumers)
             {
-                consumer.Deliver(prompt);
+                consumer.Deliver(resource);
             }
         }
 
@@ -598,10 +618,10 @@ internal sealed class NacosPromptCache : IAsyncDisposable
         /// Initializes a new instance of the <see cref="Consumer"/> class.
         /// </summary>
         /// <param name="writer">The queue this consumer reads.</param>
-        public Consumer(ChannelWriter<NacosPrompt?> writer) => Writer = writer;
+        public Consumer(ChannelWriter<T?> writer) => Writer = writer;
 
         /// <summary>Gets the queue this consumer reads.</summary>
-        public ChannelWriter<NacosPrompt?> Writer { get; }
+        public ChannelWriter<T?> Writer { get; }
 
         /// <summary>
         /// Claims the right to hand the first state to the consumer.
@@ -615,11 +635,11 @@ internal sealed class NacosPromptCache : IAsyncDisposable
         /// <summary>
         /// Queues a changed state and records that this consumer is now past its first element.
         /// </summary>
-        /// <param name="prompt">The changed prompt, or <see langword="null"/> when it was removed.</param>
-        public void Deliver(NacosPrompt? prompt)
+        /// <param name="resource">The changed resource, or <see langword="null"/> when it was removed.</param>
+        public void Deliver(T? resource)
         {
             Interlocked.Exchange(ref _delivered, 1);
-            Writer.TryWrite(prompt);
+            Writer.TryWrite(resource);
         }
     }
 }

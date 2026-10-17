@@ -72,4 +72,28 @@ public sealed class NacosServerAddressTests
     {
         Should.Throw<FormatException>(() => NacosServerAddress.Parse("ftp://nacos.example.com:8848"));
     }
+
+    [Fact]
+    public void BuildHttpUri_KeepsAnEmptyContextPathWithoutADoubleSlash()
+    {
+        // A server served at the root has no context path, which is a legal configuration: the
+        // assembled URI must not gain a second slash from the base address' own trailing one.
+        NacosServerAddress address = NacosServerAddress.Parse(
+            "https://nacos.example.com:8848", defaultContextPath: string.Empty);
+
+        address.ContextPath.ShouldBeEmpty();
+
+        address.BuildHttpUri("/v3/client/ai/skills").AbsoluteUri
+            .ShouldBe("https://nacos.example.com:8848/v3/client/ai/skills");
+    }
+
+    [Fact]
+    public void ParseAll_AppliesTheGivenDefaultContextPath()
+    {
+        IReadOnlyList<NacosServerAddress> addresses =
+            NacosServerAddress.ParseAll(["nacos.example.com:8848"], "/custom");
+
+        addresses[0].BuildHttpUri("/v3/client/ai/skills").AbsoluteUri
+            .ShouldBe("http://nacos.example.com:8848/custom/v3/client/ai/skills");
+    }
 }

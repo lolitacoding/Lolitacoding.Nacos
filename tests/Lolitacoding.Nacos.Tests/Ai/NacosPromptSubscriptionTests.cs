@@ -266,10 +266,13 @@ public sealed class NacosPromptSubscriptionTests
         await byLabel.NextAsync(Timeout);
 
         // A version and a label can legitimately be the same string, so they must not share a cache
-        // entry: the second subscriber has to read the server rather than take the first's copy.
+        // entry: the second subscriber has to read the server rather than take the first's copy. The
+        // two subscriptions are started independently, so the order the reads arrive in is not fixed
+        // and only the set of selectors is asserted on.
         server.Prompts.Count.ShouldBe(2);
-        server.Prompts[0].Version.ShouldBe("stable");
-        server.Prompts[1].Label.ShouldBe("stable");
+
+        server.Prompts.Count(request => request.Version == "stable" && request.Label is null).ShouldBe(1);
+        server.Prompts.Count(request => request.Version is null && request.Label == "stable").ShouldBe(1);
     }
 
     [Fact]

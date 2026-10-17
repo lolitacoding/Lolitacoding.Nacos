@@ -25,6 +25,7 @@ internal sealed class NacosAiClient : INacosAiClient
     private readonly NacosLazyModuleConnection _connection;
     private readonly NacosMcpClient _mcp;
     private readonly NacosPromptClient _prompt;
+    private readonly NacosSkillClient _skill;
 
     /// <summary>
     /// This process's AI publisher identity.
@@ -45,6 +46,7 @@ internal sealed class NacosAiClient : INacosAiClient
     /// <param name="options">The client options.</param>
     /// <param name="servers">The parsed server addresses.</param>
     /// <param name="channelFactory">The channel factory that opens the gRPC channels.</param>
+    /// <param name="httpClient">The client the AI module's HTTP-only resources are read over.</param>
     /// <param name="timeProvider">The clock used for reconnect timing.</param>
     /// <param name="loggerFactory">The logger factory.</param>
     /// <param name="random">The random source used for reconnect jitter.</param>
@@ -53,6 +55,7 @@ internal sealed class NacosAiClient : INacosAiClient
         NacosOptions options,
         IReadOnlyList<NacosServerAddress> servers,
         INacosChannelFactory channelFactory,
+        HttpClient httpClient,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
         Random? random = null,
@@ -61,6 +64,7 @@ internal sealed class NacosAiClient : INacosAiClient
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(servers);
         ArgumentNullException.ThrowIfNull(channelFactory);
+        ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(loggerFactory);
 
@@ -95,6 +99,15 @@ internal sealed class NacosAiClient : INacosAiClient
 
         _mcp = new NacosMcpClient(this, options, timeProvider, loggerFactory.CreateLogger<NacosMcpClient>());
         _prompt = new NacosPromptClient(this, options, timeProvider, loggerFactory.CreateLogger<NacosPromptClient>());
+
+        var http = new NacosAiHttpClient(
+            servers,
+            httpClient,
+            options.RequestTimeout,
+            loggerFactory.CreateLogger<NacosAiHttpClient>(),
+            authProvider);
+
+        _skill = new NacosSkillClient(http, options, timeProvider, loggerFactory.CreateLogger<NacosSkillClient>());
     }
 
     /// <inheritdoc />
@@ -102,6 +115,9 @@ internal sealed class NacosAiClient : INacosAiClient
 
     /// <inheritdoc />
     public INacosPromptRegistry Prompt => _prompt;
+
+    /// <inheritdoc />
+    public INacosSkillRegistry Skill => _skill;
 
     /// <summary>
     /// Gets the AI registry connection, creating it if this is the first use.
@@ -144,6 +160,7 @@ internal sealed class NacosAiClient : INacosAiClient
 
         // The subscriptions are stopped first: their refresh loops talk over the connection, and
         // completing them ends the enumerations a caller may still be reading.
+        await _skill.DisposeAsync().ConfigureAwait(false);
         await _prompt.DisposeAsync().ConfigureAwait(false);
         await _mcp.DisposeAsync().ConfigureAwait(false);
         await _connection.DisposeAsync().ConfigureAwait(false);

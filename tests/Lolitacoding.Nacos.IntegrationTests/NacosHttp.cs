@@ -21,6 +21,9 @@ internal static class NacosHttp
     /// <summary>The admin prompt endpoint of the v3 HTTP API.</summary>
     private const string PromptPath = "/nacos/v3/admin/ai/prompt";
 
+    /// <summary>The admin skill endpoint of the v3 HTTP API.</summary>
+    private const string SkillPath = "/nacos/v3/admin/ai/skills";
+
     /// <summary>The result code the v3 API reports for a resource that does not exist.</summary>
     private const int ResourceNotFoundCode = 20004;
 
@@ -265,6 +268,184 @@ internal static class NacosHttp
     }
 
     /// <summary>
+    /// Builds the markdown of a skill, with the frontmatter the registry requires.
+    /// </summary>
+    /// <param name="name">The skill name, which the frontmatter repeats.</param>
+    /// <param name="version">The version the frontmatter states.</param>
+    /// <param name="body">The instructions below the frontmatter.</param>
+    /// <returns>The markdown.</returns>
+    /// <remarks>
+    /// The name and the description are required in the frontmatter as well as in the card: the
+    /// registry validates both, and rejects a document whose body is empty once the frontmatter is
+    /// removed.
+    /// </remarks>
+    public static string SkillMarkdown(string name, string version, string body) =>
+        string.Concat(
+            "---\nname: ", name,
+            "\ndescription: A skill seeded by the integration suite.\nversion: ", version,
+            "\n---\n\n", body, "\n");
+
+    /// <summary>
+    /// Publishes one version of a skill.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="skillName">The skill name.</param>
+    /// <param name="version">The version to publish.</param>
+    /// <param name="markdown">The skill's <c>SKILL.md</c>.</param>
+    /// <param name="basedOnVersion">
+    /// The version to fork from, or <see langword="null"/> when the skill is being created.
+    /// </param>
+    /// <param name="resource">
+    /// One resource file to include in the skill, or <see langword="null"/> for none. The file lands
+    /// under <c>{skillName}/{name}</c> in the archive.
+    /// </param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    /// <remarks>
+    /// <para>
+    /// A skill is published in up to three steps, and the first one differs by whether the skill
+    /// exists. A new skill is created from its card; a later version has to be forked from an existing
+    /// one, and the fork's content is then replaced on the draft, because the create call refuses a
+    /// card for an existing skill. Publishing the draft is what makes the version readable.
+    /// </para>
+    /// <para>
+    /// The fixture drives the admin API rather than the client, because there is no client-side way to
+    /// publish a skill — the client surface is the read path under test.
+    /// </para>
+    /// </remarks>
+    public static async Task PublishSkillAsync(
+        HttpClient http,
+        string baseAddress,
+        string skillName,
+        string version,
+        string markdown,
+        string? basedOnVersion = null,
+        (string Name, string Content)? resource = null,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        string card = SkillCard(skillName, markdown, resource);
+
+        if (basedOnVersion is null)
+        {
+            using var create = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("skillCard", card),
+                new KeyValuePair<string, string>("targetVersion", version),
+                new KeyValuePair<string, string>("commitMsg", "Seeded by the integration suite."),
+            ]);
+
+            await SendSkillAsync(
+                http, HttpMethod.Post, string.Concat(baseAddress, SkillPath, "/draft"),
+                accessToken, create, ct);
+        }
+        else
+        {
+            using var fork = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("skillName", skillName),
+                new KeyValuePair<string, string>("basedOnVersion", basedOnVersion),
+                new KeyValuePair<string, string>("targetVersion", version),
+                new KeyValuePair<string, string>("commitMsg", "Seeded by the integration suite."),
+            ]);
+
+            await SendSkillAsync(
+                http, HttpMethod.Post, string.Concat(baseAddress, SkillPath, "/draft"),
+                accessToken, fork, ct);
+
+            using var edit = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("skillCard", card),
+                new KeyValuePair<string, string>("version", version),
+            ]);
+
+            await SendSkillAsync(
+                http, HttpMethod.Put, string.Concat(baseAddress, SkillPath, "/draft"),
+                accessToken, edit, ct);
+        }
+
+        using var publish = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("skillName", skillName),
+            new KeyValuePair<string, string>("version", version),
+        ]);
+
+        await SendSkillAsync(
+            http, HttpMethod.Post, string.Concat(baseAddress, SkillPath, "/force-publish"),
+            accessToken, publish, ct);
+    }
+
+    /// <summary>
+    /// Binds the runtime labels of a skill to versions.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="skillName">The skill name.</param>
+    /// <param name="labels">The labels as a JSON object of label to version.</param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    /// <remarks>
+    /// The labels are sent as a whole map rather than one at a time, so a test that binds a label
+    /// writes the reserved <c>latest</c> label back as well. Leaving it out is accepted and drops it,
+    /// which turns a later read without a selector into a missing version rather than a server error.
+    /// </remarks>
+    public static async Task BindSkillLabelsAsync(
+        HttpClient http,
+        string baseAddress,
+        string skillName,
+        string labels,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        using var form = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("skillName", skillName),
+            new KeyValuePair<string, string>("labels", labels),
+        ]);
+
+        await SendSkillAsync(
+            http, HttpMethod.Put, string.Concat(baseAddress, SkillPath, "/labels"),
+            accessToken, form, ct);
+    }
+
+    /// <summary>
+    /// Takes one version of a skill offline.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="skillName">The skill name.</param>
+    /// <param name="version">The version to take offline.</param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    /// <remarks>
+    /// An offline version is no longer indexed, so a read that resolved to it is answered the way an
+    /// unknown version is. Taking the only version offline is therefore what puts a subscription into
+    /// the withdrawn state it has to report.
+    /// </remarks>
+    public static async Task OfflineSkillAsync(
+        HttpClient http,
+        string baseAddress,
+        string skillName,
+        string version,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        using var form = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("skillName", skillName),
+            new KeyValuePair<string, string>("version", version),
+        ]);
+
+        await SendSkillAsync(
+            http, HttpMethod.Post, string.Concat(baseAddress, SkillPath, "/offline"),
+            accessToken, form, ct);
+    }
+
+    /// <summary>
     /// Attempts a login and reports whether the server accepted the credentials.
     /// </summary>
     /// <param name="http">The HTTP client.</param>
@@ -323,6 +504,68 @@ internal static class NacosHttp
         }
 
         return await http.SendAsync(request, ct);
+    }
+
+    /// <summary>
+    /// Sends one skill admin request and fails the fixture when the envelope reports a failure.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="method">The HTTP method.</param>
+    /// <param name="url">The URL.</param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="content">The form.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    private static async Task SendSkillAsync(
+        HttpClient http,
+        HttpMethod method,
+        string url,
+        string? accessToken,
+        HttpContent content,
+        CancellationToken ct)
+    {
+        using HttpResponseMessage response = await SendAsync(http, method, url, accessToken, content, ct);
+
+        response.EnsureSuccessStatusCode();
+        EnsureSucceeded(await response.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>
+    /// Builds the card a draft is created or edited from.
+    /// </summary>
+    /// <param name="skillName">The skill name.</param>
+    /// <param name="markdown">The skill's <c>SKILL.md</c>.</param>
+    /// <param name="resource">One resource file, or <see langword="null"/> for none.</param>
+    /// <returns>The card as JSON.</returns>
+    /// <remarks>
+    /// A resource is keyed by its identifier and carries the path it is served under, so the archive
+    /// the client downloads has the file at <c>{skillName}/{name}</c> rather than at a flat path.
+    /// </remarks>
+    private static string SkillCard(
+        string skillName,
+        string markdown,
+        (string Name, string Content)? resource)
+    {
+        var card = new Dictionary<string, object?>
+        {
+            ["name"] = skillName,
+            ["description"] = "A skill seeded by the integration suite.",
+            ["skillMd"] = markdown,
+        };
+
+        if (resource is { } file)
+        {
+            card["resource"] = new Dictionary<string, object?>
+            {
+                [file.Name] = new Dictionary<string, object?>
+                {
+                    ["name"] = file.Name,
+                    ["content"] = file.Content,
+                },
+            };
+        }
+
+        return JsonSerializer.Serialize(card);
     }
 
     /// <summary>

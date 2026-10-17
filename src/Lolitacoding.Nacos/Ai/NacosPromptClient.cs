@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
+using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Microsoft.Extensions.Logging;
@@ -26,7 +28,7 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
     private readonly NacosAiClient _owner;
     private readonly NacosOptions _options;
     private readonly ILogger<NacosPromptClient> _logger;
-    private readonly NacosPromptCache _cache;
+    private readonly NacosAiResourceCache<NacosPrompt> _cache;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NacosPromptClient"/> class.
@@ -45,7 +47,25 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
         _options = options;
         _logger = logger;
 
-        _cache = new NacosPromptCache(QueryAsync, options.Ai.CacheRefreshInterval, timeProvider, logger);
+        _cache = new NacosAiResourceCache<NacosPrompt>(new NacosAiResourceCacheOptions<NacosPrompt>
+        {
+            Query = QueryAsync,
+            IsSame = IsSame,
+            Hash = static prompt => prompt.Md5,
+            Changed = (prompt, name) =>
+            {
+                if (prompt.Version is not null)
+                {
+                    NacosAiLog.PromptChanged(_logger, prompt.PromptKey ?? name, prompt.Version);
+                }
+            },
+            Withdrawn = name => NacosAiLog.PromptWithdrawn(_logger, name),
+            RefreshFailed = (name, version, label, reason) =>
+                NacosAiLog.PromptRefreshFailed(_logger, name, version, reason),
+            RefreshInterval = options.Ai.CacheRefreshInterval,
+            TimeProvider = timeProvider,
+            Logger = logger,
+        });
     }
 
     /// <inheritdoc />
@@ -140,5 +160,30 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
         }
 
         return prompt;
+    }
+
+    /// <summary>
+    /// Decides whether two reads are the same state.
+    /// </summary>
+    /// <param name="left">The cached prompt.</param>
+    /// <param name="right">The prompt just read.</param>
+    /// <returns><see langword="true"/> when the two are the same state.</returns>
+    /// <remarks>
+    /// The comparison is made over the serialized prompt rather than over a field list, so a change
+    /// to any part of it — the template, the hash, or a variable's metadata — is seen. Both sides of
+    /// the comparison came from the server, so the representation is stable and a byte comparison is
+    /// a faithful "did anything change".
+    /// </remarks>
+    private static bool IsSame(NacosPrompt? left, NacosPrompt? right)
+    {
+        if (left is null || right is null)
+        {
+            return left is null && right is null;
+        }
+
+        return string.Equals(
+            JsonSerializer.Serialize(left, NacosJsonContext.Default.NacosPrompt),
+            JsonSerializer.Serialize(right, NacosJsonContext.Default.NacosPrompt),
+            StringComparison.Ordinal);
     }
 }

@@ -107,7 +107,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         options.Validate();
 
         IReadOnlyList<NacosServerAddress> servers =
-            NacosServerAddress.ParseAll(options.ServerAddresses);
+            NacosServerAddress.ParseAll(options.ServerAddresses, options.ContextPath);
 
         TimeProvider clock = timeProvider ?? TimeProvider.System;
 
@@ -171,6 +171,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             options,
             servers,
             channels,
+            client,
             clock,
             loggerFactory,
             random,

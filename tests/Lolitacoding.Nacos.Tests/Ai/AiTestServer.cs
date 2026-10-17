@@ -33,6 +33,7 @@ internal sealed class AiTestServer
     private readonly List<QueryPromptRequest> _prompts = [];
 
     private readonly Dictionary<string, bool> _abilities;
+    private readonly HttpMessageHandler? _httpHandler;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AiTestServer"/> class.
@@ -40,9 +41,16 @@ internal sealed class AiTestServer
     /// <param name="abilities">
     /// The ability table the connection setup is answered with, or <see langword="null"/> for none.
     /// </param>
-    public AiTestServer(Dictionary<string, bool>? abilities = null)
+    /// <param name="httpHandler">
+    /// The handler the AI module's HTTP-only resources are read through, or <see langword="null"/>
+    /// when the test does not use them.
+    /// </param>
+    public AiTestServer(
+        Dictionary<string, bool>? abilities = null,
+        HttpMessageHandler? httpHandler = null)
     {
         _abilities = abilities ?? [];
+        _httpHandler = httpHandler;
 
         // A supply of streams so a test can drop one and let a fresh one replace it. They are
         // prepared up front because the ability table is part of the handshake answer.
@@ -164,6 +172,7 @@ internal sealed class AiTestServer
             options,
             [Server],
             Factory,
+            _httpHandler is null ? new HttpClient() : new HttpClient(_httpHandler),
             TimeProvider.System,
             NullLoggerFactory.Instance,
             new Random(1234));

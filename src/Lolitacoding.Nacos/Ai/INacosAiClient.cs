@@ -26,6 +26,9 @@ public interface INacosAiClient : IAsyncDisposable
 
     /// <summary>Gets the prompt registry.</summary>
     INacosPromptRegistry Prompt { get; }
+
+    /// <summary>Gets the skill registry.</summary>
+    INacosSkillRegistry Skill { get; }
 }
 
 /// <summary>
@@ -111,6 +114,101 @@ public interface INacosPromptRegistry
     /// </remarks>
     IAsyncEnumerable<NacosPrompt?> SubscribePromptAsync(
         string promptKey,
+        string? version = null,
+        string? label = null,
+        CancellationToken ct = default);
+}
+
+/// <summary>
+/// The skill registry: where the skill directories an agent loads are published and read.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A skill is not a document but a directory — instructions in <c>SKILL.md</c> plus the files they
+/// refer to — and Nacos serves it as a ZIP archive. The archive's entries are prefixed with the skill
+/// name, so extracting it produces a directory named after the skill.
+/// </para>
+/// <para>
+/// A read may name a version, or name a label that Nacos moves between versions, or name neither and
+/// take the version labelled <c>latest</c>; the version in the answer is the one that was resolved.
+/// Unlike a prompt, a label that does not resolve is not answered with the latest version — the
+/// server reports the version as missing — so a typo is an error rather than a silent substitution.
+/// </para>
+/// <para>
+/// Skills are served over the AI module's HTTP endpoint only; the server has no gRPC request for
+/// them and the official client refuses one. Reading a skill therefore does not open the AI
+/// connection, and needs only a reachable HTTP endpoint.
+/// </para>
+/// </remarks>
+public interface INacosSkillRegistry
+{
+    /// <summary>
+    /// Reads one version of a skill.
+    /// </summary>
+    /// <param name="skillName">The skill name.</param>
+    /// <param name="version">The version to read, or <see langword="null"/> to resolve one.</param>
+    /// <param name="label">
+    /// The label to resolve, or <see langword="null"/> to resolve from the version and then from
+    /// <c>latest</c>. Ignored when <paramref name="version"/> names a version.
+    /// </param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The resolved skill, with its archive and the hash of the published content.</returns>
+    /// <exception cref="ArgumentException"><paramref name="skillName"/> is null or whitespace.</exception>
+    /// <exception cref="NacosAuthException">The server rejected the request's credentials.</exception>
+    /// <exception cref="NacosServerException">
+    /// The skill is unknown, the version is not published, the body is not a safe ZIP archive, or the
+    /// server does not serve the skill registry (a server older than Nacos 3.2).
+    /// </exception>
+    /// <remarks>
+    /// The version wins when both a version and a label are given, matching the server. The archive is
+    /// validated before it is returned: a body that is not a ZIP at all, or one whose entries would
+    /// extract outside the skill's directory, is refused rather than handed to an extractor.
+    /// </remarks>
+    Task<NacosSkill> GetSkillAsync(
+        string skillName,
+        string? version = null,
+        string? label = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Subscribes to one version of a skill.
+    /// </summary>
+    /// <param name="skillName">The skill name.</param>
+    /// <param name="version">The version to watch, or <see langword="null"/> to resolve one.</param>
+    /// <param name="label">
+    /// The label to resolve, or <see langword="null"/> to resolve from the version and then from
+    /// <c>latest</c>. Ignored when <paramref name="version"/> names a version.
+    /// </param>
+    /// <param name="ct">A token that ends the subscription. Leaving the enumerable ends it too.</param>
+    /// <returns>
+    /// The current skill as the first element — or <see langword="null"/> when it is not published —
+    /// then the skill again on every change, with <see langword="null"/> reporting that it stopped
+    /// being served.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="skillName"/> is null or whitespace.</exception>
+    /// <exception cref="NacosServerException">
+    /// The read that seeds the subscription failed for a reason other than the skill not existing.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// Nacos does not push skill changes, so a subscription is served by re-reading the skill on the
+    /// interval configured by <see cref="NacosAiOptions.CacheRefreshInterval"/> and yielding the
+    /// result when it differs from the archive that was cached. The read is conditional on the hash
+    /// of the cached copy, so an unchanged skill costs a round trip rather than an archive. A read
+    /// that fails does not end the subscription: the last known archive stays cached and the read is
+    /// retried, so a watcher survives a control-plane outage instead of failing with it.
+    /// </para>
+    /// <para>
+    /// Two archives are compared byte for byte rather than by their hashes, because a skill that
+    /// arrived without one still has content and a change to it must not go unnoticed.
+    /// </para>
+    /// <para>
+    /// A skill the server stops serving is reported as a change whose element is
+    /// <see langword="null"/>, so a subscriber does not keep loading content that is gone.
+    /// </para>
+    /// </remarks>
+    IAsyncEnumerable<NacosSkill?> SubscribeSkillAsync(
+        string skillName,
         string? version = null,
         string? label = null,
         CancellationToken ct = default);

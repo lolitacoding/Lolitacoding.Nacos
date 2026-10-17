@@ -347,6 +347,83 @@ Three places where `nacos-develop` does something this client does not.
    deliberate simplification: both subscriptions are the same kind of poll and the default is the same
    10 s either way.
 
+### Skills
+
+> **Which server this describes.** The skill registry is the Nacos **3.2.0** one or newer:
+> `SkillClientController.get` is marked `@Since("3.2.0")`, and the same release introduced the admin
+> API a skill is published through. An older server has no `/v3/client/ai/skills` endpoint at all.
+
+A skill is the one AI resource that is not served over the AI connection. The server exposes it as an
+ordinary OpenAPI endpoint, and the official client implements it only over HTTP — its gRPC client
+answers the request with `SERVER_NOT_IMPLEMENTED`. Skills and agent specifications are the two
+resources in that position; MCP and prompts have both paths.
+
+```
+GET {context}/v3/client/ai/skills?namespaceId={namespace}&name={skill}[&version=…][&label=…][&md5=…]
+```
+
+| Answer | What it means |
+| --- | --- |
+| `200` | The body is the skill's ZIP archive. |
+| `304` | The `md5` that was sent is still the published one. No body. |
+| `404` | No such skill, or no such version. The detail is in the result's `data`. |
+| `403` | The token was rejected. |
+
+The headers that describe the body:
+
+| Header | Meaning |
+| --- | --- |
+| `X-Nacos-Skill-Md5` | The hash of the published content, unquoted. |
+| `ETag` | The same hash, quoted, for a conditional `If-None-Match`. |
+| `X-Nacos-Skill-Resolved-Version` | The version the selector resolved to. |
+| `Content-Disposition` | `attachment;filename={skill}.zip`. |
+
+- **The body is a directory, not a document.** The archive holds `{skill}/SKILL.md` and one entry per
+  stored resource file under the same directory (`{skill}/reference/notes.txt`). Binary resources are
+  decoded from the Base64 the registry stores them as, so the entries are the bytes a reader expects.
+  The archive is handed to the caller as bytes because extracting it is the caller's business, but the
+  client checks it first: a body that is not a ZIP at all, or one whose entries would extract outside
+  the skill's directory, is refused rather than passed to an extractor.
+- **A version must be indexed, and a label is not a fallback.** `SkillIndexManifestService.resolveVersion`
+  returns the named version only when the manifest lists it; otherwise it looks up the label — or
+  `latest` when no label is named — and returns null when that resolves to nothing. Unlike a prompt, an
+  unknown label is *not* answered with the latest version: the version is reported as missing, so the
+  selector cannot silently point somewhere else. That is why a read of a skill with a label that does
+  not exist is a `404` and not the current content.
+- **The hash is stored at publish time.** It is the content digest persisted on the version row, and a
+  version published before the listener feature shipped has it back-filled on its first conditional
+  read — which is why that one read answers `200` with a hash instead of `304`.
+- **A withdrawal is a `404`.** Taking a version offline removes it from the index, so the read that
+  resolved to it — including a read through `latest` — is answered the way a skill that was never
+  published is. There is no "not there yet" to confuse it with, so the client reports the removal.
+- **The reason is in `data`, not `message`.** A v3 error is
+  `{ "code": 20004, "message": "resource not found", "data": "Skill not found: hello" }`: the
+  `message` names the code and the `data` carries the detail. The client reports the detail, which is
+  the same string the official client ends up surfacing from the raw body.
+- **The token travels as `accessToken`**, the header the plugin filter reads on the client OpenAPI,
+  and not as an `Authorization` bearer header. The admin API the fixture publishes through is the
+  opposite: it is a Spring Security endpoint and takes the bearer header.
+
+### Where this client deviates from the official client (skills)
+
+Three places, matching the three the prompt registry has.
+
+1. A subscription whose selector is already cached is answered from the cache without a read. The
+   official client's `subscribeSkill` always queries before it schedules the update task, so a second
+   subscriber to a skill someone is already watching costs a round trip there and nothing here.
+2. The cached archive outlives its last subscriber. The official client removes the cache entry when
+   the last listener unsubscribes; here the entry stays until the server stops serving it. A caller
+   that needs the server's word rather than a copy calls `GetSkillAsync`, which never consults the
+   cache.
+3. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval`, where the official client
+   reads a separate `nacosAiSkillCacheUpdateInterval`. Both are the same kind of poll with the same
+   10 s default.
+
+One difference that is not a deviation but a consequence of the API shape: the official read returns
+the ZIP bytes alone, while `GetSkillAsync` returns the archive together with the version that was
+resolved and the hash the server reported. Those two values are in the response headers either way,
+and a caller that wants to record what it received needs them.
+
 ## Authentication
 
 - The client logs in over the HTTP OpenAPI and caches the access token, refreshing it before expiry.

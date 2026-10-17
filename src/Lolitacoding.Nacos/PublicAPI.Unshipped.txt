@@ -638,3 +638,17 @@ Lolitacoding.Nacos.Ai.NacosPromptVariable.Description.set -> void
 Lolitacoding.Nacos.Ai.NacosPromptVariable.Name.get -> string?
 Lolitacoding.Nacos.Ai.NacosPromptVariable.Name.set -> void
 Lolitacoding.Nacos.Ai.NacosPromptVariable.NacosPromptVariable() -> void
+Lolitacoding.Nacos.Ai.INacosAiClient.Skill.get -> Lolitacoding.Nacos.Ai.INacosSkillRegistry!
+Lolitacoding.Nacos.Ai.INacosSkillRegistry
+Lolitacoding.Nacos.Ai.INacosSkillRegistry.GetSkillAsync(string! skillName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosSkill!>!
+Lolitacoding.Nacos.Ai.INacosSkillRegistry.SubscribeSkillAsync(string! skillName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosSkill?>!
+Lolitacoding.Nacos.Ai.NacosSkill
+Lolitacoding.Nacos.Ai.NacosSkill.Archive.get -> System.ReadOnlyMemory<byte>
+Lolitacoding.Nacos.Ai.NacosSkill.Archive.set -> void
+Lolitacoding.Nacos.Ai.NacosSkill.Md5.get -> string?
+Lolitacoding.Nacos.Ai.NacosSkill.Md5.set -> void
+Lolitacoding.Nacos.Ai.NacosSkill.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosSkill.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosSkill.NacosSkill() -> void
+Lolitacoding.Nacos.Ai.NacosSkill.Version.get -> string?
+Lolitacoding.Nacos.Ai.NacosSkill.Version.set -> void

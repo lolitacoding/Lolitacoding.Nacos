@@ -171,4 +171,53 @@ internal static partial class NacosAiLog
         Level = LogLevel.Warning,
         Message = "Refreshing the subscription for prompt {PromptKey} version {Version} failed: {Reason}")]
     public static partial void PromptRefreshFailed(ILogger logger, string promptKey, string? version, string reason);
+
+    /// <summary>Logs that a subscribed skill changed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="skillName">The skill name.</param>
+    /// <param name="version">The version the server resolved, when it stated one.</param>
+    /// <remarks>
+    /// Debug level: the change is delivered to the subscriber, so this only helps when working out
+    /// why a subscription did or did not fire.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8013,
+        Level = LogLevel.Debug,
+        Message = "Skill {SkillName} version {Version} changed.")]
+    public static partial void SkillChanged(ILogger logger, string skillName, string? version);
+
+    /// <summary>Logs that a subscribed skill stopped being served.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="skillName">The skill name.</param>
+    /// <remarks>
+    /// A withdrawal is a change like any other and is delivered as one, so it is recorded at the same
+    /// level. A skill the server no longer serves is distinguishable from one that was never
+    /// published, so it is reported rather than waited out.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8014,
+        Level = LogLevel.Debug,
+        Message = "Skill {SkillName} is no longer served.")]
+    public static partial void SkillWithdrawn(ILogger logger, string skillName);
+
+    /// <summary>Logs that a skill subscription refresh failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="skillName">The skill being refreshed.</param>
+    /// <param name="version">The version being refreshed, if one was named.</param>
+    /// <param name="label">The label being refreshed, if one was named.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A refresh that fails leaves the cached archive in place and is retried on the next interval,
+    /// because a subscription is meant to survive an outage rather than fail with it.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8015,
+        Level = LogLevel.Warning,
+        Message = "Refreshing the subscription for skill {SkillName} version {Version} label {Label} failed: {Reason}")]
+    public static partial void SkillRefreshFailed(
+        ILogger logger,
+        string skillName,
+        string? version,
+        string? label,
+        string reason);
 }

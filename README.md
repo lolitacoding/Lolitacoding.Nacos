@@ -213,6 +213,12 @@ await foreach (NacosPrompt? prompt in
 {
     Console.WriteLine(prompt?.Template);
 }
+
+// A skill is a directory served as a ZIP archive, so the read hands back the archive together with
+// the version it resolved to and the hash of the published content.
+NacosSkill skill = await client.Ai.Skill.GetSkillAsync("release-notes", ct: cancellationToken);
+
+Console.WriteLine($"{skill.Version} ({skill.Md5}), {skill.Archive.Length} bytes");
 ```
 
 `client.Ai` reaches the Nacos AI registry. This release covers the MCP server registry —
@@ -220,7 +226,8 @@ await foreach (NacosPrompt? prompt in
 one version of one with its tool list, `SubscribeServerAsync` follows one and reports the changes, and
 `RegisterServerEndpointAsync` / `DeregisterServerEndpointAsync` publish the address a server is
 reachable at — and the prompt registry, where `GetPromptAsync` reads a prompt by version or by label
-and `SubscribePromptAsync` follows one. Skills, agent specifications and agents follow the same shape;
+and `SubscribePromptAsync` follows one, and the skill registry, where `GetSkillAsync` reads a skill's
+archive and `SubscribeSkillAsync` follows one. Agent specifications and agents follow the same shape;
 the MCP servers are the part the transport and the models were built for first.
 
 The models are the MCP protocol's own objects rather than a projection of them — a tool's JSON
@@ -230,9 +237,13 @@ server's current state and needs the server to be reachable; a subscription is t
 a local copy, and an endpoint is a Naming instance rather than an AI record, so it is discovered and
 health checked like any other instance. A prompt read is always the server's answer, including the
 version a label resolves to, while a prompt subscription re-reads on the interval and therefore has
-the same local copy an MCP subscription has.
+the same local copy an MCP subscription has. A skill is the one resource read over HTTP rather than
+over the AI connection, because the server exposes it as an OpenAPI endpoint that streams an archive;
+its subscription is the same kind of poll, and a skill that stops being served is reported the way a
+prompt is.
 
-The AI registry is served from Nacos **3.0.3** on, and the prompt registry from **3.2.0** on;
+The AI registry is served from Nacos **3.0.3** on, and the prompt and skill registries from **3.2.0**
+on;
 [the FAQ](docs/faq.md#which-nacos-versions-are-supported)
 says which server each module needs. The AI connection is opened on first use, like the lock
 connection, and carries the `ai` module label plus the per-client identifier Nacos records with

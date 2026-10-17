@@ -10,12 +10,14 @@ Two modules are younger than that release, so their tests choose a server of the
 
 - The **AI registry** is served in two waves. The **MCP server registry** is the first: Nacos **3.0.3**
   on, because the official API marks `getMcpServer` and `releaseMcpServer` `@Since("3.0.3")`, and a
-  3.0.2 server answers either one with `RequestHandler Not Found`. The **prompt registry** is the
-  second: Nacos **3.2.0** on (`QueryPromptRequestHandler` and the `GET /v3/client/ai/prompt` handler
-  behind it are both marked `@Since("3.2.0")`), and there is no ability key for it, so an older server
-  is not refused in advance — it answers `RequestHandler Not Found`. The AI tests choose their server
-  with `NACOS_AI_TEST_IMAGE`, which defaults to `nacos/nacos-server:v3.2.4`, the oldest release both
-  parts have been checked against.
+  3.0.2 server answers either one with `RequestHandler Not Found`. The **prompt** and **skill**
+  registries are the second: Nacos **3.2.0** on (`QueryPromptRequestHandler` and the
+  `GET /v3/client/ai/prompt` handler behind it are both marked `@Since("3.2.0")`, as is
+  `SkillClientController.get`). There is no ability key for either, so an older server is not refused in
+  advance — it answers `RequestHandler Not Found`, or, for a skill, does not serve the endpoint at all.
+  Skills are read over HTTP rather than over the AI connection, which is how the server exposes them.
+  The AI tests choose their server with `NACOS_AI_TEST_IMAGE`, which defaults to
+  `nacos/nacos-server:v3.2.4`, the oldest release all three parts have been checked against.
 - The distributed **lock** module belongs to Nacos **3.3**: lease renewal, the wait queue, explicit
   owners and the reentrant count are all from that release, and the lock module a 3.2 server ships
   only acquires and releases. Against a 3.2 server this client can therefore acquire and release a

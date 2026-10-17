@@ -166,8 +166,14 @@ internal sealed class NacosServerAddress
     /// <returns>The absolute request URI.</returns>
     public Uri BuildHttpUri(string relativePath)
     {
+        // The base address keeps whatever context path the server is served under, so the request
+        // path is appended to it rather than resolved against it: resolving "/v3/x" against a base
+        // of "/nacos" would drop the context path instead of keeping it. The trailing slash is
+        // trimmed so a server served at the root does not produce a double-slash path.
+        string baseUri = HttpBaseAddress.AbsoluteUri.TrimEnd('/');
         string path = relativePath.StartsWith('/') ? relativePath : string.Concat("/", relativePath);
-        return new Uri(string.Concat(HttpBaseAddress.AbsoluteUri, path));
+
+        return new Uri(string.Concat(baseUri, path));
     }
 
     /// <inheritdoc />

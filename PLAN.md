@@ -265,7 +265,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
 - 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
-拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，随后 Skill、AgentSpec、Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
+拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，随后 AgentSpec、Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
 
 #### C1 · AI 基础设施 + MCP 查询/发布（✅ 已完成）
 
@@ -315,6 +315,26 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 验收：Release 构建零警告零错误；单元测试 **443 个全绿**（新增 31 个：模型 JSON 契约与类型路由（含选择器省略、变量元数据、整条往返）；请求字段与命名空间、无条件读、`404` / `304` 错误码上抛、契约破坏、参数校验、释放后拒绝；订阅的首值/选择器透传/变化投递/条件读并核对 `md5`/撤回投递 `null`/先 `null` 后出现/撤回只报一次/刷新失败容忍/缓存命中零往返/版本与标签同串不同键/退订停止轮询/释放时结束/参数校验）。集成测试新增 5 个用例、整套 **31 个用例全绿（5m34s）**，Prompt 的 5 个跑在 `nacos/nacos-server:v3.2.4` 上（HTTP 管理接口草稿 + 发布两版 → 读 latest / 指定版本 / 绑定标签后按标签读，并核对变量元数据；未发布键与未发布版本回 `404`；订阅收到新版；订阅收到标签重绑后的版本；`DELETE` 后订阅收到 `null`）。
 - harness：`NacosContainer.EnsureInitialAdminAsync` 改为公开并新增 `CreateAccessTokenAsync`——`NACOS_AUTH_ENABLE=false` 的服务器同样对 `/v3/admin` 要求登录，因此用 HTTP 播种资源必须先建首个管理员（幂等，409 视为成功）。`NacosHttp` 新增 `PublishPromptAsync`（draft + force-publish）/ `BindPromptLabelsAsync` / `DeletePromptAsync`；`NacosEventually.ReportsAsync` 为“已经产生且无法重复施加的变更”提供有界等待（一个 Prompt 版本只能发布一次，删除也不可重复）。
 - 顺带记录一条实测事实：Prompt 的 HTTP 客户端接口与 gRPC 接口走同一套服务，错误消息完全一致，因此集成用例可以直接照抄 HTTP 探测到的消息文本。
+
+#### C4 · Skill 查询与订阅（✅ 已完成）
+
+- `Ai/NacosSkill.cs`：`NacosSkill`（`name` / `version` / `md5` / `archive`）。Skill 不是文档而是**目录**（`SKILL.md` + 被引用的资源文件），服务器以 ZIP 归档下发，因此模型直接携带归档字节（`ReadOnlyMemory<byte>`）以及响应头里的“解析出的版本”和“已发布内容哈希”。官方 `downloadSkillZip` 只回 `byte[]`；这里一并返回版本与哈希，因为调用方需要记录“实际拿到了什么”，而这两个值本来就在响应头里。
+- 传输：**仅 HTTP**。官方客户端同样只在 HTTP 上实现（`AiGrpcClient.querySkill` 直接抛 `SERVER_NOT_IMPLEMENTED`），服务端是普通 OpenAPI：`GET {context}/v3/client/ai/skills?namespaceId=&name=&version=&label=&md5=`。因此读 Skill 完全不打开 AI gRPC 连接，只需要一个可达的 HTTP 端点；token 走 `accessToken` 头（客户端 OpenAPI 的过滤器按这个名字取值），而不是 `Authorization: Bearer`（管理 API 才用它）。
+- 新增 `Internal/NacosAiHttpClient`：AI 模块的 HTTP 通路。按配置顺序轮流选起始服务器，**只在连接级失败时切换下一个**（404/500 是集群事实，重试只是加延迟）；`403` 失效 token 后**只重试一次**；超时与连接失败映射为 `NacosConnectionException`；错误体按 v3 结果解析，**优先取 `data`**——`message` 只是错误码名（`resource not found`），真正的细节（`Skill not found: x`）在 `data` 里。
+- 选择器：版本必须存在于索引清单，否则按标签查（无标签则 `latest`），解析不到就是 `404`。与 Prompt 不同，**未知标签不会回落到 latest**：`SkillIndexManifestService.resolveVersion` 返回 null，于是版本按“不存在”报错，笔误不会被静默替换成别的内容。
+- 归档校验：先查 ZIP magic 与最小长度，再逐条目拒绝 `..`、NUL、绝对路径与 Windows 盘符前缀（与官方 `validateZipBytes` / `validateZipEntryPaths` 同规则）。归档以字节交给调用方、解压由调用方负责，但不安全的条目不能被递到解压器手上。
+- 读取 `GetSkillAsync(skillName, version = null, label = null, ct)` 是无条件读（`md5` 传 `null`）；`304` / `404` / `403` 分别映射为 `NacosServerException(304)` / `NacosServerException(404)` / `NacosAuthException(403)`；释放后调用抛 `ObjectDisposedException`。
+- 订阅 `IAsyncEnumerable<NacosSkill?> SubscribeSkillAsync(...)`：与 Prompt 同一套机制，元素可为 `null`（下线/删除 → `404` → 清缓存并投递 `null`）。**变更判定按归档字节逐字节比较**，不按响应头里的哈希：服务器算不出哈希时仍会下发内容，两个都没有哈希的不同归档若按 `null == null` 比较就永远不会被通知。
+- 复用：把 C3 的 `NacosPromptCache` 抽成泛型 `NacosAiResourceCache<T>`（查询、比较、哈希提取、日志回调全部注入），Prompt 与 Skill 共用“每选择器一个刷新循环 + 每消费者一个队列 + 最后一个订阅者停止”的实现，`NacosPromptCache` 随之删除；C5 的 AgentSpec 可直接复用。
+- 日志事件：8013 Skill 变化（Debug）、8014 已撤回（Debug）、8015 刷新失败（Warning）。
+- 与上游 `nacos-develop` 的**有意差异**（3 条，与 Prompt 的三条同构）：
+  1. 选择器已有缓存副本时订阅不回源读取（上游 `subscribeSkill` 每次都读一遍再挂更新任务）。
+  2. 缓存副本在最后一个订阅者离开后保留（上游 `unsubscribeSkill` 会 `skillMd5Cache.remove`）。需要“服务器当下的答案”时调用 `GetSkillAsync`——它从不查缓存。
+  3. 刷新间隔复用 `NacosAiOptions.CacheRefreshInterval`（上游按资源类型读 `nacosAiSkillCacheUpdateInterval`）。
+- 验收：Release 构建零警告零错误；单元测试 **484 个全绿**（新增 41 个：HTTP 通路的 token 头/匿名/403 单次重试/重试有上限/服务器切换/全失败/超时/查询串顺序与空值省略/304 空体/错误体 `data` 优先/非结果体回退 reason phrase；Skill 读取的版本与哈希/选择器透传/默认不传选择器/参数校验/未知资源与未知版本/403/异常状态/非 ZIP/损坏 ZIP/路径逃逸/绝对路径/不打开 AI 连接/释放后拒绝；订阅的首值/选择器/变化/条件读并核对 `md5`/撤回投递 `null`/先 `null` 后出现/只报一次/失败容忍/缓存命中/版本与标签同串不同键/退订停止轮询/释放时结束/参数校验；`ContextPath` 为空的 URI 拼接与 `ParseAll` 的默认上下文路径）。集成测试新增 5 个用例（整套 **36 个**），跑在 `nacos/nacos-server:v3.2.4` 上：草稿 + 强制发布 → 读 latest 并逐条核对归档（`{name}/SKILL.md` 与 `{name}/reference/notes.txt`）；发布两版 + 绑定标签 → latest / 指定版本 / 标签三种读法各回对应版本；未知名字与未知版本回 `404`；订阅收到新版；`POST /offline` 后订阅收到 `null`。
+- harness：`NacosHttp` 新增 `SkillMarkdown` / `PublishSkillAsync`（新建走 `POST /draft`；新版本先按 `basedOnVersion` fork，再 `PUT /draft` 改内容，最后 `POST /force-publish`）/ `BindSkillLabelsAsync` / `OfflineSkillAsync`。三条实测记录：①标签接口是**整表覆盖**，只写 `{"stable":...}` 会把服务端维护的 `latest` 一起丢掉，之后不带选择器的读变成 `404`，集成用例因此显式写回 `latest`；②`publish` 只接受 `reviewing` 状态的版本，草稿必须走 `force-publish`；③错误体形如 `{"code":20004,"message":"resource not found","data":"Skill not found: x"}`。
+- 顺带修正一处 C3 遗留的测试竞态：两个订阅同时启动时，请求到达顺序不确定，断言 `[0]`/`[1]` 会偶发失败（Prompt 与 Skill 的“版本与标签同串”用例都改为断言选择器集合）。
+- 顺带修正一处更早的缺陷：`NacosOptions.ContextPath` 此前只是被校验、并未参与地址解析（`ParseAll` 没把默认上下文路径传下去），因此自定义上下文路径对 HTTP 登录与数据读取都不生效。现在工厂把 `options.ContextPath` 传给 `ParseAll`，`BuildHttpUri` 也会去掉基地址的尾斜杠，根路径部署不再拼出 `//v3/...`。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

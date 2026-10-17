@@ -391,7 +391,7 @@ connection for it.
 
 `client.Ai` reaches the AI registry, the part of Nacos that holds MCP servers, prompts, skills, agent
 specifications and agents. This release covers the MCP server registry — reading a released server,
-releasing one, following one, and publishing the address it is reachable at — and the prompt registry.
+releasing one, following one, and publishing the address it is reachable at — and the prompt registry and the skill registry.
 
 ```csharp
 using Lolitacoding.Nacos.Ai;
@@ -487,10 +487,49 @@ await foreach (NacosPrompt? change in
 The prompt registry is served from Nacos **3.2.0** on. There is no ability key for it, so the client
 cannot refuse an older server up front: such a server answers a query with `RequestHandler Not Found`.
 
-Four things are worth knowing before relying on this:
+### Skills
 
-- The MCP registry is served from Nacos **3.0.3** on and the prompt registry from **3.2.0** on. An older
-  server answers a query with `RequestHandler Not Found`; the
+A skill is a directory — `SKILL.md` plus the files it refers to — and Nacos serves it as a ZIP archive
+rather than as JSON. Reading one therefore needs a reachable HTTP endpoint and does not open the AI
+connection at all:
+
+```csharp
+NacosSkill skill = await client.Ai.Skill.GetSkillAsync(
+    "release-notes", label: "stable", ct: cancellationToken);
+
+Console.WriteLine(skill.Version);   // the version the label resolved to
+Console.WriteLine(skill.Md5);       // the published content hash
+
+using var archive = new ZipArchive(new MemoryStream(skill.Archive.ToArray()));
+
+foreach (ZipArchiveEntry entry in archive.Entries)
+{
+    // "release-notes/SKILL.md", "release-notes/reference/notes.txt", ...
+    Console.WriteLine(entry.FullName);
+}
+```
+
+The archive is checked before it is handed over: a body that is not a ZIP, or one whose entries would
+extract outside the skill's directory, is refused rather than passed to an extractor. Following a
+skill is the same poll as following a prompt, with the same `null` element for one that stopped being
+served:
+
+```csharp
+await foreach (NacosSkill? change in
+    client.Ai.Skill.SubscribeSkillAsync("release-notes", ct: cancellationToken))
+{
+    Console.WriteLine(change is null ? "(withdrawn)" : change.Version);
+}
+```
+
+One selector rule differs from a prompt's: a skill label that does not resolve is reported as a missing
+version rather than answered with the latest one, so a typo is an error instead of a silent
+substitution. Skills are served from Nacos **3.2.0** on, by `/v3/client/ai/skills`.
+
+Five things are worth knowing before relying on this:
+
+- The MCP registry is served from Nacos **3.0.3** on, and the prompt and skill registries from
+  **3.2.0** on. An older server answers a query with `RequestHandler Not Found`; the
   [FAQ](faq.md#which-nacos-versions-are-supported) says which server each module needs.
 - `GetServerAsync` is a direct query, so it always reports the server's current state — and needs the
   server to be reachable. `SubscribeServerAsync` is the exception: it caches the last detail it read
@@ -502,6 +541,9 @@ Four things are worth knowing before relying on this:
   service the registration used.
 - The AI connection is opened on first use, like the lock connection, and carries the `ai` module
   label plus a per-client `aiClientUuid` that Nacos records with everything the client publishes.
+- A skill is read over HTTP rather than over that connection, so a caller that only reads or follows
+  skills never opens it. The HTTP path presents the same access token, in the `accessToken` header the
+  client OpenAPI reads rather than as a bearer header.
 
 ## Next steps
 
