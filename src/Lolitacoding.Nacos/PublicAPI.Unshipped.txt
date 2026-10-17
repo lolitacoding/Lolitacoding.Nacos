@@ -614,3 +614,27 @@ Lolitacoding.Nacos.NacosAiOptions.EnableLocalCache.set -> void
 Lolitacoding.Nacos.NacosAiOptions.NacosAiOptions() -> void
 Lolitacoding.Nacos.NacosOptions.Ai.get -> Lolitacoding.Nacos.NacosAiOptions!
 Lolitacoding.Nacos.NacosOptions.Ai.set -> void
+Lolitacoding.Nacos.Ai.INacosAiClient.Prompt.get -> Lolitacoding.Nacos.Ai.INacosPromptRegistry!
+Lolitacoding.Nacos.Ai.INacosPromptRegistry
+Lolitacoding.Nacos.Ai.INacosPromptRegistry.GetPromptAsync(string! promptKey, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosPrompt!>!
+Lolitacoding.Nacos.Ai.INacosPromptRegistry.SubscribePromptAsync(string! promptKey, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosPrompt?>!
+Lolitacoding.Nacos.Ai.NacosPrompt
+Lolitacoding.Nacos.Ai.NacosPrompt.Md5.get -> string?
+Lolitacoding.Nacos.Ai.NacosPrompt.Md5.set -> void
+Lolitacoding.Nacos.Ai.NacosPrompt.NacosPrompt() -> void
+Lolitacoding.Nacos.Ai.NacosPrompt.PromptKey.get -> string?
+Lolitacoding.Nacos.Ai.NacosPrompt.PromptKey.set -> void
+Lolitacoding.Nacos.Ai.NacosPrompt.Template.get -> string?
+Lolitacoding.Nacos.Ai.NacosPrompt.Template.set -> void
+Lolitacoding.Nacos.Ai.NacosPrompt.Variables.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosPromptVariable!>?
+Lolitacoding.Nacos.Ai.NacosPrompt.Variables.set -> void
+Lolitacoding.Nacos.Ai.NacosPrompt.Version.get -> string?
+Lolitacoding.Nacos.Ai.NacosPrompt.Version.set -> void
+Lolitacoding.Nacos.Ai.NacosPromptVariable
+Lolitacoding.Nacos.Ai.NacosPromptVariable.DefaultValue.get -> string?
+Lolitacoding.Nacos.Ai.NacosPromptVariable.DefaultValue.set -> void
+Lolitacoding.Nacos.Ai.NacosPromptVariable.Description.get -> string?
+Lolitacoding.Nacos.Ai.NacosPromptVariable.Description.set -> void
+Lolitacoding.Nacos.Ai.NacosPromptVariable.Name.get -> string?
+Lolitacoding.Nacos.Ai.NacosPromptVariable.Name.set -> void
+Lolitacoding.Nacos.Ai.NacosPromptVariable.NacosPromptVariable() -> void

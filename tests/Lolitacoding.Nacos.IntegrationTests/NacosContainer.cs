@@ -196,17 +196,25 @@ internal sealed class NacosContainer : IAsyncDisposable
         || exception.Message.Contains("failed to set up container networking", StringComparison.Ordinal);
 
     /// <summary>
-    /// Creates the administrator an auth-enabled server is tested with.
+    /// Creates the administrator a server's HTTP admin API is used with.
     /// </summary>
     /// <returns>A task that completes once the account exists.</returns>
     /// <exception cref="InvalidOperationException">The server refused to create the account.</exception>
     /// <remarks>
+    /// <para>
     /// A Nacos 3.x server ships no accounts, so every login is rejected until the first administrator
     /// is created through the setup endpoint the console uses. The endpoint refuses once a global
     /// administrator exists, which is what a server that was restarted answers, so that result is
     /// accepted as well.
+    /// </para>
+    /// <para>
+    /// <see cref="StartAsync"/> calls this when the authentication plugin is enabled. A server whose
+    /// plugin is disabled still gates its <c>/v3/admin</c> API behind a login, so a test that seeds a
+    /// resource over HTTP on such a server — the AI prompt fixture does — has to ask for the account
+    /// itself. The call is idempotent.
+    /// </para>
     /// </remarks>
-    private async Task EnsureInitialAdminAsync()
+    public async Task EnsureInitialAdminAsync()
     {
         using var http = new HttpClient();
 
@@ -227,6 +235,34 @@ internal sealed class NacosContainer : IAsyncDisposable
                 " ",
                 await response.Content.ReadAsStringAsync().ConfigureAwait(false)));
         }
+    }
+
+    /// <summary>
+    /// Returns an access token for the server's HTTP admin API, creating the administrator if needed.
+    /// </summary>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>The access token.</returns>
+    /// <exception cref="InvalidOperationException">The server refused the administrator login.</exception>
+    /// <remarks>
+    /// A test that seeds a resource has no client-side way to do it: the client surface is deliberately
+    /// the part under test, so the fixture goes through the HTTP admin API instead, and that API needs
+    /// a token even on a server whose authentication plugin is off.
+    /// </remarks>
+    public async Task<string> CreateAccessTokenAsync(CancellationToken ct = default)
+    {
+        await EnsureInitialAdminAsync().ConfigureAwait(false);
+
+        using var http = new HttpClient();
+
+        string? token = await NacosHttp.TryLoginAsync(
+            http,
+            HttpAddress,
+            NacosIntegrationImages.DefaultUserName,
+            NacosIntegrationImages.DefaultPassword,
+            ct).ConfigureAwait(false);
+
+        return token ?? throw new InvalidOperationException(
+            "The Nacos server refused the administrator login it had just been given an account for.");
     }
 
     /// <inheritdoc />

@@ -30,6 +30,7 @@ internal sealed class AiTestServer
     private readonly List<QueryMcpServerRequest> _queries = [];
     private readonly List<ReleaseMcpServerRequest> _releases = [];
     private readonly List<McpServerEndpointRequest> _endpoints = [];
+    private readonly List<QueryPromptRequest> _prompts = [];
 
     private readonly Dictionary<string, bool> _abilities;
 
@@ -98,6 +99,18 @@ internal sealed class AiTestServer
         }
     }
 
+    /// <summary>Gets the prompt queries the client sent, in order.</summary>
+    public IReadOnlyList<QueryPromptRequest> Prompts
+    {
+        get
+        {
+            lock (_prompts)
+            {
+                return [.. _prompts];
+            }
+        }
+    }
+
     /// <summary>Gets how many channels the client has connected over.</summary>
     public int ConnectionCount => _channels.Count;
 
@@ -119,6 +132,10 @@ internal sealed class AiTestServer
     /// <summary>Gets or sets how the server answers an MCP endpoint operation.</summary>
     public Func<McpServerEndpointRequest, McpServerEndpointResponse> OnEndpoint { get; set; } =
         request => AiTest.Endpoint(request.Type!);
+
+    /// <summary>Gets or sets how the server answers a prompt query.</summary>
+    public Func<QueryPromptRequest, QueryPromptResponse> OnPrompt { get; set; } =
+        _ => throw new InvalidOperationException("The test did not script an answer for a prompt query.");
 
     /// <summary>
     /// Builds an AI client that talks to this server.
@@ -239,6 +256,18 @@ internal sealed class AiTestServer
                 return PayloadCodec.Encode(OnEndpoint(request));
             }
 
+            case "QueryPromptRequest":
+            {
+                QueryPromptRequest request = PayloadCodec.Decode<QueryPromptRequest>(payload)!;
+
+                lock (_prompts)
+                {
+                    _prompts.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnPrompt(request));
+            }
+
             default:
                 throw new InvalidOperationException(
                     $"The AI server does not serve '{PayloadCodec.ReadTypeName(payload)}'.");
@@ -303,5 +332,45 @@ internal static class AiTest
         Description = description,
         VersionDetail = new NacosMcpVersionDetail { Version = version, IsLatest = isLatest },
         Status = NacosMcpStatus.Active,
+    };
+
+    /// <summary>Builds a successful prompt query answer.</summary>
+    /// <param name="prompt">The prompt to return.</param>
+    /// <returns>The answer.</returns>
+    public static QueryPromptResponse Prompt(NacosPrompt prompt) => new()
+    {
+        PromptInfo = prompt,
+    };
+
+    /// <summary>Builds a failed prompt query answer, the way the server reports a missing or unchanged one.</summary>
+    /// <param name="errorCode">The error code the server reports.</param>
+    /// <param name="message">The message the server reports.</param>
+    /// <returns>The answer.</returns>
+    public static QueryPromptResponse PromptFailure(int errorCode, string message) => new()
+    {
+        ResultCode = NacosResponse.FailureCode,
+        ErrorCode = errorCode,
+        Message = message,
+    };
+
+    /// <summary>Builds a prompt a server would serve.</summary>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="version">The resolved version.</param>
+    /// <param name="template">The template.</param>
+    /// <param name="md5">The content hash, defaulted from the template so two templates differ.</param>
+    /// <param name="variables">The placeholders the template uses.</param>
+    /// <returns>The prompt.</returns>
+    public static NacosPrompt CreatePrompt(
+        string promptKey,
+        string version,
+        string template,
+        string? md5 = null,
+        IList<NacosPromptVariable>? variables = null) => new()
+    {
+        PromptKey = promptKey,
+        Version = version,
+        Template = template,
+        Md5 = md5 ?? template,
+        Variables = variables,
     };
 }

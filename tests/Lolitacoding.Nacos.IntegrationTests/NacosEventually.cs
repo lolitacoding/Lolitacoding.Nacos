@@ -82,6 +82,64 @@ internal static class NacosEventually
     }
 
     /// <summary>
+    /// Waits for a subscription to report a state the caller is waiting for.
+    /// </summary>
+    /// <typeparam name="TChange">The state the subscription yields.</typeparam>
+    /// <param name="listener">The subscription being waited on.</param>
+    /// <param name="isSatisfied">Reports whether a state is the one being waited for.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>A task that completes once the state has been reported.</returns>
+    /// <exception cref="TimeoutException">
+    /// The listener ended, or no matching state was reported within the time allowed.
+    /// </exception>
+    /// <remarks>
+    /// This is the counterpart of <see cref="PushedAsync"/> for a change that has already been applied
+    /// and cannot be applied again — a prompt version that may only be published once, or a deletion.
+    /// A subscription's own refresh interval is what makes it fire, so the wait is the same bounded
+    /// watch over the subscription, without a change to repeat.
+    /// </remarks>
+    public static async Task ReportsAsync<TChange>(
+        IAsyncEnumerator<TChange> listener,
+        Func<TChange, bool> isSatisfied,
+        CancellationToken ct)
+    {
+        Task<bool>? pending = null;
+
+        for (int attempt = 0; attempt < ChangeAttempts; attempt++)
+        {
+            pending ??= listener.MoveNextAsync().AsTask();
+
+            if (await Task.WhenAny(pending, Task.Delay(PushWindow, ct)).ConfigureAwait(false) != pending)
+            {
+                continue;
+            }
+
+            bool moved = await pending.ConfigureAwait(false);
+            pending = null;
+
+            if (!moved)
+            {
+                throw new TimeoutException("The listener ended before it reported the change.");
+            }
+
+            if (isSatisfied(listener.Current))
+            {
+                return;
+            }
+        }
+
+        // The state never arrived. The outstanding read is awaited rather than abandoned: leaving it
+        // in flight would make the listener impossible to dispose, which replaces this failure with a
+        // disposal error. The caller's token bounds the wait.
+        if (pending is not null)
+        {
+            await pending.ConfigureAwait(false);
+        }
+
+        throw new TimeoutException("The change was not reported by the subscription within the time allowed.");
+    }
+
+    /// <summary>
     /// Applies a change until a listener reports it.
     /// </summary>
     /// <typeparam name="TChange">The change the listener yields.</typeparam>

@@ -62,6 +62,8 @@ namespace Lolitacoding.Nacos.Protocol;
 [JsonSerializable(typeof(McpServerEndpointResponse))]
 [JsonSerializable(typeof(ReleaseMcpServerRequest))]
 [JsonSerializable(typeof(ReleaseMcpServerResponse))]
+[JsonSerializable(typeof(QueryPromptRequest))]
+[JsonSerializable(typeof(QueryPromptResponse))]
 [JsonSerializable(typeof(ServerCheckRequest))]
 [JsonSerializable(typeof(ServerCheckResponse))]
 [JsonSerializable(typeof(ConnectionSetupRequest))]

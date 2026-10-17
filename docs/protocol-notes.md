@@ -213,6 +213,8 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
 > only when the server explicitly denies the `mcp` ability, so against a server that predates the
 > registry the failure is the one the request itself reports.
 
+### MCP servers
+
 - The module label is `ai` and the connection carries an extra label of its own, `aiClientUuid`, a
   UUID minted once per client instance rather than per connection. Nacos records it with every MCP or
   agent endpoint a connection publishes, which is what lets an endpoint that outlived its publisher be
@@ -265,7 +267,7 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
   it closes, and the client replays it after a reconnect. The `version` field is what the server
   resolves the target service by.
 
-### Where this client deviates from the official one
+### Where this client deviates from the official client (MCP servers)
 
 Five places where `nacos-develop` does something this client does not, each recorded because a
 deliberate difference that is not written down is indistinguishable from a bug. Everything else
@@ -288,6 +290,62 @@ follows the official client.
    official client sends no version and lets the server resolve the one it currently labels latest,
    which resolves to a different service whenever the endpoint was pinned to a version that has since
    been superseded — and then removes nothing.
+
+### Prompts
+
+> **Which server this describes.** The prompt registry is the Nacos **3.2.0** one or newer:
+> `QueryPromptRequestHandler` is marked `@Since("3.2.0")`, as is the `GET /v3/client/ai/prompt`
+> handler behind it. An older server answers the request the way §2 describes — `RequestHandler Not
+> Found` — and nothing lets a client refuse earlier: the HTTP capability contract names a `prompt`
+> capability, but the gRPC ability table has no prompt key at all, so there is no flag to read the
+> server's answer from.
+
+- A prompt is a template plus the placeholders it uses. A read is `QueryPromptRequest`
+  (`namespaceId`, `promptKey`, `version`, `label`, `md5`) answered with `QueryPromptResponse`
+  (`promptInfo`), and the answer is a *projection* of the stored version rather than the stored
+  version: Nacos serves `promptKey`, `version`, `template`, `md5` and `variables`, and drops what the
+  registry keeps only for management (`description`, `bizTags`, the author, the commit message). A
+  caller that needs any of those needs the console rather than this client.
+- A prompt is addressed by key and by *one* of two selectors. A version names a version; a label is a
+  pointer the server moves between versions, which is what a caller asks for when it wants "whatever is
+  currently stable" without knowing where that is. The server resolves the version first, then the
+  label, then the version labelled `latest`, so a label is consulted only when no version is named —
+  and an unknown label quietly resolves to latest instead of failing, which is the one selector typo
+  that cannot be caught.
+- The resolved version must be *online*, so a published draft is not readable and a version that
+  exists but was never published is reported as missing. That is also why the client resolves nothing
+  locally: the version plan is the server's, and a client that cached a label's target would answer
+  from a plan that has since moved.
+- A subscription is a refresh loop per selector, because Nacos does not push prompt changes. The read
+  is conditional: it carries the hash of the copy that is cached, and the server answers `304` when
+  that hash still applies, so an unchanged prompt costs a round trip rather than a body. A `304` is
+  only reachable once a version has been resolved, so a selector that now points at a different
+  version can never be answered with one — the version comparison happens first.
+- **A withdrawal is reported**, unlike an MCP server's. A prompt that stops being served — deleted, or
+  a version taken offline — is answered with the same `404` a key that was never published is, so
+  there is no "not there yet" for the client to confuse a removal with. The client treats both the
+  same way: `404` removes the cached copy and announces the removal as a change whose prompt is null.
+  A subscriber that was never told would keep rendering a prompt that is gone.
+- A failed refresh is neither a state change nor an outage: the last known prompt stays cached, the
+  failure is logged, and the loop reads again on the next interval, so a watcher outlives a
+  control-plane outage instead of failing with it.
+
+### Where this client deviates from the official client (prompts)
+
+Three places where `nacos-develop` does something this client does not.
+
+1. A subscription whose selector is already cached is answered from the cache without a read. The
+   official client always queries on subscribe (`subscribePrompt` reads the prompt before it schedules
+   the update task). Here the read is skipped when a copy is held, so a second subscriber to a prompt
+   someone is already watching costs no round trip.
+2. The cached copy outlives its last subscriber. The official client removes the cache entry when the
+   last listener unsubscribes, so the next subscriber reads the server again; here the entry stays
+   until the server stops serving it. A caller that needs the server's word rather than a copy calls
+   `GetPromptAsync`, which never consults the cache.
+3. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval` the MCP subscription also
+   uses, where the official client reads a separate `nacosAiPromptCacheUpdateInterval`. One knob is a
+   deliberate simplification: both subscriptions are the same kind of poll and the default is the same
+   10 s either way.
 
 ## Authentication
 

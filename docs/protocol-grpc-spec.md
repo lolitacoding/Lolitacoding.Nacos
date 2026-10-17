@@ -738,6 +738,70 @@ Server-reported errors worth expecting: the registry's own `MCP_SERVER_NOT_FOUND
 `NacosApiException(NacosException.NOT_FOUND, …)`, and it is the outer code — `404` — that a client
 reads off the error response, alongside the message (`MCP server not found`).
 
+### 3.15 AI registry payloads (prompts)
+
+Prompts are served over the same connection as the MCP registry: `AbstractPromptRequest` returns the
+same `getModule()` value as `AbstractMcpRequest`. The handler, `QueryPromptRequestHandler`, is marked
+`@Since("3.2.0")`, so this is the **3.2.0** contract rather than the 3.0.3 one the MCP payloads
+belong to.
+
+| Request `metadata.type` | Response `metadata.type` | Request fields |
+| --- | --- | --- |
+| `QueryPromptRequest` | `QueryPromptResponse` | `namespaceId`, `promptKey`, `version`, `label`, `md5` |
+
+`QueryPromptResponse` carries one field, `promptInfo`, and it is a *projection* rather than the stored
+version: the service layer answers with a `PromptVersionInfo` (which extends `PromptVersionSummary`:
+`description`, `bizTags`, `srcUser`, `commitMsg`, the version status, …) and the handler maps it
+through `PromptConvertUtils.toClientPrompt`, keeping only `promptKey`, `version`, `template`, `md5` and
+`variables`. A client therefore sees the content and its hash and never the management metadata, and
+that list *is* the contract — a member the projection drops cannot be requested. `PromptVariable`
+(`name`, `defaultValue`, `description`) is the same type in both directions.
+
+**The three selectors are not equals.** `PromptOperationServiceImpl.resolveClientVersion`:
+
+```java
+if (StringUtils.isNotBlank(version)) return version;
+if (StringUtils.isNotBlank(label) && info.getLabels() != null) {
+    String resolved = info.getLabels().get(label);
+    if (StringUtils.isNotBlank(resolved)) return resolved;
+}
+if (info.getLabels() != null) return info.getLabels().get(LABEL_LATEST);   // "latest"
+return null;
+```
+
+A named version wins outright, even alongside a label; a known label is next; an *unknown* label falls
+through to latest rather than failing; and naming neither is latest. The resolved version must also be
+online — `versionRow == null || !VERSION_STATUS_ONLINE.equalsIgnoreCase(versionRow.getStatus())` — so a
+version that exists but has never been published is a not-found, not the version's content.
+
+**`md5` is a conditional read.** `PromptClientOperationServiceImpl` reads the prompt and then compares:
+
+```java
+if (StringUtils.isNotBlank(md5) && md5.equals(currentMd5)) {
+    throw new NacosException(NacosException.NOT_MODIFIED, "prompt data is up to date");
+}
+```
+
+`NacosException.NOT_MODIFIED` is `304`, so an unchanged prompt is answered with a result code and no
+body rather than with content the caller already has. The comparison happens *after* the version is
+resolved, so a selector that now points somewhere else can never be answered with `304`.
+
+**Errors.** The prompt module raises its own errors as `NacosApiException` with
+`NacosException.NOT_FOUND` (`404`) as the *outer* code rather than a business code of its own, so a
+client sees the same code it sees for a missing configuration. The messages are the ones the HTTP
+client API (`GET /v3/client/ai/prompt`) returns as well, because both paths go through the same
+service:
+
+| Condition | Error code | Message |
+| --- | --- | --- |
+| `promptKey` blank | `400` (`INVALID_PARAM`) | ``parameters `promptKey` can't be empty or null`` |
+| No such prompt key | `404` | `Prompt not found: {promptKey}` |
+| No version resolved | `404` | `Prompt version not found: {promptKey}` |
+| Version not found | `404` | `Prompt version not found: {promptKey}@{version}` |
+| Version exists but is offline | `404` | `Prompt version not online: {promptKey}@{version}` |
+| Content missing from storage | `404` | `Prompt content not found: {promptKey}@{version}` |
+| Hash still matches | `304` | `prompt data is up to date` |
+
 ---
 
 ## 4. The gRPC port

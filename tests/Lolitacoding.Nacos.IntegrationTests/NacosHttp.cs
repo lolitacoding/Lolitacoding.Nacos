@@ -18,6 +18,9 @@ internal static class NacosHttp
     /// <summary>The admin config endpoint of the v3 HTTP API.</summary>
     private const string ConfigPath = "/nacos/v3/admin/cs/config";
 
+    /// <summary>The admin prompt endpoint of the v3 HTTP API.</summary>
+    private const string PromptPath = "/nacos/v3/admin/ai/prompt";
+
     /// <summary>The result code the v3 API reports for a resource that does not exist.</summary>
     private const int ResourceNotFoundCode = 20004;
 
@@ -111,6 +114,154 @@ internal static class NacosHttp
             && content.ValueKind == JsonValueKind.String
             ? content.GetString()
             : null;
+    }
+
+    /// <summary>
+    /// Creates or replaces one version of a prompt.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="version">The version to publish.</param>
+    /// <param name="template">The template text.</param>
+    /// <param name="variables">The variable metadata as JSON, or <see langword="null"/> for none.</param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    /// <remarks>
+    /// A prompt is published in two steps: a draft carries the content, and force-publishing the
+    /// draft is what makes the version the one a read resolves. There is no way to store a prompt
+    /// that is immediately readable, which is why the fixture drives both calls, and the raw config
+    /// API cannot stand in for them: a configuration in the prompt group is only a migration source,
+    /// not something a prompt read will answer from.
+    /// </remarks>
+    public static async Task PublishPromptAsync(
+        HttpClient http,
+        string baseAddress,
+        string promptKey,
+        string version,
+        string template,
+        string? variables = null,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        var fields = new List<KeyValuePair<string, string>>
+        {
+            new("promptKey", promptKey),
+            new("targetVersion", version),
+            new("template", template),
+            new("commitMsg", "Seeded by the integration suite."),
+            new("description", "A prompt seeded by the integration suite."),
+            new("bizTags", "integration"),
+        };
+
+        if (variables is not null)
+        {
+            fields.Add(new KeyValuePair<string, string>("variables", variables));
+        }
+
+        using (var draft = new FormUrlEncodedContent(fields))
+        {
+            using HttpResponseMessage drafted = await SendAsync(
+                http,
+                HttpMethod.Post,
+                string.Concat(baseAddress, PromptPath, "/draft"),
+                accessToken,
+                draft,
+                ct);
+
+            drafted.EnsureSuccessStatusCode();
+            EnsureSucceeded(await drafted.Content.ReadAsStringAsync(ct));
+        }
+
+        using var publish = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("promptKey", promptKey),
+            new KeyValuePair<string, string>("version", version),
+        ]);
+
+        using HttpResponseMessage published = await SendAsync(
+            http,
+            HttpMethod.Post,
+            string.Concat(baseAddress, PromptPath, "/force-publish"),
+            accessToken,
+            publish,
+            ct);
+
+        published.EnsureSuccessStatusCode();
+        EnsureSucceeded(await published.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>
+    /// Binds the runtime labels of a prompt to versions.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="labels">The labels as a JSON object of label to version.</param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    /// <remarks>
+    /// A label is a movable pointer into the version list, which is what a caller reads when it wants
+    /// "whatever is currently stable" rather than a version it has to be told. The reserved
+    /// <c>latest</c> label is not set this way; the server moves it when a version is published.
+    /// </remarks>
+    public static async Task BindPromptLabelsAsync(
+        HttpClient http,
+        string baseAddress,
+        string promptKey,
+        string labels,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        using var form = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("promptKey", promptKey),
+            new KeyValuePair<string, string>("labels", labels),
+        ]);
+
+        using HttpResponseMessage response = await SendAsync(
+            http,
+            HttpMethod.Put,
+            string.Concat(baseAddress, PromptPath, "/labels"),
+            accessToken,
+            form,
+            ct);
+
+        response.EnsureSuccessStatusCode();
+        EnsureSucceeded(await response.Content.ReadAsStringAsync(ct));
+    }
+
+    /// <summary>
+    /// Deletes a prompt, which is what withdraws it from every read.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="accessToken">The access token.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The task.</returns>
+    /// <remarks>
+    /// Every version and every label goes with the prompt, so a read afterwards is answered the way a
+    /// read of a key that was never published is. That is what makes this the way to put a subscription
+    /// into the withdrawn state it has to report.
+    /// </remarks>
+    public static async Task DeletePromptAsync(
+        HttpClient http,
+        string baseAddress,
+        string promptKey,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        string url = string.Concat(
+            baseAddress, PromptPath, "?promptKey=", Uri.EscapeDataString(promptKey));
+
+        using HttpResponseMessage response = await SendAsync(
+            http, HttpMethod.Delete, url, accessToken, content: null, ct);
+
+        response.EnsureSuccessStatusCode();
+        EnsureSucceeded(await response.Content.ReadAsStringAsync(ct));
     }
 
     /// <summary>

@@ -265,7 +265,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
 - 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
-拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，随后 Prompt、Skill、AgentSpec、Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
+拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，随后 Skill、AgentSpec、Agent（A2A）、RAD watch、HTTP 回退与宿主/示例。
 
 #### C1 · AI 基础设施 + MCP 查询/发布（✅ 已完成）
 
@@ -296,6 +296,25 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
   5. 注销时带上该端点发布时的版本（客户端自己记录）：服务端按版本解析要移除实例的目标服务（`operateEndpoint` → `buildServiceRef`），上游不发版本、由服务端取“当前最新”，端点固定在已被取代的版本上时就会作用在错的服务上、实例残留。
 - 日志事件：8003 端点已注册、8004 端点已注销、8005 重放失败（Warning）、8006 重放数量、8007 订阅资源变化（Debug）、8008 刷新失败（Warning）。
 - 验收：Release 构建零警告零错误；单元测试 **412 个全绿**（新增 26 个：订阅首值/版本与 latest 键/变化投递/404 容忍/刷新失败容忍/缓存命中/第二个订阅者/退订停止轮询/释放时结束/参数与能力位门禁；端点的请求字段/端口校验/错误上抛/重连重放/拒绝不重放/注销停止重放/多端点重放/释放后拒绝/惰性连接）；集成测试新增 3 个用例，在 `nacos/nacos-server:v3.2.4` 上全绿（订阅收到真实服务器发布的新版本且 `is_latest` 随之为真；远端服务器发布 → 注册端点 → 轮询到实例出现在 `backendEndpoints`（地址与 `exportPath`）→ 注销后消失 → 不带版本再注册并同样可见；未知名字注册端点回 `404`）。
+
+#### C3 · Prompt 查询与订阅（✅ 已完成）
+
+- `Ai/NacosPrompt.cs`：`NacosPrompt`（`promptKey` / `version` / `template` / `md5` / `variables`）与 `NacosPromptVariable`（`name` / `defaultValue` / `description`）。这是**服务器投影后的客户端形态**而非存储形态：`PromptConvertUtils.toClientPrompt` 从 `PromptVersionInfo` 里只取这五个字段，`description` / `bizTags` / 作者 / commit 信息一律不下发，因此客户端也无从请求——投影清单本身就是契约。
+- 线路：`QueryPromptRequest`（`namespaceId` / `promptKey` / `version` / `label` / `md5`）与 `QueryPromptResponse`（`promptInfo`），模块 `"ai"`，与 MCP 共用同一条 AI 连接（Nacos 按模块路由连接，不按资源类型）。契约属于 **3.2.0**（`QueryPromptRequestHandler` 标注 `@Since("3.2.0")`），比 MCP 的 3.0.3 晚，且 gRPC 能力表里**没有 prompt 能力位**，因此客户端无法提前拒绝更老的服务器，只能等服务器回 `RequestHandler Not Found`。
+- 选择器语义全部交给服务器（`resolveClientVersion`）：指名版本最优先，其次标签，标签解析不到时**静默回落到 `latest`**（唯一无法在客户端捕获的笔误），两者都不给即 `latest`；解析出的版本还必须处于 ONLINE，因此已发布的草稿不可读、存在但从未发布的版本按“不存在”报错。客户端不做任何本地解析——版本计划属于服务器，缓存标签指向会答出一个已经移动过的计划。
+- 读取 `GetPromptAsync(promptKey, version = null, label = null, ct)` 是无条件读（`md5` 传 `null`）：不存在、版本未发布、版本已下线、内容缺失都回 `404`（`NacosServerException`），所以“回 `200` 但没有 `promptInfo`”按契约破坏处理并记 8011，而不是当成空 Prompt。
+- 订阅 `IAsyncEnumerable<NacosPrompt?> SubscribePromptAsync(promptKey, version = null, label = null, ct)`：与 MCP 一样是每个选择器一个本地轮询任务（Nacos 同样没有 Prompt 推送），差别在于**元素可为 `null`**——Prompt 的 `404` 与“尚未发布”无法区分（服务器对两者回同一错误码），因此 `404` 一律视为撤回：清掉缓存副本并投递 `null`，避免订阅者继续渲染一个已经不存在的模板；首个元素是当前状态（未发布即 `null`），结束枚举即退订，最后一个订阅者离开时停止轮询。
+- 条件读：种子读不带 `md5`；刷新读带上缓存副本的 `md5`，服务器回 `304`（`NOT_MODIFIED`）即静默跳过、不产生变更通知。`304` 只在版本解析成功之后产生，所以选择器已经指向别的版本时不可能拿到 `304`。
+- 缓存键沿用官方 `CacheKeyUtils.buildPromptKey` 的形状，但给两段选择器各加前缀消歧：有标签优先 → `{key}::label:{label}`，否则 `{key}::version:{version}`，否则 `{key}::latest`。版本串与标签串可以合法地相同，不加前缀会共用同一个缓存项。与 MCP 不同，**不做 `latest` 别名**——官方 Prompt 缓存也只按选择器键存放，`is_latest` 别名是 MCP 事件模型特有的。
+- 变更判定：比较整份 Prompt 的序列化结果（两侧都来自服务器，表示稳定），因此模板、哈希、变量元数据任一处变化都能被发现；“一直是缺失”不算变化，撤回只通知一次。
+- 日志事件：8009 订阅资源变化（Debug）、8010 已撤回（Debug）、8011 契约破坏（Warning）、8012 刷新失败（Warning）。
+- 与上游 `nacos-develop` 的**有意差异**（3 条，其余跟随官方客户端；与 C2 的 5 条并列记录）：
+  1. 选择器已有缓存副本时，订阅**不回源读取**；上游 `subscribePrompt` 每次都读一遍再挂更新任务。收益是第二个订阅同一 Prompt 的调用方零往返。
+  2. 缓存副本在最后一个订阅者离开后**保留**；上游在最后一个 listener 退订时 `promptCache.remove(cacheKey)`。需要“服务器当下的答案”而非副本时调用 `GetPromptAsync`——它从不查缓存（与上游一致）。
+  3. 刷新间隔复用 `NacosAiOptions.CacheRefreshInterval`；上游按资源类型读 `nacosAiPromptCacheUpdateInterval`。两者都是同一种轮询且默认同为 10 秒，故合并为一个开关。
+- 验收：Release 构建零警告零错误；单元测试 **443 个全绿**（新增 31 个：模型 JSON 契约与类型路由（含选择器省略、变量元数据、整条往返）；请求字段与命名空间、无条件读、`404` / `304` 错误码上抛、契约破坏、参数校验、释放后拒绝；订阅的首值/选择器透传/变化投递/条件读并核对 `md5`/撤回投递 `null`/先 `null` 后出现/撤回只报一次/刷新失败容忍/缓存命中零往返/版本与标签同串不同键/退订停止轮询/释放时结束/参数校验）。集成测试新增 5 个用例、整套 **31 个用例全绿（5m34s）**，Prompt 的 5 个跑在 `nacos/nacos-server:v3.2.4` 上（HTTP 管理接口草稿 + 发布两版 → 读 latest / 指定版本 / 绑定标签后按标签读，并核对变量元数据；未发布键与未发布版本回 `404`；订阅收到新版；订阅收到标签重绑后的版本；`DELETE` 后订阅收到 `null`）。
+- harness：`NacosContainer.EnsureInitialAdminAsync` 改为公开并新增 `CreateAccessTokenAsync`——`NACOS_AUTH_ENABLE=false` 的服务器同样对 `/v3/admin` 要求登录，因此用 HTTP 播种资源必须先建首个管理员（幂等，409 视为成功）。`NacosHttp` 新增 `PublishPromptAsync`（draft + force-publish）/ `BindPromptLabelsAsync` / `DeletePromptAsync`；`NacosEventually.ReportsAsync` 为“已经产生且无法重复施加的变更”提供有界等待（一个 Prompt 版本只能发布一次，删除也不可重复）。
+- 顺带记录一条实测事实：Prompt 的 HTTP 客户端接口与 gRPC 接口走同一套服务，错误消息完全一致，因此集成用例可以直接照抄 HTTP 探测到的消息文本。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

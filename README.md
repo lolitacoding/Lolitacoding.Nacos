@@ -205,23 +205,35 @@ await foreach (NacosMcpServerDetail change in
 {
     Console.WriteLine(change.VersionDetail?.Version);
 }
+
+// A prompt read resolves the version the server currently points at — a version, a label, or latest —
+// and a subscription is the same poll, with a null element reporting that the prompt is gone.
+await foreach (NacosPrompt? prompt in
+    client.Ai.Prompt.SubscribePromptAsync("greeting", label: "stable", ct: cancellationToken))
+{
+    Console.WriteLine(prompt?.Template);
+}
 ```
 
 `client.Ai` reaches the Nacos AI registry. This release covers the MCP server registry —
 `GetServerAsync` reads one server, by name and optionally by version, `ReleaseServerAsync` publishes
 one version of one with its tool list, `SubscribeServerAsync` follows one and reports the changes, and
 `RegisterServerEndpointAsync` / `DeregisterServerEndpointAsync` publish the address a server is
-reachable at. Prompts, skills, agent specifications and agents follow the same shape; the MCP servers
-are the part the transport and the models were built for first.
+reachable at — and the prompt registry, where `GetPromptAsync` reads a prompt by version or by label
+and `SubscribePromptAsync` follows one. Skills, agent specifications and agents follow the same shape;
+the MCP servers are the part the transport and the models were built for first.
 
 The models are the MCP protocol's own objects rather than a projection of them — a tool's JSON
 Schema stays JSON, and MCP's `_meta` member keeps its underscore — because Nacos stores what it is
 given and serves it back to MCP clients unchanged. A read is a direct query, so it reports the
 server's current state and needs the server to be reachable; a subscription is the one operation with
 a local copy, and an endpoint is a Naming instance rather than an AI record, so it is discovered and
-health checked like any other instance.
+health checked like any other instance. A prompt read is always the server's answer, including the
+version a label resolves to, while a prompt subscription re-reads on the interval and therefore has
+the same local copy an MCP subscription has.
 
-The AI registry is served from Nacos **3.0.3** on; [the FAQ](docs/faq.md#which-nacos-versions-are-supported)
+The AI registry is served from Nacos **3.0.3** on, and the prompt registry from **3.2.0** on;
+[the FAQ](docs/faq.md#which-nacos-versions-are-supported)
 says which server each module needs. The AI connection is opened on first use, like the lock
 connection, and carries the `ai` module label plus the per-client identifier Nacos records with
 everything the client publishes. See

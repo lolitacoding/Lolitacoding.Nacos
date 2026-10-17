@@ -23,6 +23,97 @@ public interface INacosAiClient : IAsyncDisposable
 {
     /// <summary>Gets the MCP server registry.</summary>
     INacosMcpRegistry Mcp { get; }
+
+    /// <summary>Gets the prompt registry.</summary>
+    INacosPromptRegistry Prompt { get; }
+}
+
+/// <summary>
+/// The prompt registry: where the prompt templates an application renders are published and read.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A prompt is registered under a key and served one version at a time. A read may name a version, or
+/// name a label that Nacos moves between versions, or name neither and take the version labelled
+/// <c>latest</c>; the version in the answer is the one that was resolved, so a caller can read a
+/// label without knowing where it points.
+/// </para>
+/// <para>
+/// Nacos has no prompt change notification either, so following a prompt is a re-read on an interval
+/// rather than a server-initiated push; see <see cref="SubscribePromptAsync"/>. Unlike an MCP server
+/// a prompt that stops being served is reported, because a missing prompt is distinguishable from
+/// one that has not appeared yet.
+/// </para>
+/// </remarks>
+public interface INacosPromptRegistry
+{
+    /// <summary>
+    /// Reads one version of a prompt.
+    /// </summary>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="version">The version to read, or <see langword="null"/> to resolve one.</param>
+    /// <param name="label">
+    /// The label to resolve, or <see langword="null"/> to resolve from the version and then from
+    /// <c>latest</c>. Ignored when <paramref name="version"/> names a version.
+    /// </param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The resolved prompt.</returns>
+    /// <exception cref="ArgumentException"><paramref name="promptKey"/> is null or whitespace.</exception>
+    /// <exception cref="NacosServerException">
+    /// The prompt is unknown, the version is not published, or the server does not serve the prompt
+    /// that was named.
+    /// </exception>
+    /// <remarks>
+    /// The version wins when both a version and a label are given, matching the server, which
+    /// resolves the two selectors in that order. An unknown label falls back to the latest version
+    /// rather than failing, whereas an unknown version is an error.
+    /// </remarks>
+    Task<NacosPrompt> GetPromptAsync(
+        string promptKey,
+        string? version = null,
+        string? label = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Subscribes to one version of a prompt.
+    /// </summary>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="version">The version to watch, or <see langword="null"/> to resolve one.</param>
+    /// <param name="label">
+    /// The label to resolve, or <see langword="null"/> to resolve from the version and then from
+    /// <c>latest</c>. Ignored when <paramref name="version"/> names a version.
+    /// </param>
+    /// <param name="ct">
+    /// A token that ends the subscription. Leaving the enumerable ends it too.
+    /// </param>
+    /// <returns>
+    /// The current prompt as the first element — or <see langword="null"/> when it is not published —
+    /// then the prompt again on every change, with <see langword="null"/> reporting that it stopped
+    /// being served.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="promptKey"/> is null or whitespace.</exception>
+    /// <exception cref="NacosServerException">
+    /// The read that seeds the subscription failed for a reason other than the prompt not existing.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// Nacos does not push prompt changes, so a subscription is served by re-reading the prompt on
+    /// the interval configured by <see cref="NacosAiOptions.CacheRefreshInterval"/> and yielding the
+    /// result when it differs from the copy that was cached. The read is conditional on the hash of
+    /// the cached copy, so an unchanged prompt costs a round trip rather than a body. A read that
+    /// fails does not end the subscription: the last known prompt stays cached and the read is
+    /// retried, so a watcher survives a control-plane outage instead of failing with it.
+    /// </para>
+    /// <para>
+    /// A prompt the server stops serving is reported as a change whose element is
+    /// <see langword="null"/>, so a subscriber does not keep rendering content that is gone.
+    /// </para>
+    /// </remarks>
+    IAsyncEnumerable<NacosPrompt?> SubscribePromptAsync(
+        string promptKey,
+        string? version = null,
+        string? label = null,
+        CancellationToken ct = default);
 }
 
 /// <summary>

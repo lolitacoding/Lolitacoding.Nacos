@@ -112,4 +112,63 @@ internal static partial class NacosAiLog
         Level = LogLevel.Warning,
         Message = "Refreshing the subscription for MCP server {Name} version {Version} failed: {Reason}")]
     public static partial void McpServerRefreshFailed(ILogger logger, string name, string? version, string reason);
+
+    /// <summary>Logs that a subscribed prompt changed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="version">The resolved version whose content changed.</param>
+    /// <remarks>
+    /// Debug level: the change is delivered to the subscriber, so this only helps when working out
+    /// why a subscription did or did not fire.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8009,
+        Level = LogLevel.Debug,
+        Message = "Prompt {PromptKey} version {Version} changed.")]
+    public static partial void PromptChanged(ILogger logger, string promptKey, string version);
+
+    /// <summary>Logs that a subscribed prompt stopped being served.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <remarks>
+    /// A withdrawal is a change like any other and is delivered as one, so it is recorded at the same
+    /// level. Unlike an MCP server, a prompt the server no longer serves is distinguishable from one
+    /// that was never published, so it is reported rather than waited out.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8010,
+        Level = LogLevel.Debug,
+        Message = "Prompt {PromptKey} is no longer served.")]
+    public static partial void PromptWithdrawn(ILogger logger, string promptKey);
+
+    /// <summary>Logs that a successful prompt query carried no prompt.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="promptKey">The prompt key that was queried.</param>
+    /// <param name="version">The version that was named, if any.</param>
+    /// <param name="label">The label that was named, if any.</param>
+    /// <remarks>
+    /// A missing prompt or version is reported as a failure result code and an unchanged hash as the
+    /// "not modified" one, so a success with no prompt means the reply did not match the contract
+    /// rather than that the prompt is absent.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8011,
+        Level = LogLevel.Warning,
+        Message = "The query for prompt {PromptKey} version {Version} label {Label} succeeded but carried no prompt.")]
+    public static partial void PromptDetailMissing(ILogger logger, string promptKey, string? version, string? label);
+
+    /// <summary>Logs that a prompt subscription refresh failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="promptKey">The prompt key being refreshed.</param>
+    /// <param name="version">The version being refreshed, if one was named.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A refresh that fails leaves the cached prompt in place and is retried on the next interval,
+    /// because a subscription is meant to survive an outage rather than fail with it.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8012,
+        Level = LogLevel.Warning,
+        Message = "Refreshing the subscription for prompt {PromptKey} version {Version} failed: {Reason}")]
+    public static partial void PromptRefreshFailed(ILogger logger, string promptKey, string? version, string reason);
 }

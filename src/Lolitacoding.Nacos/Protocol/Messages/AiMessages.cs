@@ -158,3 +158,58 @@ internal sealed class ReleaseMcpServerResponse : NacosResponse
     /// <summary>Gets or sets the internal identifier of the released server.</summary>
     public string? McpId { get; set; }
 }
+
+/// <summary>
+/// Base type for the requests that address one prompt by key.
+/// </summary>
+/// <remarks>
+/// The namespace travels beside the key for the same reason it does for an MCP server: the server
+/// resolves the prompt from the pair, while every client operation is written in terms of the key.
+/// </remarks>
+internal abstract class PromptRequest : AiRequest
+{
+    /// <summary>Gets or sets the namespace the prompt belongs to.</summary>
+    public string? NamespaceId { get; set; }
+
+    /// <summary>Gets or sets the prompt key.</summary>
+    public string? PromptKey { get; set; }
+}
+
+/// <summary>
+/// A request for one version of a prompt.
+/// </summary>
+/// <remarks>
+/// The version and the label are two ways of naming the same thing and only one of them is resolved:
+/// the server prefers the version when both are set, and falls back to the latest published version
+/// when neither is. The hash is the one conditional field on the request, and it is what a refresh
+/// loop sends so an unchanged prompt is answered with "not modified" rather than with its content.
+/// </remarks>
+internal sealed class QueryPromptRequest : PromptRequest
+{
+    /// <summary>Gets or sets the version to read.</summary>
+    public string? Version { get; set; }
+
+    /// <summary>Gets or sets the label to resolve to a version.</summary>
+    public string? Label { get; set; }
+
+    /// <summary>Gets or sets the hash of the copy the caller already holds.</summary>
+    /// <remarks>
+    /// Unset asks for the content unconditionally. Set, it asks the server to answer "not modified"
+    /// when the version it resolved still hashes to that value.
+    /// </remarks>
+    public string? Md5 { get; set; }
+}
+
+/// <summary>
+/// The reply to a request for one prompt version.
+/// </summary>
+internal sealed class QueryPromptResponse : NacosResponse
+{
+    /// <summary>Gets or sets the resolved prompt.</summary>
+    /// <remarks>
+    /// Unset when the request failed, which the caller sees as the failure result code rather than
+    /// as a missing field. A hash that still matches is reported the same way, as the "not modified"
+    /// result code, so an unset prompt always means something went wrong.
+    /// </remarks>
+    public NacosPrompt? PromptInfo { get; set; }
+}

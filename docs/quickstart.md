@@ -390,8 +390,8 @@ connection for it.
 ## 11. Use the AI registry
 
 `client.Ai` reaches the AI registry, the part of Nacos that holds MCP servers, prompts, skills, agent
-specifications and agents. This release covers the MCP server registry: reading a released server and
-releasing one.
+specifications and agents. This release covers the MCP server registry — reading a released server,
+releasing one, following one, and publishing the address it is reachable at — and the prompt registry.
 
 ```csharp
 using Lolitacoding.Nacos.Ai;
@@ -456,11 +456,42 @@ it, so it becomes discoverable and health checked like any other instance:
 await client.Ai.Mcp.RegisterServerEndpointAsync("weather", "10.0.0.7", 8080, "1.2.0", cancellationToken);
 ```
 
+### Prompts
+
+A prompt is a template plus the placeholders it uses. A read names a key and, optionally, a selector: a
+version, or a label the server moves between versions. Leave both out and the server answers with
+whatever version it labels `latest`; the version in the answer is the one that was resolved, so a label
+can be read without knowing where it points.
+
+```csharp
+NacosPrompt prompt = await client.Ai.Prompt.GetPromptAsync(
+    "greeting", label: "stable", ct: cancellationToken);
+
+Console.WriteLine(prompt.Version);    // the version the label resolved to
+Console.WriteLine(prompt.Template);   // "Hello {{name}}"
+Console.WriteLine(prompt.Md5);        // the content hash, for change detection
+```
+
+Following a prompt is the same kind of poll as following a server — Nacos pushes neither — with one
+difference: a prompt that stops being served is reported, as a `null` element, because a missing prompt
+cannot be confused with one that has not appeared yet.
+
+```csharp
+await foreach (NacosPrompt? change in
+    client.Ai.Prompt.SubscribePromptAsync("greeting", label: "stable", ct: cancellationToken))
+{
+    Console.WriteLine(change is null ? "(withdrawn)" : $"{change.Version}: {change.Template}");
+}
+```
+
+The prompt registry is served from Nacos **3.2.0** on. There is no ability key for it, so the client
+cannot refuse an older server up front: such a server answers a query with `RequestHandler Not Found`.
+
 Four things are worth knowing before relying on this:
 
-- The registry is served from Nacos **3.0.3** on. A 3.0.2 server answers a query or a release with
-  `RequestHandler Not Found`; the [FAQ](faq.md#which-nacos-versions-are-supported) says which server
-  each module needs.
+- The MCP registry is served from Nacos **3.0.3** on and the prompt registry from **3.2.0** on. An older
+  server answers a query with `RequestHandler Not Found`; the
+  [FAQ](faq.md#which-nacos-versions-are-supported) says which server each module needs.
 - `GetServerAsync` is a direct query, so it always reports the server's current state — and needs the
   server to be reachable. `SubscribeServerAsync` is the exception: it caches the last detail it read
   and re-reads the server every `NacosAiOptions.CacheRefreshInterval` (10 s by default), because there
