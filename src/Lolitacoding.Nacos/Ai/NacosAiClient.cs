@@ -23,7 +23,7 @@ namespace Lolitacoding.Nacos.Ai;
 internal sealed class NacosAiClient : INacosAiClient
 {
     private readonly NacosLazyModuleConnection _connection;
-    private readonly INacosMcpRegistry _mcp;
+    private readonly NacosMcpClient _mcp;
 
     /// <summary>
     /// This process's AI publisher identity.
@@ -83,11 +83,16 @@ internal sealed class NacosAiClient : INacosAiClient
                 authProvider,
                 labels);
 
+            // An endpoint published through the AI module is an instance owned by the connection
+            // that registered it, so the server drops it with the connection. Replaying is what
+            // keeps it published across a reconnect.
+            connection.Reconnected += OnReconnectedAsync;
+
             await connection.ConnectAsync(ct).ConfigureAwait(false);
             return connection;
         });
 
-        _mcp = new NacosMcpClient(this, options, loggerFactory.CreateLogger<NacosMcpClient>());
+        _mcp = new NacosMcpClient(this, options, timeProvider, loggerFactory.CreateLogger<NacosMcpClient>());
     }
 
     /// <inheritdoc />
@@ -106,6 +111,22 @@ internal sealed class NacosAiClient : INacosAiClient
         return _connection.GetAsync(ct);
     }
 
+    /// <summary>
+    /// Replays every endpoint this process published.
+    /// </summary>
+    /// <param name="state">The state the transport reached.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>A task that completes once state was restored.</returns>
+    private async Task OnReconnectedAsync(NacosTransportState state, CancellationToken ct)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        await _mcp.RestoreAsync(ct).ConfigureAwait(false);
+    }
+
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
@@ -116,6 +137,9 @@ internal sealed class NacosAiClient : INacosAiClient
 
         _disposed = true;
 
+        // The subscriptions are stopped first: their refresh loops talk over the connection, and
+        // completing them ends the enumerations a caller may still be reading.
+        await _mcp.DisposeAsync().ConfigureAwait(false);
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
 }

@@ -58,6 +58,8 @@ namespace Lolitacoding.Nacos.Protocol;
 [JsonSerializable(typeof(LockNotificationResponse))]
 [JsonSerializable(typeof(QueryMcpServerRequest))]
 [JsonSerializable(typeof(QueryMcpServerResponse))]
+[JsonSerializable(typeof(McpServerEndpointRequest))]
+[JsonSerializable(typeof(McpServerEndpointResponse))]
 [JsonSerializable(typeof(ReleaseMcpServerRequest))]
 [JsonSerializable(typeof(ReleaseMcpServerResponse))]
 [JsonSerializable(typeof(ServerCheckRequest))]

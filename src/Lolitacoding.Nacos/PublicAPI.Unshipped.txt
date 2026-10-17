@@ -355,8 +355,11 @@ const Lolitacoding.Nacos.Ai.NacosMcpStatus.Deprecated = "deprecated" -> string!
 Lolitacoding.Nacos.Ai.INacosAiClient
 Lolitacoding.Nacos.Ai.INacosAiClient.Mcp.get -> Lolitacoding.Nacos.Ai.INacosMcpRegistry!
 Lolitacoding.Nacos.Ai.INacosMcpRegistry
+Lolitacoding.Nacos.Ai.INacosMcpRegistry.DeregisterServerEndpointAsync(string! name, string! address, int port, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Lolitacoding.Nacos.Ai.INacosMcpRegistry.GetServerAsync(string! name, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosMcpServerDetail!>!
+Lolitacoding.Nacos.Ai.INacosMcpRegistry.RegisterServerEndpointAsync(string! name, string! address, int port, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Lolitacoding.Nacos.Ai.INacosMcpRegistry.ReleaseServerAsync(Lolitacoding.Nacos.Ai.NacosMcpServer! server, Lolitacoding.Nacos.Ai.NacosMcpToolSpecification? tools = null, Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification? resources = null, Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec? endpoint = null, bool createDraft = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Lolitacoding.Nacos.Ai.INacosMcpRegistry.SubscribeServerAsync(string! name, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosMcpServerDetail!>!
 Lolitacoding.Nacos.Ai.NacosMcpCapability
 Lolitacoding.Nacos.Ai.NacosMcpCapability.Prompt = 1 -> Lolitacoding.Nacos.Ai.NacosMcpCapability
 Lolitacoding.Nacos.Ai.NacosMcpCapability.Resource = 2 -> Lolitacoding.Nacos.Ai.NacosMcpCapability

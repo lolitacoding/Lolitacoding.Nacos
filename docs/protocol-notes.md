@@ -235,11 +235,59 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
 - A server that does not exist is a business error rather than an empty answer. Nacos reports it with
   the generic not-found code (`404`) and a message naming the cause; a successful reply with no detail
   would therefore be a contract violation, and is reported as one rather than as a missing server.
+- **A release is answered before it is readable.** The reply says the server accepted the version, not
+  that the name can be read back with it: a read that arrives first gets the same not-found an unknown
+  name gets, which is what the resource index catching up looks like from the client. Both forms of read
+  are affected, the one that names a version and the one that names none, so a caller that has to see
+  its own release repeats the read until it does.
 - Two ability keys gate the registry: `mcp` and `mcpDraftRelease`. Only an explicit `false` is a
   rejection — the client refuses locally with `NacosServerException(501)` — because a key the server
   never mentioned says nothing, and a server that predates the key still serves the registry.
   `createDraft` is gated on its own key because a server that does not know the field would read it as
   unknown and publish the version directly, which is the opposite of what the caller asked for.
+- **There is no change push.** Nacos pushes configuration and service changes, but it has no MCP
+  change notification: the official client discovers a change by re-reading the server on an interval
+  (`NacosMcpServerCacheHolder` plus a scheduled update task). A subscription here is therefore a
+  cached copy refreshed every `NacosAiOptions.CacheRefreshInterval`, and it is the only operation in
+  the registry that does not simply report what the server said. A read that fails leaves the cached
+  copy in place and is retried, so a watcher outlives a control-plane outage; a `404` is not a failure
+  either — a subscription to a name that has not been released yet stays open and reports it when it
+  appears.
+- **A subscription is keyed by version.** `{name}::{version}`, and `{name}::latest` for a subscription
+  that names none. The version Nacos flags `is_latest` is also stored under the `latest` key, so a
+  subscription without a version is answered from the cache rather than by another round trip, and a
+  change is reported to both keys when it is the latest one.
+- **An endpoint is a Naming instance, not an AI record.** `McpServerEndpointRequest` (`type` ∈
+  `registerEndpoint`, `deregisterEndpoint`) is handled by `McpClientApplicationService.operateEndpoint`,
+  which resolves the server's `REF` endpoint to a Naming service and registers the address as an
+  instance of it, attributed to the publishing connection. So the endpoint is discovered, health
+  checked and load balanced like any other instance, it disappears when the connection that published
+  it closes, and the client replays it after a reconnect. The `version` field is what the server
+  resolves the target service by.
+
+### Where this client deviates from the official one
+
+Five places where `nacos-develop` does something this client does not, each recorded because a
+deliberate difference that is not written down is indistinguishable from a bug. Everything else
+follows the official client.
+
+1. To subscribe to something already cached, the official client returns the cached detail and — because
+   `addMcpServerUpdateTask` is only reached on the cache-miss branch — does not start a refresh loop for
+   it. Here every subscription ensures its key has a loop, since a subscription that never refreshes is
+   a subscription that never fires.
+2. A change to the version Nacos flags `is_latest` is published to both `{name}::{version}` and
+   `{name}::latest`. The official client keys the event by `latest` alone, so a consumer that named the
+   exact version — which is the latest one at the time — is never told it changed.
+3. Endpoint replay is keyed by `name+address+port`. The official client keys `McpServerEndpoint` by
+   `mcpName` alone, so a server publishing several endpoints replays only the last one registered.
+4. A registration the server refused is not kept. The official client records the intent before sending
+   it and clears it only after a successful deregistration, so a reconnect retries a registration the
+   caller was told had failed. Here the intent is dropped on failure, and a deregistration drops it
+   before the request is sent, matching the naming client's redo contract.
+5. A deregistration carries the version the endpoint was published for (the client recorded it). The
+   official client sends no version and lets the server resolve the one it currently labels latest,
+   which resolves to a different service whenever the endpoint was pinned to a version that has since
+   been superseded — and then removes nothing.
 
 ## Authentication
 

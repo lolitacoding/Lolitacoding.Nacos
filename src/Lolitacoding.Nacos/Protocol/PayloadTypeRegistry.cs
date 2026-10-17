@@ -58,6 +58,8 @@ internal static class PayloadTypeRegistry
         // AI registry (MCP servers).
         ["QueryMcpServerRequest"] = NacosJsonContext.Default.QueryMcpServerRequest,
         ["QueryMcpServerResponse"] = NacosJsonContext.Default.QueryMcpServerResponse,
+        ["McpServerEndpointRequest"] = NacosJsonContext.Default.McpServerEndpointRequest,
+        ["McpServerEndpointResponse"] = NacosJsonContext.Default.McpServerEndpointResponse,
         ["ReleaseMcpServerRequest"] = NacosJsonContext.Default.ReleaseMcpServerRequest,
         ["ReleaseMcpServerResponse"] = NacosJsonContext.Default.ReleaseMcpServerResponse,
 

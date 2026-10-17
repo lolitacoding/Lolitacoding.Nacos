@@ -276,9 +276,26 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 版本解析：优先 `versionDetail.version`，回退旧 `version` 字符串；两者皆无则拒绝发布——服务端自行编造的版本调用方无法再次指名。
 - 失败语义：不存在的 MCP 服务器是业务错误（服务器回 `404` + `MCP server not found`，注册表自身的 `MCP_SERVER_NOT_FOUND` 为 `50000`）；因此“成功但无 detail”按契约破坏（`NacosServerException`）处理，而不是当成空结果。
 - 关键发现：MCP 客户端契约属于 **3.0.3**（`McpService` 标注 `@Since("3.0.3")`），而套件固化的最老 3.x（`v3.0.2`）对查询与发布都回 `RequestHandler Not Found`。AI 集成用例改用独立镜像（`NACOS_AI_TEST_IMAGE`，默认 `v3.2.4`——已验证可服务注册表的最老版本），其余套件仍为 `v3.0.2`。
-- 选项 `NacosAiOptions`（`EnableLocalCache` / `CacheRefreshInterval`）随本阶段引入，本地缓存的实际落地与 C2 的订阅同步；在此之前查询直接读服务器，配置项不改变行为。
+- 选项 `NacosAiOptions`（`EnableLocalCache` / `CacheRefreshInterval`）随本阶段引入；`CacheRefreshInterval` 在 C2 的订阅中生效，`EnableLocalCache`（落盘 failover）至今仍未实现，内存中的订阅缓存始终开启，文档与 XML 注释都如实写明。
 - 这一阶段暂不做 gRPC↔HTTP 自动回退：服务器缺失能力位时按上述 501 语义报错即可，回退留到 C8。
 - 验收：Release 构建零警告零错误；单元测试 **386 个全绿**（新增 26 个：查询/发布的字段映射与参数校验、能力位门禁与“未声明即放行”、服务器错误码上抛、`createDraft` 省略、模型 JSON 契约与整条详情往返）；集成测试新增 2 个用例，在 `nacos/nacos-server:v3.2.4` 上全绿（发布 → 查询（含 `allVersions` 与工具清单）→ 按版本再查；未发布的名字回业务错误且先发布一次以证明注册表确实在服务）。
+
+#### C2 · MCP 订阅与本地缓存 + 端点注册/注销（✅ 已完成）
+
+- `Ai/NacosMcpServerCache.cs`：订阅的本地缓存与后台刷新。Nacos 对 MCP **没有服务端推送**（官方客户端的 `subscribeMcpServer` 也只是本地按间隔重读），因此每个被订阅的版本由一个自调度轮询任务（`Task.Delay(interval, _timeProvider, token)`，与 `NacosLockWatchdog` 同一形状）驱动：重读 → 与缓存副本比较 → 变化时投递。读失败不清缓存、下一轮重试，订阅因此能跨控制面故障；`404`（尚未发布）同样不是失败，订阅保持打开。
+- 缓存键：`{name}::{version}`，未指定版本为 `{name}::latest`；`is_latest` 为真时同一份 detail 也存入 `latest` 键，使不带版本的订阅命中缓存而不必再发一次请求。
+- 变更判定：比较整份 detail 的序列化结果（两侧都来自服务器，表示稳定），因此嵌套的 `toolSpec` / `resourceSpec` 里任何一处改动都能被发现；非最新的版本不再写 `latest` 键，避免把旧版本误标为最新。
+- 订阅形状：`IAsyncEnumerable<NacosMcpServerDetail> SubscribeServerAsync(name, version = null, ct)`——先产出当前快照，再产出变化；结束枚举即退订，最后一个订阅者离开时停止轮询任务。启动连接与能力位检查发生在第一次 `MoveNextAsync`（async iterator 语义），与“首次使用才开连接”一致。
+- 线路：`McpServerEndpointRequest` / `McpServerEndpointResponse`（`type` ∈ `registerEndpoint` / `deregisterEndpoint`），`BatchRegisterEndpoint` 未暴露（官方 `McpService` 亦未暴露）。
+- 端点的本质是**命名实例**：服务端 `McpClientApplicationService.operateEndpoint` 把 MCP 服务器的 `REF` 端点解析成命名服务，再以「发布者连接 id」注册实例，因此端点会随注册它的连接消亡，重连后必须重放。`NacosAiClient` 在惰性连接工厂里挂 `NacosGrpcConnection.Reconnected`（与 `NacosLockClient` 挂 `ServerRequestReceived` 的同一位置），`NacosMcpEndpointPublication` 记录已发布端点并在重连后重发 `registerEndpoint`。服务器 `v3.2.4` 实测：无端点规格地发布一个 `mcp-sse` 服务器会自动生成 `REF` 服务 `{name}::{version}`，注册的端点随后出现在查询结果的 `backendEndpoints`（地址 + 服务器的 `exportPath`）。
+- 与上游 `nacos-develop` 的**有意差异**（逐条记录，便于以后核对；其余一律跟随官方客户端）：
+  1. 每次订阅都会确保该键有轮询任务；上游只在缓存未命中分支调用 `addMcpServerUpdateTask`，重复订阅一个已缓存的键不会重启轮询。
+  2. `is_latest` 的变化同时投递到 `{name}::{version}` 与 `{name}::latest`；上游只按 `latest` 投递，于是**指名最新版本号**的订阅者收不到变化。
+  3. 端点重放的键是 `name+address+port`；上游 `McpServerEndpoint` 只按 `mcpName` 记录，同一服务器的多个端点重连后只剩最后一个被重放。
+  4. 服务器拒绝的注册不会被记下稍后补发，注销则先移除本地意图再发送；上游先缓存意图、注销成功后才清除，于是重连会重试一个调用方已被告知失败的注册。与命名客户端的 redo 语义一致。
+  5. 注销时带上该端点发布时的版本（客户端自己记录）：服务端按版本解析要移除实例的目标服务（`operateEndpoint` → `buildServiceRef`），上游不发版本、由服务端取“当前最新”，端点固定在已被取代的版本上时就会作用在错的服务上、实例残留。
+- 日志事件：8003 端点已注册、8004 端点已注销、8005 重放失败（Warning）、8006 重放数量、8007 订阅资源变化（Debug）、8008 刷新失败（Warning）。
+- 验收：Release 构建零警告零错误；单元测试 **412 个全绿**（新增 26 个：订阅首值/版本与 latest 键/变化投递/404 容忍/刷新失败容忍/缓存命中/第二个订阅者/退订停止轮询/释放时结束/参数与能力位门禁；端点的请求字段/端口校验/错误上抛/重连重放/拒绝不重放/注销停止重放/多端点重放/释放后拒绝/惰性连接）；集成测试新增 3 个用例，在 `nacos/nacos-server:v3.2.4` 上全绿（订阅收到真实服务器发布的新版本且 `is_latest` 随之为真；远端服务器发布 → 注册端点 → 轮询到实例出现在 `backendEndpoints`（地址与 `exportPath`）→ 注销后消失 → 不带版本再注册并同样可见；未知名字注册端点回 `404`）。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

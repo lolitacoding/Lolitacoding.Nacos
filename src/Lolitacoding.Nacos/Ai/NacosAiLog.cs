@@ -35,4 +35,81 @@ internal static partial class NacosAiLog
         Level = LogLevel.Warning,
         Message = "The query for MCP server {Name} version {Version} succeeded but carried no server detail.")]
     public static partial void McpServerDetailMissing(ILogger logger, string name, string? version);
+
+    /// <summary>Logs that an MCP server endpoint was registered.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The MCP server name.</param>
+    /// <param name="address">The endpoint address.</param>
+    /// <param name="port">The endpoint port.</param>
+    /// <remarks>
+    /// Registering an endpoint is what makes a published server reachable, so it is recorded at the
+    /// default level alongside the release.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8003,
+        Level = LogLevel.Information,
+        Message = "Registered MCP server {Name} endpoint {Address}:{Port}.")]
+    public static partial void McpEndpointRegistered(ILogger logger, string name, string address, int port);
+
+    /// <summary>Logs that an MCP server endpoint was removed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The MCP server name.</param>
+    /// <param name="address">The endpoint address.</param>
+    /// <param name="port">The endpoint port.</param>
+    [LoggerMessage(
+        EventId = 8004,
+        Level = LogLevel.Information,
+        Message = "Deregistered MCP server {Name} endpoint {Address}:{Port}.")]
+    public static partial void McpEndpointDeregistered(ILogger logger, string name, string address, int port);
+
+    /// <summary>Logs that an endpoint could not be replayed after a reconnect.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The MCP server name.</param>
+    /// <param name="reason">The error the server or transport reported.</param>
+    /// <remarks>
+    /// The endpoint stays recorded, so the next reconnect tries again rather than dropping it.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8005,
+        Level = LogLevel.Warning,
+        Message = "Failed to replay MCP server {Name} endpoint after a reconnect: {Reason}")]
+    public static partial void McpEndpointRestoreFailed(ILogger logger, string name, string reason);
+
+    /// <summary>Logs how many MCP server endpoints were replayed after a reconnect.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">The number of endpoints the server accepted again.</param>
+    [LoggerMessage(
+        EventId = 8006,
+        Level = LogLevel.Information,
+        Message = "Replayed {Count} MCP server endpoint(s) after a reconnect.")]
+    public static partial void McpEndpointsRestored(ILogger logger, int count);
+
+    /// <summary>Logs that a subscribed MCP server changed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The MCP server name.</param>
+    /// <param name="version">The version whose detail changed.</param>
+    /// <remarks>
+    /// Debug level: the change is delivered to the subscriber, so this only helps when working out
+    /// why a subscription did or did not fire.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8007,
+        Level = LogLevel.Debug,
+        Message = "MCP server {Name} version {Version} changed.")]
+    public static partial void McpServerChanged(ILogger logger, string name, string version);
+
+    /// <summary>Logs that a subscription refresh failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The MCP server name.</param>
+    /// <param name="version">The version being refreshed.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A refresh that fails leaves the cached detail in place and is retried on the next interval,
+    /// because a subscription is meant to survive an outage rather than fail with it.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8008,
+        Level = LogLevel.Warning,
+        Message = "Refreshing the subscription for MCP server {Name} version {Version} failed: {Reason}")]
+    public static partial void McpServerRefreshFailed(ILogger logger, string name, string? version, string reason);
 }

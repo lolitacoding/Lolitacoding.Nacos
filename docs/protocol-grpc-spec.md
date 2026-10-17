@@ -708,10 +708,20 @@ that means for a caller is recorded in the
 | --- | --- | --- |
 | `QueryMcpServerRequest` | `QueryMcpServerResponse` | `namespaceId`, `mcpId`, `mcpName`, `version` |
 | `ReleaseMcpServerRequest` | `ReleaseMcpServerResponse` | `namespaceId`, `mcpId`, `mcpName`, `serverSpecification`, `toolSpecification`, `resourceSpecification`, `endpointSpecification`, `createDraft` |
+| `McpServerEndpointRequest` | `McpServerEndpointResponse` | `namespaceId`, `mcpName`, `address`, `port`, `version`, `type` |
 
 `QueryMcpServerResponse` carries one field, `mcpServerDetailInfo` (`McpServerDetailInfo`).
-`ReleaseMcpServerResponse` carries `mcpId`. `McpServerDetailInfo` extends `McpServerBasicInfo` with
+`ReleaseMcpServerResponse` carries `mcpId`, and `McpServerEndpointResponse` carries `type` (the
+operation the server performed, echoed back). `McpServerDetailInfo` extends `McpServerBasicInfo` with
 `backendEndpoints`, `frontendEndpoints`, `toolSpec`, `resourceSpec` and `allVersions`.
+
+`McpServerEndpointRequest.type` is one of `registerEndpoint`, `batchRegisterEndpoint` or
+`deregisterEndpoint` (`AiRemoteConstants`), and the endpoint it acts on is an instance of a *naming*
+service: the AI handler (`McpClientApplicationService.operateEndpoint`) resolves the server's `REF`
+endpoint to a Naming service and registers the instance through the Naming module with the
+*publisher's connection id*. So `version` is not decorative — the server resolves the target service by
+it (`query(namespaceId, mcpName, version)` then `buildServiceRef`) — and a client that omits it is
+asking the server to resolve whatever it currently labels latest.
 
 Field names that break the camel-case policy every other payload follows:
 

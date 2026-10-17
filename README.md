@@ -197,18 +197,29 @@ foreach (NacosMcpTool tool in server.ToolSpec?.Tools ?? [])
 {
     Console.WriteLine(tool.Name);
 }
+
+// Nacos has no MCP change push, so a subscription re-reads the server on the configured interval
+// and yields the detail again whenever it changed.
+await foreach (NacosMcpServerDetail change in
+    client.Ai.Mcp.SubscribeServerAsync("weather", ct: cancellationToken))
+{
+    Console.WriteLine(change.VersionDetail?.Version);
+}
 ```
 
 `client.Ai` reaches the Nacos AI registry. This release covers the MCP server registry —
-`GetServerAsync` reads one server, by name and optionally by version, and `ReleaseServerAsync`
-publishes one version of one with its tool list. Prompts, skills, agent specifications and agents
-follow the same shape; the MCP servers are the part the transport and the models were built for
-first.
+`GetServerAsync` reads one server, by name and optionally by version, `ReleaseServerAsync` publishes
+one version of one with its tool list, `SubscribeServerAsync` follows one and reports the changes, and
+`RegisterServerEndpointAsync` / `DeregisterServerEndpointAsync` publish the address a server is
+reachable at. Prompts, skills, agent specifications and agents follow the same shape; the MCP servers
+are the part the transport and the models were built for first.
 
 The models are the MCP protocol's own objects rather than a projection of them — a tool's JSON
 Schema stays JSON, and MCP's `_meta` member keeps its underscore — because Nacos stores what it is
-given and serves it back to MCP clients unchanged. Reading is a direct query rather than a
-subscription, so it reports the server's current state and needs the server to be reachable.
+given and serves it back to MCP clients unchanged. A read is a direct query, so it reports the
+server's current state and needs the server to be reachable; a subscription is the one operation with
+a local copy, and an endpoint is a Naming instance rather than an AI record, so it is discovered and
+health checked like any other instance.
 
 The AI registry is served from Nacos **3.0.3** on; [the FAQ](docs/faq.md#which-nacos-versions-are-supported)
 says which server each module needs. The AI connection is opened on first use, like the lock

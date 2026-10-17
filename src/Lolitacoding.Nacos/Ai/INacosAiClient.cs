@@ -37,7 +37,13 @@ public interface INacosAiClient : IAsyncDisposable
 /// <para>
 /// The registry also routes MCP calls: a server is published with either a fixed address or a Nacos
 /// service reference, and Nacos resolves the reference through service discovery so that ordinary
-/// health checking and load balancing apply to the MCP backend.
+/// health checking and load balancing apply to the MCP backend. Publishing the address an instance
+/// runs at is <see cref="RegisterServerEndpointAsync"/>, which is how a server that is already
+/// running tells Nacos where to reach it.
+/// </para>
+/// <para>
+/// Nacos has no MCP change notification, so following a server is a re-read on an interval rather
+/// than a server-initiated push; see <see cref="SubscribeServerAsync"/>.
 /// </para>
 /// </remarks>
 public interface INacosMcpRegistry
@@ -96,5 +102,103 @@ public interface INacosMcpRegistry
         NacosMcpResourceSpecification? resources = null,
         NacosMcpEndpointSpec? endpoint = null,
         bool createDraft = false,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Subscribes to one version of an MCP server.
+    /// </summary>
+    /// <param name="name">The server name.</param>
+    /// <param name="version">The version to watch, or <see langword="null"/> for the latest one.</param>
+    /// <param name="ct">
+    /// A token that ends the subscription. Leaving the enumerable ends it too.
+    /// </param>
+    /// <returns>
+    /// The current detail, then the detail again on every change. A server that has not been
+    /// released yet yields nothing until it appears.
+    /// </returns>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is null or whitespace.</exception>
+    /// <exception cref="NacosServerException">
+    /// The read that seeds the subscription failed for a reason other than the server not existing,
+    /// or the server does not implement the MCP registry.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// Nacos does not push MCP changes, so a subscription is served by re-reading the server on the
+    /// interval configured by <see cref="NacosAiOptions.CacheRefreshInterval"/> and yielding the
+    /// result when it differs from the copy that was cached. A read that fails does not end the
+    /// subscription: the last known detail stays cached and the read is retried, so a watcher
+    /// survives a control-plane outage instead of failing with it.
+    /// </para>
+    /// <para>
+    /// Subscribing without a version watches the version Nacos labels <c>latest</c>, which moves
+    /// when a newer version is released. Subscribing to an exact version watches that version, and
+    /// reports when it stops being the latest one.
+    /// </para>
+    /// </remarks>
+    IAsyncEnumerable<NacosMcpServerDetail> SubscribeServerAsync(
+        string name,
+        string? version = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Publishes a runtime endpoint for an MCP server.
+    /// </summary>
+    /// <param name="name">The server name.</param>
+    /// <param name="address">The endpoint address.</param>
+    /// <param name="port">The endpoint port.</param>
+    /// <param name="version">
+    /// The version the endpoint serves, or <see langword="null"/> to serve every version.
+    /// </param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once Nacos accepted the endpoint.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> or <paramref name="address"/> is null or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="port"/> is not 1 to 65535.</exception>
+    /// <exception cref="NacosServerException">
+    /// The server is unknown or publishes no service reference to attach the endpoint to, or the
+    /// server does not implement the MCP registry.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// Nacos stores the endpoint as an instance of the service the server's <c>REF</c> endpoint
+    /// names, so it is discovered, health checked and load balanced like any other instance. That
+    /// also means the endpoint belongs to the connection that registered it: Nacos removes it when
+    /// the connection closes, and this client republishes it after a reconnect.
+    /// </para>
+    /// <para>
+    /// The caller is the publisher, so a server that is registered with a fixed address
+    /// (<c>DIRECT</c>) has no service reference and cannot take an endpoint this way.
+    /// </para>
+    /// </remarks>
+    Task RegisterServerEndpointAsync(
+        string name,
+        string address,
+        int port,
+        string? version = null,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes a runtime endpoint of an MCP server.
+    /// </summary>
+    /// <param name="name">The server name.</param>
+    /// <param name="address">The endpoint address.</param>
+    /// <param name="port">The endpoint port.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once Nacos acknowledged the removal.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name"/> or <paramref name="address"/> is null or whitespace.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="port"/> is not 1 to 65535.</exception>
+    /// <exception cref="NacosServerException">The server does not implement the MCP registry.</exception>
+    /// <remarks>
+    /// The caller identifies the endpoint by address and port, and the version it was published for
+    /// is repeated from what this client recorded, because Nacos resolves the service to remove the
+    /// instance from by that version. Removing an endpoint that is not there is not an error.
+    /// </remarks>
+    Task DeregisterServerEndpointAsync(
+        string name,
+        string address,
+        int port,
         CancellationToken ct = default);
 }

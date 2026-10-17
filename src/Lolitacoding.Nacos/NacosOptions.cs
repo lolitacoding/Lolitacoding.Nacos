@@ -380,24 +380,30 @@ public sealed class NacosConfigOptions
 /// Tunes the AI registry client.
 /// </summary>
 /// <remarks>
-/// The AI registry keeps a locally cached copy of every resource a process asks for, so that a
-/// restart during a control-plane outage still finds the MCP servers, prompts and agents it needs.
+/// A resource a process subscribes to is cached locally and kept current, so that a change is reported
+/// without the caller having to poll and so that a subscription outlives a control-plane outage. A
+/// resource the process only reads is served straight from the server.
 /// </remarks>
 public sealed class NacosAiOptions
 {
     /// <summary>
     /// Gets or sets a value indicating whether AI resources are cached locally for failover.
     /// </summary>
+    /// <remarks>
+    /// Reserved for the on-disk failover cache, which is not implemented yet: the in-memory cache a
+    /// subscription uses is always on, and nothing is written to disk. The property exists because the
+    /// official client has it and a caller migrating from it expects to find it.
+    /// </remarks>
     public bool EnableLocalCache { get; set; } = true;
 
     /// <summary>
-    /// Gets or sets the interval at which a cached AI resource is refreshed in the background.
+    /// Gets or sets the interval at which a subscribed AI resource is refreshed.
     /// </summary>
     /// <remarks>
-    /// A Nacos server pushes a change to a subscriber but does not replay one the client missed, so
-    /// a cached resource is also re-read on this interval. The official client's
-    /// <c>nacosAiMcpServerCacheUpdateInterval</c> and its siblings default to ten seconds
-    /// (<c>AiConstants.DEFAULT_AI_CACHE_UPDATE_INTERVAL</c>).
+    /// Nacos has no AI change push, so this interval is the only thing that makes a subscription fire:
+    /// the client re-reads the server and reports the detail again when it differs from the copy that
+    /// was cached. The official client's <c>nacosAiMcpServerCacheUpdateInterval</c> and its siblings
+    /// default to ten seconds (<c>AiConstants.DEFAULT_AI_CACHE_UPDATE_INTERVAL</c>).
     /// </remarks>
     public TimeSpan CacheRefreshInterval { get; set; } = TimeSpan.FromSeconds(10);
 

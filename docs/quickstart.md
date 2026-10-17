@@ -436,13 +436,39 @@ var tools = new NacosMcpToolSpecification
 string? id = await client.Ai.Mcp.ReleaseServerAsync(specification, tools, cancellationToken);
 ```
 
-Three things are worth knowing before relying on this:
+Following a server is a subscription. Nacos pushes configuration and service changes but has no MCP
+change notification, so the client keeps the last detail it read and re-reads the server on an
+interval. The first element is the current state, so a consumer initialises and updates along one
+path:
+
+```csharp
+await foreach (NacosMcpServerDetail change in
+    client.Ai.Mcp.SubscribeServerAsync("weather", ct: cancellationToken))
+{
+    Console.WriteLine($"{change.Name} {change.VersionDetail?.Version} (latest: {change.VersionDetail?.IsLatest})");
+}
+```
+
+A server reached over the network is published as a Naming service, and its endpoint is an instance of
+it, so it becomes discoverable and health checked like any other instance:
+
+```csharp
+await client.Ai.Mcp.RegisterServerEndpointAsync("weather", "10.0.0.7", 8080, "1.2.0", cancellationToken);
+```
+
+Four things are worth knowing before relying on this:
 
 - The registry is served from Nacos **3.0.3** on. A 3.0.2 server answers a query or a release with
   `RequestHandler Not Found`; the [FAQ](faq.md#which-nacos-versions-are-supported) says which server
   each module needs.
-- Reading is a direct query rather than a locally cached snapshot, so it always reports the server's
-  current state — and needs the server to be reachable.
+- `GetServerAsync` is a direct query, so it always reports the server's current state — and needs the
+  server to be reachable. `SubscribeServerAsync` is the exception: it caches the last detail it read
+  and re-reads the server every `NacosAiOptions.CacheRefreshInterval` (10 s by default), because there
+  is no push to subscribe to. A failed re-read leaves the cached copy in place and is retried, so a
+  watcher outlives a control-plane outage.
+- An endpoint lives and dies with the connection that published it, so the client replays it after a
+  reconnect, and the version it was published for is remembered so that removing it removes it from the
+  service the registration used.
 - The AI connection is opened on first use, like the lock connection, and carries the `ai` module
   label plus a per-client `aiClientUuid` that Nacos records with everything the client publishes.
 

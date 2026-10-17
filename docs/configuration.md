@@ -69,8 +69,8 @@ drops.
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `EnableLocalCache` | `bool` | `true` | Keep the AI resources this client holds on disk, so a restart during a control-plane outage can still find the MCP servers, prompts and agents it needs. |
-| `CacheRefreshInterval` | `TimeSpan` | 10 s | How often a cached resource is re-read in the background. A server pushes a change to the clients that are connected at the time but does not replay one that was missed, so the cached copy is refreshed on this interval as well. Must be positive. |
+| `EnableLocalCache` | `bool` | `true` | Keep the AI resources this client holds on disk, so a restart during a control-plane outage can still find the MCP servers, prompts and agents it needs. Not implemented yet: the in-memory subscription cache is always on and nothing is written to disk. |
+| `CacheRefreshInterval` | `TimeSpan` | 10 s | How often a subscribed resource is re-read. Nacos has no AI change push, so this interval is the only thing that makes a subscription fire: the client re-reads the server and reports the detail again when it differs from the cached copy. Must be positive. |
 
 The cache is what a subscription populates; a plain query is served directly from the server and
 always reports what the server currently holds.

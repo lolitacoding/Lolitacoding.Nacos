@@ -89,6 +89,55 @@ internal sealed class ReleaseMcpServerRequest : McpRequest
 }
 
 /// <summary>
+/// A request to register or remove one runtime endpoint of an MCP server.
+/// </summary>
+/// <remarks>
+/// The endpoint is not stored with the server specification: Nacos registers it as an instance of
+/// the service the server's <c>REF</c> endpoint names, so ordinary service discovery, health
+/// checking and load balancing apply to it. That also means the endpoint lives and dies with the
+/// connection that registered it, which is why a client replays the registrations it still owns
+/// after a reconnect.
+/// </remarks>
+internal sealed class McpServerEndpointRequest : McpRequest
+{
+    /// <summary>Gets or sets the endpoint address.</summary>
+    public string? Address { get; set; }
+
+    /// <summary>Gets or sets the endpoint port.</summary>
+    public int Port { get; set; }
+
+    /// <summary>
+    /// Gets or sets the server version the endpoint serves.
+    /// </summary>
+    /// <remarks>
+    /// Unset publishes the endpoint for every version of the server; Nacos records the version a
+    /// named one carries as instance metadata when it registers the endpoint.
+    /// </remarks>
+    public string? Version { get; set; }
+
+    /// <summary>
+    /// Gets or sets the operation.
+    /// </summary>
+    /// <remarks>
+    /// One of <see cref="NacosAiRemote.RegisterEndpoint"/>,
+    /// <see cref="NacosAiRemote.BatchRegisterEndpoint"/> or
+    /// <see cref="NacosAiRemote.DeregisterEndpoint"/>. The server rejects anything else, so it is a
+    /// required field rather than an optional one.
+    /// </remarks>
+    public string? Type { get; set; }
+}
+
+/// <summary>
+/// The reply to an endpoint request.
+/// </summary>
+internal sealed class McpServerEndpointResponse : NacosResponse
+{
+    /// <summary>Gets or sets the operation the server performed.</summary>
+    /// <remarks>Echoed from the request; the client reads it only to confirm what it asked for.</remarks>
+    public string? Type { get; set; }
+}
+
+/// <summary>
 /// The reply to a request for one MCP server version.
 /// </summary>
 internal sealed class QueryMcpServerResponse : NacosResponse

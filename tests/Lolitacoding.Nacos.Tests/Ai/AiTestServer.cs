@@ -15,15 +15,23 @@ namespace Lolitacoding.Nacos.Tests.Ai;
 /// It answers the per-connection probe as the real server does, records every AI request it was
 /// asked to serve, and delegates the answer to the test. An unscripted request fails the test where
 /// it was made, so a client sending something unexpected is reported as such rather than as a
-/// timeout.
+/// timeout. Each connect gets a fresh stream, so a test can drop the connection and watch the client
+/// replay what it still owns.
 /// </remarks>
 internal sealed class AiTestServer
 {
     /// <summary>The address the channel and the client are built for.</summary>
     public static readonly NacosServerAddress Server = NacosServerAddress.Parse("127.0.0.1:8848");
 
+    private readonly Queue<FakeNacosDuplexStream> _pending = new(
+        Enumerable.Range(0, 4).Select(_ => new FakeNacosDuplexStream()));
+
+    private readonly List<FakeNacosChannel> _channels = [];
     private readonly List<QueryMcpServerRequest> _queries = [];
     private readonly List<ReleaseMcpServerRequest> _releases = [];
+    private readonly List<McpServerEndpointRequest> _endpoints = [];
+
+    private readonly Dictionary<string, bool> _abilities;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AiTestServer"/> class.
@@ -33,21 +41,23 @@ internal sealed class AiTestServer
     /// </param>
     public AiTestServer(Dictionary<string, bool>? abilities = null)
     {
-        Stream = new FakeNacosDuplexStream
-        {
-            SetupAckAbilityTable = abilities ?? [],
-        };
+        _abilities = abilities ?? [];
 
-        var channel = new FakeNacosChannel(Server, Handle, Stream);
-        Channel = channel;
-        Factory = new FakeNacosChannelFactory(_ => channel);
+        // A supply of streams so a test can drop one and let a fresh one replace it. They are
+        // prepared up front because the ability table is part of the handshake answer.
+        foreach (FakeNacosDuplexStream stream in _pending)
+        {
+            stream.SetupAckAbilityTable = _abilities;
+        }
+
+        Factory = new FakeNacosChannelFactory(NextChannel);
     }
 
-    /// <summary>Gets the channel the AI connection talks over.</summary>
-    public FakeNacosChannel Channel { get; }
+    /// <summary>Gets the stream the current connection talks over.</summary>
+    public FakeNacosDuplexStream Stream => _channels.Count > 0 ? _channels[^1].Stream : _pending.Peek();
 
-    /// <summary>Gets the stream the AI connection talks over.</summary>
-    public FakeNacosDuplexStream Stream { get; }
+    /// <summary>Gets the most recent channel the client connected over.</summary>
+    public FakeNacosChannel Channel => _channels[^1];
 
     /// <summary>Gets the channel factory the connection was built with.</summary>
     public FakeNacosChannelFactory Factory { get; }
@@ -76,6 +86,28 @@ internal sealed class AiTestServer
         }
     }
 
+    /// <summary>Gets the MCP endpoint requests the client sent, in order.</summary>
+    public IReadOnlyList<McpServerEndpointRequest> Endpoints
+    {
+        get
+        {
+            lock (_endpoints)
+            {
+                return [.. _endpoints];
+            }
+        }
+    }
+
+    /// <summary>Gets how many channels the client has connected over.</summary>
+    public int ConnectionCount => _channels.Count;
+
+    /// <summary>Counts the unary requests of a payload type name across every channel.</summary>
+    /// <param name="typeName">The payload type name.</param>
+    /// <returns>The number of matching requests.</returns>
+    public int CountRequests(string typeName) =>
+        _channels.Sum(channel => channel.UnaryRequests.Count(
+            payload => PayloadCodec.ReadTypeName(payload) == typeName));
+
     /// <summary>Gets or sets how the server answers an MCP query.</summary>
     public Func<QueryMcpServerRequest, QueryMcpServerResponse> OnQuery { get; set; } =
         _ => throw new InvalidOperationException("The test did not script an answer for an MCP query.");
@@ -83,6 +115,10 @@ internal sealed class AiTestServer
     /// <summary>Gets or sets how the server answers an MCP release.</summary>
     public Func<ReleaseMcpServerRequest, ReleaseMcpServerResponse> OnRelease { get; set; } =
         _ => throw new InvalidOperationException("The test did not script an answer for an MCP release.");
+
+    /// <summary>Gets or sets how the server answers an MCP endpoint operation.</summary>
+    public Func<McpServerEndpointRequest, McpServerEndpointResponse> OnEndpoint { get; set; } =
+        request => AiTest.Endpoint(request.Type!);
 
     /// <summary>
     /// Builds an AI client that talks to this server.
@@ -96,6 +132,15 @@ internal sealed class AiTestServer
             ServerAddresses = ["127.0.0.1:8848"],
             AppName = "ai-tests",
             ConnectionTimeout = TimeSpan.FromSeconds(5),
+
+            // Reconnect tests need the retry to happen at once rather than after the production
+            // delay, and with no jitter so the waits are deterministic.
+            Reconnect = new NacosReconnectOptions
+            {
+                InitialDelay = TimeSpan.FromMilliseconds(1),
+                MaxDelay = TimeSpan.FromMilliseconds(2),
+                JitterFactor = 0,
+            },
         };
 
         return new NacosAiClient(
@@ -105,6 +150,50 @@ internal sealed class AiTestServer
             TimeProvider.System,
             NullLoggerFactory.Instance,
             new Random(1234));
+    }
+
+    /// <summary>
+    /// Drops the current stream and waits for the automatic reconnect to connect.
+    /// </summary>
+    /// <returns>A task that completes once a fresh channel is in use.</returns>
+    public async Task DropAndReconnectAsync()
+    {
+        int channelsBefore = _channels.Count;
+
+        Stream.EndStream();
+
+        await WaitForAsync(() => _channels.Count > channelsBefore);
+
+        // Wait for the fresh channel to have completed a handshake before returning.
+        await WaitForAsync(() => _channels[^1].UnaryRequests.Count >= 1);
+    }
+
+    /// <summary>Waits until a condition holds, or throws when it never does.</summary>
+    /// <param name="condition">The condition to wait for.</param>
+    /// <returns>A task that completes once the condition holds.</returns>
+    public static async Task WaitForAsync(Func<bool> condition)
+    {
+        for (int i = 0; i < 1000; i++)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
+
+        throw new TimeoutException("The expected condition was not met within the timeout.");
+    }
+
+    private FakeNacosChannel NextChannel(NacosServerAddress address)
+    {
+        // Each attempt gets a stream of its own, so a reconnect writes to a stream the test can
+        // inspect separately from the one that was dropped.
+        var channel = new FakeNacosChannel(address, Handle, _pending.Dequeue());
+        _channels.Add(channel);
+
+        return channel;
     }
 
     private Payload Handle(Payload payload)
@@ -138,6 +227,18 @@ internal sealed class AiTestServer
                 return PayloadCodec.Encode(OnRelease(request));
             }
 
+            case "McpServerEndpointRequest":
+            {
+                McpServerEndpointRequest request = PayloadCodec.Decode<McpServerEndpointRequest>(payload)!;
+
+                lock (_endpoints)
+                {
+                    _endpoints.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnEndpoint(request));
+            }
+
             default:
                 throw new InvalidOperationException(
                     $"The AI server does not serve '{PayloadCodec.ReadTypeName(payload)}'.");
@@ -167,5 +268,40 @@ internal static class AiTest
         ResultCode = NacosResponse.FailureCode,
         ErrorCode = errorCode,
         Message = message,
+    };
+
+    /// <summary>Builds a successful MCP endpoint answer.</summary>
+    /// <param name="type">The operation the server performed.</param>
+    /// <returns>The answer.</returns>
+    public static McpServerEndpointResponse Endpoint(string type) => new() { Type = type };
+
+    /// <summary>Builds a failed MCP endpoint answer.</summary>
+    /// <param name="errorCode">The error code the server reports.</param>
+    /// <param name="message">The message the server reports.</param>
+    /// <returns>The answer.</returns>
+    public static McpServerEndpointResponse EndpointFailure(int errorCode, string message) => new()
+    {
+        ResultCode = NacosResponse.FailureCode,
+        ErrorCode = errorCode,
+        Message = message,
+    };
+
+    /// <summary>Builds an MCP server detail that carries a version.</summary>
+    /// <param name="name">The server name.</param>
+    /// <param name="version">The version.</param>
+    /// <param name="isLatest">Whether the server flags the version as the latest one.</param>
+    /// <param name="description">An optional description, used to make two versions differ.</param>
+    /// <returns>The detail.</returns>
+    public static NacosMcpServerDetail Server(
+        string name,
+        string version,
+        bool isLatest = true,
+        string? description = null) => new()
+    {
+        Name = name,
+        Protocol = NacosMcpProtocol.Streamable,
+        Description = description,
+        VersionDetail = new NacosMcpVersionDetail { Version = version, IsLatest = isLatest },
+        Status = NacosMcpStatus.Active,
     };
 }

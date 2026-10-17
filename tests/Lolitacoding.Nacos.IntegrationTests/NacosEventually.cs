@@ -40,6 +40,11 @@ internal static class NacosEventually
     /// The first value that satisfies <paramref name="isSatisfied"/>, or the last value read when
     /// none did, so that the caller's own assertion reports the state it observed.
     /// </returns>
+    /// <exception cref="NacosException">
+    /// No read succeeded, so there is no state to report. The failure itself is the answer, and
+    /// rethrowing it says what went wrong where returning <see langword="default"/> would report it
+    /// as a value the caller never read.
+    /// </exception>
     public static async Task<T> BecomesAsync<T>(
         Func<Task<T>> read,
         Func<T, bool> isSatisfied,
@@ -48,28 +53,32 @@ internal static class NacosEventually
         where T : notnull
     {
         T? last = default;
+        bool observed = false;
+        NacosException? failure = null;
 
         for (int attempt = 0; attempt < ReadAttempts; attempt++)
         {
             try
             {
                 last = await read().ConfigureAwait(false);
+                observed = true;
 
                 if (isSatisfied(last))
                 {
                     return last;
                 }
             }
-            catch (NacosException) when (tolerateFailures)
+            catch (NacosException ex) when (tolerateFailures)
             {
                 // The server refused the read because it has not applied the write yet, or because
                 // the connection is still coming back; both are waited out rather than reported.
+                failure = ex;
             }
 
             await Task.Delay(Interval, ct).ConfigureAwait(false);
         }
 
-        return last!;
+        return observed ? last! : throw failure!;
     }
 
     /// <summary>
