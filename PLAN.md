@@ -277,7 +277,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 失败语义：不存在的 MCP 服务器是业务错误（服务器回 `404` + `MCP server not found`，注册表自身的 `MCP_SERVER_NOT_FOUND` 为 `50000`）；因此“成功但无 detail”按契约破坏（`NacosServerException`）处理，而不是当成空结果。
 - 关键发现：MCP 客户端契约属于 **3.0.3**（`McpService` 标注 `@Since("3.0.3")`），而套件固化的最老 3.x（`v3.0.2`）对查询与发布都回 `RequestHandler Not Found`。AI 集成用例改用独立镜像（`NACOS_AI_TEST_IMAGE`，默认 `v3.2.4`——已验证可服务注册表的最老版本），其余套件仍为 `v3.0.2`。
 - 选项 `NacosAiOptions`（`EnableLocalCache` / `CacheRefreshInterval`）随本阶段引入；`CacheRefreshInterval` 在 C2 的订阅中生效，`EnableLocalCache`（落盘 failover）至今仍未实现，内存中的订阅缓存始终开启，文档与 XML 注释都如实写明。
-- 这一阶段暂不做 gRPC↔HTTP 自动回退：服务器缺失能力位时按上述 501 语义报错即可，回退留到 C8。
+- 这一阶段暂不做 gRPC↔HTTP 自动回退：服务器缺失能力位时按上述 501 语义报错即可；回退推迟到 C8 之后的独立切片（C8 说明了为何仍不能真机验证）。
 - 验收：Release 构建零警告零错误；单元测试 **386 个全绿**（新增 26 个：查询/发布的字段映射与参数校验、能力位门禁与“未声明即放行”、服务器错误码上抛、`createDraft` 省略、模型 JSON 契约与整条详情往返）；集成测试新增 2 个用例，在 `nacos/nacos-server:v3.2.4` 上全绿（发布 → 查询（含 `allVersions` 与工具清单）→ 按版本再查；未发布的名字回业务错误且先发布一次以证明注册表确实在服务）。
 
 #### C2 · MCP 订阅与本地缓存 + 端点注册/注销（✅ 已完成）
@@ -374,6 +374,16 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **移除按协议**而非按端点：请求只带 agentName + protocol，因为一个进程注册的端点只有作为集合才有意义。
 - 读取：`PublishAgentAsync` / `SearchAgentsAsync` / `DiscoverAgentAsync` / `RegisterEndpointsAsync` / `DeregisterEndpointsAsync`；客户端前置校验（publish 的 name+version、批次的 agent/protocol/非空端点），版本区间留给服务端规范化。日志事件：8029 已发布（Info）、8030 发布缺详情（Warning）、8031 发现缺结果（Warning）、8032/8033 端点批次注册与移除（Info）。
 - 验收：Release 构建零警告零错误；单元测试 **552 个全绿**（新增 14 个：发布字段与线上类型名 / 必填校验 / 缺详情 / 搜索与分页 / 发现与过滤器 / 缺结果 / 端点批次 / 空批次拒绝 / 按协议移除 / 能力位四态）；集成测试新增 5 个用例（整套 **51 个**），跑在 `nacos/nacos-server:v3.3.0-RC` 上：发布→搜索→发现闭环、搜索命中、未知 agent 报错、注册端点后成为发现结果里的 RUNTIME 端点、按协议移除后消失。
+
+#### C8 · DI 收口、示例与版本矩阵（✅ 已完成；gRPC↔HTTP 回退仍推迟）
+
+- **DI 接线**：`AddNacos` 原本只注册 `NacosClient` / `INacosConfigClient` / `INacosNamingClient`，锁与 AI 两个后加的模块要调用方自己 `GetRequiredService<NacosClient>().Lock` / `.Ai` 才能拿到。现按同样方式注册，且都解析为共享客户端持有的那个实例，不会开第二条连接。
+- **同步释放缺陷（接线后暴露）**：DI 容器默认同步释放单例，遇到只实现 `IAsyncDisposable` 的实例会抛 `InvalidOperationException: '...' type only implements IAsyncDisposable`。`NacosClient` / `NacosConfigClient` / `NacosNamingClient` 都实现了 `IDisposable` 以避免这一点，但 `NacosLockClient` 与 `NacosAiClient` 没有——此前没有任何容器持有它们，所以从未暴露。两者现按同一模式补上 `IDisposable`（阻塞等待 `DisposeAsync`，只关进程内资源），`using IHost` 的正常关停重新可用。**并非只有 AI 不能同步释放：锁客户端同样不能**；早先“只有 AI”的判断来自只接线了一个模块。
+- 注册测试改为解析四个特性客户端并断言各自就是共享客户端的实例；它以**同步**方式释放 provider，因此任何一个特性客户端一旦不再可同步释放，测试即失败。
+- 新增可运行示例 `samples/Sample.AiRegistry`：从容器解析 `INacosAiClient`，读取 MCP / Prompt / Skill / AgentSpec / AgentCard 五种资源并订阅一个 MCP server，按常规方式释放 host。
+- **gRPC↔HTTP 自动回退仍不做**：官方客户端有 `McpTransportRouter` / `PromptTransportRouter` / `AgentTransportRouter`（配 `AiCapabilityCache` 与约 1165 行的 `AiHttpClientProxy`），按能力缓存把调用分流到 gRPC 或 HTTP；本客户端仍只走 gRPC（技能与 agent spec 本来就是 HTTP）。差别只在“gRPC 能力缺失但 HTTP 面存在”的服务器上体现，而现有镜像没有这种服务器可验证，故按“宁可不做也不发未验证代码”的原则推迟为独立切片，当前行为记录在 `docs/protocol-notes.md` 的「Transport selection and HTTP fallback」。
+- 版本矩阵与四个集成镜像的对应关系补入 `docs/faq.md`。
+- 验收：Release 构建零警告零错误；单元测试 **552 个全绿**；集成测试 **51 个全绿**（`v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本、四个镜像）。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

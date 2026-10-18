@@ -6,7 +6,23 @@ Nacos **3.x**. The transport speaks the Nacos gRPC protocol, which is unchanged 
 and the v3 HTTP OpenAPI for authentication. The integration suite runs against
 `nacos/nacos-server:v3.0.2` unless `NACOS_TEST_IMAGE` names another server.
 
-Two modules are younger than that release, so their tests choose a server of their own:
+The surfaces did not all arrive at once, so each is pinned to the oldest release it was verified
+against — which is also what an override lets a CI run move:
+
+| Surface | Served from | Verified against | Override |
+| --- | --- | --- | --- |
+| Transport, Config, Naming, Auth, TLS | 3.0.2 | `nacos/nacos-server:v3.0.2` | `NACOS_TEST_IMAGE` |
+| MCP server registry | 3.0.3 | `nacos/nacos-server:v3.2.4` | `NACOS_AI_TEST_IMAGE` |
+| A2A agent card registry | 3.1.0 | `nacos/nacos-server:v3.2.4` | `NACOS_AI_TEST_IMAGE` |
+| Prompt, Skill and AgentSpec registries | 3.2.0 | `nacos/nacos-server:v3.2.4` | `NACOS_AI_TEST_IMAGE` |
+| RAD agent registry | 3.3.0 | `nacos/nacos-server:v3.3.0-RC` | `NACOS_AGENT_TEST_IMAGE` |
+| Distributed lock, full contract | 3.3.0 | `nacos/nacos-server:v3.3.0-RC` | `NACOS_LOCK_TEST_IMAGE` |
+
+Where a surface is *served from* an older release than it is *verified against*, the older release
+has not been put through the suite yet; "served from" is the release the upstream contract names,
+"verified against" is the oldest one a run has actually passed. The reasons are below.
+
+Several surfaces are younger than that base release, so their tests choose a server of their own:
 
 - The **AI registry** is served in two waves. The **MCP server registry** is the first: Nacos **3.0.3**
   on, because the official API marks `getMcpServer` and `releaseMcpServer` `@Since("3.0.3")`, and a

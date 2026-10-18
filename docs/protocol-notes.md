@@ -644,6 +644,22 @@ interfaces and runtime endpoints, managed the way a prompt or a skill is.
    sending, and leaves the version binding to the server, which is the only side that can canonicalise
    a range.
 
+### Transport selection and HTTP fallback
+
+The official client can serve an MCP, prompt or agent call over either the AI gRPC connection or the
+AI HTTP OpenAPI, and routes each call by the capabilities a binding advertises — `McpTransportRouter`,
+`PromptTransportRouter` and `AgentTransportRouter`, backed by `AiCapabilityCache` and
+`AiHttpClientProxy`. This client does not: every operation that has a gRPC contract travels over the
+AI connection, and only the resources the server exposes as HTTP alone — a skill and an agent
+specification — are read over HTTP.
+
+The difference shows only against a server whose gRPC abilities are absent while its HTTP AI surface is
+present. Such a server is answered by the request's own failure — `RequestHandler Not Found`, or an
+explicit `501` where the ability is advertised as `false` — rather than by a fallback. No published
+release has been found that exposes one surface without the other, so the fallback is left
+unimplemented rather than shipped unverified; adding it is a slice of its own and is deliberately
+deferred.
+
 ## Authentication
 
 - The client logs in over the HTTP OpenAPI and caches the access token, refreshing it before expiry.

@@ -4,7 +4,7 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// Shared constants describing the Nacos containers the integration tests run against.
 /// </summary>
 /// <remarks>
-/// Three images are exercised, because the modules did not all arrive at once: the lock service the
+/// Four images are exercised, because the modules did not all arrive at once: the lock service the
 /// client speaks to belongs to the 3.3 line, the lock module a 3.2 server ships is an earlier
 /// contract that can neither renew a lease nor queue a waiter, and the AI registry is younger than
 /// the oldest server the rest of the suite runs against. Which image a test runs against is
