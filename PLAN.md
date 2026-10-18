@@ -382,8 +382,9 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 注册测试改为解析四个特性客户端并断言各自就是共享客户端的实例；它以**同步**方式释放 provider，因此任何一个特性客户端一旦不再可同步释放，测试即失败。
 - 新增可运行示例 `samples/Sample.AiRegistry`：从容器解析 `INacosAiClient`，读取 MCP / Prompt / Skill / AgentSpec / AgentCard 五种资源并订阅一个 MCP server，按常规方式释放 host。
 - **gRPC↔HTTP 自动回退仍不做**：官方客户端有 `McpTransportRouter` / `PromptTransportRouter` / `AgentTransportRouter`（配 `AiCapabilityCache` 与约 1165 行的 `AiHttpClientProxy`），按能力缓存把调用分流到 gRPC 或 HTTP；本客户端仍只走 gRPC（技能与 agent spec 本来就是 HTTP）。差别只在“gRPC 能力缺失但 HTTP 面存在”的服务器上体现，而现有镜像没有这种服务器可验证，故按“宁可不做也不发未验证代码”的原则推迟为独立切片，当前行为记录在 `docs/protocol-notes.md` 的「Transport selection and HTTP fallback」。
-- 版本矩阵与四个集成镜像的对应关系补入 `docs/faq.md`。
-- 验收：Release 构建零警告零错误；单元测试 **552 个全绿**；集成测试 **51 个全绿**（`v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本、四个镜像）。
+- 版本矩阵与四个集成镜像的对应关系补入 `docs/faq.md`。CI 的集成任务改为矩阵：基座套件在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本上各跑一遍（本地分别 51/51 验证），模块镜像保持固定。
+- 修复 `ConfigIntegrationTests.Listen_SurvivesAServerRestart` 的固有竞态：`ListenAsync` 的推送注册只在枚举恢复到下一个元素时才发生，会与容器重启后客户端的重连赛跑——连接尚未建立时注册被拒，异常从 `MoveNextAsync` 抛出并直接判负。测试现在先等一次读成功（`tolerateFailures`）再恢复枚举，竞态消除；“重连期间请求不排队”这一产品缺口另有文档记录，不由该测试断言。
+- 验收：Release 构建零警告零错误；单元测试 **552 个全绿**；集成测试 **51 个全绿**，基座套件在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本上分别通过（四个镜像）。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
 

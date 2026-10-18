@@ -3,8 +3,9 @@
 ## Which Nacos versions are supported?
 
 Nacos **3.x**. The transport speaks the Nacos gRPC protocol, which is unchanged across the 3.x line,
-and the v3 HTTP OpenAPI for authentication. The integration suite runs against
-`nacos/nacos-server:v3.0.2` unless `NACOS_TEST_IMAGE` names another server.
+and the v3 HTTP OpenAPI for authentication. By default the integration suite runs against
+`nacos/nacos-server:v3.0.2`, the oldest supported release, and `NACOS_TEST_IMAGE` moves a run to
+another server; CI runs the base suite against every version in the matrix below.
 
 The surfaces did not all arrive at once, so each is pinned to the oldest release it was verified
 against — which is also what an override lets a CI run move:

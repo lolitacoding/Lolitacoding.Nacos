@@ -126,13 +126,23 @@ public sealed class ConfigIntegrationTests
         // returns only once the server reports ready, so the publish can follow it.
         Task restart = Task.Run(() => container.StartAsync(cts.Token), cts.Token);
 
-        // The server discards the registration with the connection, so the push proves it was
-        // replayed. Repeating the publish also covers the window in which the connection is still
-        // coming back and a request would be refused rather than delivered.
+        // The listener's push handler is registered only when the enumeration is resumed, and after
+        // the server returns the client reconnects on its own backoff. Waiting for a read to succeed
+        // before the registration keeps it from racing that reconnect: a request made while one is in
+        // progress is refused rather than queued, a gap the protocol notes record, not a property
+        // this test is about. Repeating the publish then covers the window between the first value
+        // and the registration, in which a change is not pushed to this subscriber.
         await NacosEventually.PushedAsync(
             async ct =>
             {
                 await restart.ConfigureAwait(false);
+
+                await NacosEventually.BecomesAsync(
+                    () => client.Config.GetConfigAsync(key, ct),
+                    _ => true,
+                    ct,
+                    tolerateFailures: true).ConfigureAwait(false);
+
                 await client.Config.PublishConfigAsync(key, updated, "text", ct: ct).ConfigureAwait(false);
             },
             enumerator,
