@@ -20,7 +20,7 @@ namespace Lolitacoding.Nacos.Ai;
 /// while the connection cannot.
 /// </para>
 /// </remarks>
-internal sealed class NacosAiClient : INacosAiClient
+internal sealed class NacosAiClient : INacosAiClient, IDisposable
 {
     private readonly NacosLazyModuleConnection _connection;
     private readonly NacosMcpClient _mcp;
@@ -188,4 +188,16 @@ internal sealed class NacosAiClient : INacosAiClient
         await _mcp.DisposeAsync().ConfigureAwait(false);
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Releases the client synchronously.
+    /// </summary>
+    /// <remarks>
+    /// A dependency injection container disposes its singletons synchronously by default, and a
+    /// service that implements only <see cref="IAsyncDisposable"/> makes the container throw when it
+    /// is disposed that way. Like the shared client, configuration and naming, the AI client is
+    /// therefore also synchronously disposable; the disposal closes in-process resources rather than
+    /// waiting on the server, so blocking briefly here is safe.
+    /// </remarks>
+    void IDisposable.Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 }

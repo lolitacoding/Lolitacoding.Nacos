@@ -1,6 +1,8 @@
+using Lolitacoding.Nacos.Ai;
 using Lolitacoding.Nacos.Client;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Extensions.DependencyInjection;
+using Lolitacoding.Nacos.Locking;
 using Lolitacoding.Nacos.Naming;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,8 +19,10 @@ public sealed class NacosServiceCollectionExtensionsTests
     private const string Server = "http://127.0.0.1:8848";
 
     [Fact]
-    public void AddNacos_RegistersTheSharedClientAndBothFeatureClients()
+    public void AddNacos_RegistersTheSharedClientAndEveryFeatureClient()
     {
+        // Disposal is synchronous on purpose: every feature client supports it, so the container's
+        // default `using IHost` shutdown does not throw once the feature clients have been resolved.
         using ServiceProvider provider = Build(o => o.ServerAddresses = [Server]);
 
         NacosClient client = provider.GetRequiredService<NacosClient>();
@@ -27,6 +31,8 @@ public sealed class NacosServiceCollectionExtensionsTests
         // with their own connections.
         provider.GetRequiredService<INacosConfigClient>().ShouldBeSameAs(client.Config);
         provider.GetRequiredService<INacosNamingClient>().ShouldBeSameAs(client.Naming);
+        provider.GetRequiredService<INacosLockClient>().ShouldBeSameAs(client.Lock);
+        provider.GetRequiredService<INacosAiClient>().ShouldBeSameAs(client.Ai);
         provider.GetRequiredService<TimeProvider>().ShouldBe(TimeProvider.System);
     }
 

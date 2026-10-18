@@ -90,6 +90,10 @@ builder.Services.AddNacos(options =>
 });
 ```
 
+`AddNacos` registers `NacosClient` and each feature client — `INacosConfigClient`, `INacosNamingClient`,
+`INacosLockClient`, `INacosAiClient` — as singletons that resolve to the instance the shared client
+holds, so a second registration never opens a second connection.
+
 ### Configuration provider with hot reload
 
 ```csharp
@@ -272,7 +276,8 @@ prompt, skill and agent-specification registries from **3.2.0** on, and the RAD 
 says which server each module needs. The AI connection is opened on first use, like the lock
 connection, and carries the `ai` module label plus the per-client identifier Nacos records with
 everything the client publishes. See
-[quick start §11](docs/quickstart.md#11-use-the-ai-registry).
+[quick start §11](docs/quickstart.md#11-use-the-ai-registry) and `samples/Sample.AiRegistry`, which
+reads every resource from a host and follows an MCP server.
 
 ### Observability
 

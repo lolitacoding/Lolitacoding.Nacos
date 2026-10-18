@@ -157,7 +157,9 @@ public sealed class MyService(NacosClient nacos)
 }
 ```
 
-`AddNacos` registers `NacosClient`, `INacosConfigClient` and `INacosNamingClient` as singletons and
+`AddNacos` registers `NacosClient` and each feature client — `INacosConfigClient`,
+`INacosNamingClient`, `INacosLockClient` and `INacosAiClient` — as singletons, each resolving to the
+instance the shared client holds so a second registration never opens a second connection. It also
 adds a hosted service that connects on startup and closes the connection on shutdown. There are
 three overloads:
 
@@ -755,6 +757,9 @@ Five things are worth knowing before relying on this:
   that only reads or follows those never opens it. The HTTP path presents the same access token, in
   the `accessToken` header the client OpenAPI reads rather than as a bearer header. An agent card is
   the opposite: it is served over the AI connection, so reading one opens it.
+
+`samples/Sample.AiRegistry` is a runnable host that resolves `INacosAiClient` and shows every one of
+these resources, plus a subscription, in one place.
 
 ## Next steps
 

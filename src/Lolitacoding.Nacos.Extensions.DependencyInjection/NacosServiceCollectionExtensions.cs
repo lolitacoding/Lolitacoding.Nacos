@@ -120,8 +120,12 @@ public static class NacosServiceCollectionExtensions
             sp.GetService<ILoggerFactory>(),
             sp.GetService<TimeProvider>()));
 
+        // Every module the client exposes is resolvable on its own, and each one is the instance the
+        // shared client holds: a second registration would mean a second connection.
         services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Config);
         services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Naming);
+        services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Lock);
+        services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Ai);
 
         // The hosted service owns the startup connection so that a host's own start-up ordering
         // decides when Nacos is contacted; disposal of the singleton client closes the connection.

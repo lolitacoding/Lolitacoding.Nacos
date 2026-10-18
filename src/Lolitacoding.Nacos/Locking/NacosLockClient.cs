@@ -30,7 +30,7 @@ namespace Lolitacoding.Nacos.Locking;
 /// connection and a heartbeat for the module it does not use.
 /// </para>
 /// </remarks>
-internal sealed class NacosLockClient : INacosLockClient
+internal sealed class NacosLockClient : INacosLockClient, IDisposable
 {
     /// <summary>The operation discriminator the server expects for each operation.</summary>
     private const string AcquireOperation = "ACQUIRE";
@@ -351,6 +351,18 @@ internal sealed class NacosLockClient : INacosLockClient
 
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Releases the client synchronously.
+    /// </summary>
+    /// <remarks>
+    /// A dependency injection container disposes its singletons synchronously by default, and a
+    /// service that implements only <see cref="IAsyncDisposable"/> makes the container throw when it
+    /// is disposed that way. Like the shared client, configuration and naming, the lock client is
+    /// therefore also synchronously disposable; the disposal closes in-process resources rather than
+    /// waiting on the server, so blocking briefly here is safe.
+    /// </remarks>
+    void IDisposable.Dispose() => DisposeAsync().AsTask().GetAwaiter().GetResult();
 
     /// <summary>
     /// Routes a push that arrived on the lock connection.

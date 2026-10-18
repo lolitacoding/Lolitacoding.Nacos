@@ -64,8 +64,9 @@ Pass a different `connectionName` when the AppHost adds the resource under anoth
 throws `InvalidOperationException` at startup when the connection string is missing, so a forgotten
 `WithReference` fails immediately rather than at the first request.
 
-`AddNacosClient` only registers the core clients. To also use Nacos as a configuration source or to
-register the instance automatically, reuse the same address:
+`AddNacosClient` registers the shared client and every feature client, enough to read configuration and
+discover services in code. It does not install Nacos as an `IConfiguration` source or register the
+instance automatically — add those separately, reusing the same address:
 
 ```csharp
 using Lolitacoding.Nacos.AspNetCore;
