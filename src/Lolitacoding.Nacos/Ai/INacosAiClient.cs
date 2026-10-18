@@ -740,4 +740,46 @@ public interface INacosAgentRegistry
         string agentName,
         string protocol,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Follows one version of an agent, yielding the current state and then every change.
+    /// </summary>
+    /// <param name="reference">The agent and the version or label to follow.</param>
+    /// <param name="filter">What the caller can use, or <see langword="null"/> for everything.</param>
+    /// <param name="ct">A token that ends the watch. Leaving the enumerable ends it too.</param>
+    /// <returns>
+    /// The state the filter resolved as the first element — or <see langword="null"/> when the agent
+    /// is not published — then the state again whenever the server reports the answer changed, with
+    /// <see langword="null"/> reporting that it stopped being served.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="reference"/> is null.</exception>
+    /// <exception cref="ArgumentException">The reference names no agent.</exception>
+    /// <exception cref="NacosServerException">
+    /// The server does not implement the RAD watch hint push, or stated nothing that says whether it
+    /// does. The error is raised from the enumerable rather than from this method.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// This is the push half of <see cref="DiscoverAgentAsync"/>: instead of the caller asking again
+    /// on its own schedule, the client keeps one watch open on the connection and reads the state
+    /// again when the server says the answer may have changed. Nothing about the state is carried by
+    /// the hint — it says only that there is something to look at.
+    /// </para>
+    /// <para>
+    /// The watch belongs to the connection. It is re-installed after a reconnect, and the state is
+    /// read again rather than assumed, because the answer may have moved on while the client was
+    /// disconnected. A watch also outlives the caller's own enumeration only as long as someone is
+    /// reading it: callers that follow the same agent share one watch, and the last one to stop ends
+    /// it.
+    /// </para>
+    /// <para>
+    /// A read that fails does not end the watch — the last state stays with the caller and the read is
+    /// tried again — but a server that cannot take the hint push is reported as such rather than
+    /// watched silently.
+    /// </para>
+    /// </remarks>
+    IAsyncEnumerable<NacosAgentDiscoveryResult?> WatchAgentAsync(
+        NacosAgentReference reference,
+        NacosAgentDiscoveryFilter? filter = null,
+        CancellationToken ct = default);
 }

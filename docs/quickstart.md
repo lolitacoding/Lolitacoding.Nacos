@@ -395,7 +395,7 @@ connection for it.
 specifications and agents. This release covers the MCP server registry — reading a released server,
 releasing one, following one, and publishing the address it is reachable at — the prompt registry, the
 skill registry, the agent-specification registry, the A2A agent card registry and the RAD agent
-registry.
+registry, including the RAD watch that lets an agent be followed by push rather than by polling.
 
 ```csharp
 using Lolitacoding.Nacos.Ai;
@@ -732,17 +732,36 @@ NacosAgentPage<NacosAgentSummary> page = await client.Ai.Agent.SearchAgentsAsync
     cancellationToken);
 ```
 
+A watch is the push half of discovery, so following an agent does not cost a read per interval:
+
+```csharp
+await foreach (NacosAgentDiscoveryResult? agent in client.Ai.Agent.WatchAgentAsync(
+    new NacosAgentReference { AgentName = "support-agent", Label = "stable" },
+    ct: cancellationToken))
+{
+    Console.WriteLine(agent?.Version);   // null: the agent is not being served right now
+}
+```
+
+The server pushes a hint when the answer *may* have changed rather than what it changed to, so the
+client reads the state again and reports it only when the read found something different. The first
+element is the current state and a later `null` element reports that the agent stopped being served,
+which is why the element type is nullable. The watch ends when the server ends it for a reason — the
+error is then raised from the enumeration — but an agent that is not published yet, or a connection
+that dropped, is not a reason: the watch reports `null` and keeps watching.
+
 The RAD registry is served from Nacos **3.3** on, and it is the one AI surface that will not guess:
-a server has to state the RAD ability before anything is sent. A server that only has the A2A card
-contract is refused with the not-implemented code rather than sent a payload it may not route.
+a server has to state the RAD ability before anything is sent, and the watch is negotiated on its own
+`radWatchV1` ability. A server that only has the A2A card contract is refused with the
+not-implemented code rather than sent a payload it may not route.
 
 Five things are worth knowing before relying on this:
 
 - The MCP registry is served from Nacos **3.0.3** on, the agent card registry from **3.1.0** on, the
-  prompt, skill and agent-specification registries from **3.2.0** on, and the RAD agent registry from
-  **3.3** on. An older server answers a query with `RequestHandler Not Found`, or, for RAD, is refused
-  before anything is sent; the [FAQ](faq.md#which-nacos-versions-are-supported) says which server each
-  module needs.
+  prompt, skill and agent-specification registries from **3.2.0** on, and the RAD agent registry and
+  its watch from **3.3** on. An older server answers a query with `RequestHandler Not Found`, or, for
+  RAD, is refused before anything is sent; the [FAQ](faq.md#which-nacos-versions-are-supported) says
+  which server each module needs.
 - `GetServerAsync` is a direct query, so it always reports the server's current state — and needs the
   server to be reachable. `SubscribeServerAsync` is the exception: it caches the last detail it read
   and re-reads the server every `NacosAiOptions.CacheRefreshInterval` (10 s by default), because there

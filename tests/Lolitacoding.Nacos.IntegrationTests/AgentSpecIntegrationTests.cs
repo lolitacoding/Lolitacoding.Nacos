@@ -56,10 +56,12 @@ public sealed class AgentSpecIntegrationTests
             ct: ct);
 
         // A publish answers before the version is servable, and a read that gets there first is
-        // answered the way an unknown name is.
+        // answered the way an unknown name is. The resource map is part of what the version serves —
+        // it is populated from the stored manifest a moment later — so the wait is on the state the
+        // assertions below are about, not just on the version being resolvable.
         NacosAgentSpec spec = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentSpec.GetAgentSpecAsync(agentSpecName, ct: ct),
-            value => value.Version == FirstVersion,
+            value => value.Version == FirstVersion && value.Resource is { Count: > 0 },
             ct,
             tolerateFailures: true);
 

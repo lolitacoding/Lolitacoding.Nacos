@@ -64,7 +64,7 @@ public sealed class PromptIntegrationTests
         // unknown key is.
         NacosPrompt latest = await NacosEventually.BecomesAsync(
             () => client.Ai.Prompt.GetPromptAsync(promptKey, ct: ct),
-            value => value.Version == SecondVersion,
+            value => value.Version == SecondVersion && value.Variables is { Count: > 0 },
             ct,
             tolerateFailures: true);
 

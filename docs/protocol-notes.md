@@ -124,6 +124,9 @@ A domain push is answered by the feature that owns it before the real work happe
   instance list.
 - `LockNotificationRequest` → `LockNotificationResponse`, and the waiter the notification names is
   released.
+- `AgentDiscoveryNotifyRequest` → `AgentDiscoveryNotifyResponse`, and the watch it names is read
+  again. A hint for a watch the client does not own is answered with `accepted: false` instead of
+  being ignored, because the server re-delivers what it is not told to stop sending.
 
 The first non-null response any handler produces is the one written back, exactly as the official
 client does, and the remaining handlers still run. A handler that returns `null` — one that only
@@ -586,7 +589,10 @@ states that it does not have it — a server that says nothing may still serve t
 > **Which server this describes.** The RAD agent registry is the Nacos **3.3.0** one or newer:
 > `AgentPublishRpcRequestHandler`, `AgentSearchRpcRequestHandler`, `AgentDiscoveryRpcRequestHandler`,
 > `AgentEndpointRegisterRpcRequestHandler` and `AgentEndpointDeregisterRpcRequestHandler` are all
-> marked `@Since("3.3.0")`. The watch that goes with it is 3.4, which this release does not cover.
+> marked `@Since("3.3.0")`. The watch that goes with it is gated on its own ability, `radWatchV1`,
+> which the same `v3.3.0-RC` server states and serves (`AgentGrpcWatchService`,
+> `AgentSubscribeRpcRequestHandler`); a server that does not state it is refused rather than watched
+> without hints.
 
 This is a second agent contract, not a newer version of the card one. A card is a document an agent
 publishes about itself; here an agent is a versioned resource with metadata, versions, call
@@ -644,21 +650,107 @@ interfaces and runtime endpoints, managed the way a prompt or a skill is.
    sending, and leaves the version binding to the server, which is the only side that can canonicalise
    a range.
 
+### RAD agent watch
+
+> **Which server this describes.** The watch is Nacos **3.3.0** as well, negotiated on the
+> `radWatchV1` ability: `AgentGrpcWatchService`, `AgentSubscribeRpcRequestHandler`,
+> `AgentUnsubscribeRpcRequestHandler` and the `AgentDiscoveryNotifyRequest` push.
+
+A watch is the push half of discovery. Instead of asking whether an agent's answer changed every few
+seconds, a caller registers the question once and the server pushes a hint when the answer *may* have
+changed; the caller then reads the state again through the ordinary discovery call.
+
+| Operation | Request | Answer |
+| --- | --- | --- |
+| Install a watch | `AgentSubscribeRpcRequest` (`clientWatchId`, `discoveryRequest`, `materializedFingerprint`) | `AgentSubscribeRpcResponse` (`watchKey`, `observedFingerprint`, `refreshRequired`) |
+| Remove a watch | `AgentUnsubscribeRpcRequest` (`watchKey`) | `AgentUnsubscribeRpcResponse` |
+| Hint (server → client) | `AgentDiscoveryNotifyRequest` (`watchKey`, `eventType`, `observedFingerprint`, `errorCode`) | `AgentDiscoveryNotifyResponse` (`watchKey`, `accepted`) |
+
+- **The hint is not the answer.** `INVALIDATE` says the projection moved and carries the fingerprint
+  it moved to; `REVALIDATE` carries no fingerprint at all and says only that the server cannot tell
+  whether the client's copy is current. Both mean "read again", and the state the client reports
+  always comes from a discovery call, never from the hint. A hint whose fingerprint is the one the
+  client already holds is not worth a read and is not acted on.
+- **The fingerprint is only ever one the server stated.** `materializedFingerprint` tells the server
+  what the client believes it holds, and `observedFingerprint` tells the client what the server
+  believes the state is; `refreshRequired` says whether the two disagree. `AgentGrpcWatchService`
+  validates the materialized fingerprint only when it is not null, and the watch is admitted on the
+  strength of the discovery it is opened with, so a client that sends none is answered with the state
+  it needs to start reading from.
+- **A hint is acknowledged.** The server re-delivers a hint that is not answered, so a hint for a
+  watch this client does not own — a removal and a push crossing on the wire — is declined rather than
+  accepted. So is a hint that contradicts itself: no event type, an event type this client version
+  does not define, or a termination with no reason.
+- **A termination has two meanings.** With a not-found code the agent is gone, which is a state rather
+  than the end of the interest in it: the watch is installed again and the caller is told the agent is
+  not served in the meantime. With any other code the server has decided the watch is over, so it ends
+  and the caller is given the error.
+- **An agent that was never published is not a failure.** The discovery a watch is opened with is
+  refused for an agent that does not exist, and a read of one that was deleted is refused too; both
+  are reported to the caller as "not served" and the watch is offered again until the agent appears.
+  The absence is reported once per absence rather than on every attempt.
+- **The watch dies with the connection.** The server binds it to the connection that installed it, so
+  a reconnect installs every watch again and reads the state again rather than assuming it is current.
+- **The state is handed over only when it moved.** A hint says the answer may have changed; a read
+  that finds it did not has nothing to report, and reporting it would tell a caller that acts on every
+  element that something happened.
+
+### Where this client deviates from the official client (RAD agent watch)
+
+1. **Only the gRPC transport is implemented.** The official client routes a watch through
+   `AgentWatchTransportRouter`, which prefers gRPC, falls back to a batched HTTP long-poll and then to
+   bounded discovery polling, and upgrades a downgraded watch back to gRPC when the wire returns. This
+   client has the gRPC transport alone: a server that does not state `radWatchV1` is refused with the
+   not-implemented code rather than watched over another transport. The refusal is the same shape as
+   the registry's, and it is deliberate — a watch over a transport that is not implemented would be a
+   watch whose hints are never delivered, which is worse than being told the server cannot serve it.
+2. **No fingerprint is computed locally.** The official client canonicalises the discovery result into
+   a fingerprint, sends it as `materializedFingerprint`, and compares it to decide whether a read
+   found anything new. This client never sends one: it subscribes with `null`, adopts the server's
+   `observedFingerprint` as the value it will compare later hints against, and uses a local digest of
+   the served document — never sent anywhere — only to decide whether a read should be handed to the
+   caller. The cost is one extra discovery read per install, including after a reconnect, because a
+   server told nothing must assume the client holds nothing. What it buys is that the two sides cannot
+   disagree about what a fingerprint means: there is no second canonicaliser to keep in step.
+3. **The observable shape is an async stream.** The official client delivers a
+   `NacosAgentDiscoveryEvent` to a listener; here the watch is an
+   `IAsyncEnumerable<NacosAgentDiscoveryResult?>` whose first element is the current state and whose
+   later elements are the state again on every change, with `null` reporting that the agent stopped
+   being served. The official client's unavailable event becomes `null`; its terminal unavailability —
+   which it reports as an event carrying an error code — becomes a `NacosServerException` that ends
+   the enumeration, so a caller that awaits the next element cannot mistake "the watch is over" for
+   "nothing changed yet".
+4. **An error is classified by what asking again could change.** A server behind the release this
+   client speaks to, a refusal of the credentials, a refusal to take the load, or a reply outside the
+   contract ends the watch and is raised to the caller; a dropped connection, a server that is still
+   starting, or a read that failed for a reason of its own is not, and is retried with bounded jittered
+   backoff. The retry schedule is this client's (`NacosOptions.Ai.CacheRefreshInterval` as the base,
+   doubling to a minute, spread over four-fifths to six-fifths), not the official client's
+   `AgentWatchRetryPolicy`.
+5. **An absent agent is recognised under every spelling the server uses.** The gRPC error mapper
+   answers with the v2 business code, so a discovery of an agent that does not exist arrives as
+   `20004` (`RESOURCE_NOT_FOUND`) rather than `404`, while the projection behind a hint reports the
+   status code. `404`, `-404`, `20004`, `50100` and `50101` are all read as "the agent is not
+   published".
+
 ### Transport selection and HTTP fallback
 
 The official client can serve an MCP, prompt or agent call over either the AI gRPC connection or the
 AI HTTP OpenAPI, and routes each call by the capabilities a binding advertises — `McpTransportRouter`,
 `PromptTransportRouter` and `AgentTransportRouter`, backed by `AiCapabilityCache` and
-`AiHttpClientProxy`. This client does not: every operation that has a gRPC contract travels over the
-AI connection, and only the resources the server exposes as HTTP alone — a skill and an agent
-specification — are read over HTTP.
+`AiHttpClientProxy`. It routes a RAD watch the same way, through `AgentWatchTransportRouter`, which
+prefers gRPC, falls back to a batched HTTP long-poll and then to bounded discovery polling, and
+upgrades a downgraded watch back to gRPC when the wire returns. This client does not: every operation
+that has a gRPC contract travels over the AI connection — including the watch — and only the resources
+the server exposes as HTTP alone — a skill and an agent specification — are read over HTTP.
 
 The difference shows only against a server whose gRPC abilities are absent while its HTTP AI surface is
 present. Such a server is answered by the request's own failure — `RequestHandler Not Found`, or an
 explicit `501` where the ability is advertised as `false` — rather than by a fallback. No published
 release has been found that exposes one surface without the other, so the fallback is left
 unimplemented rather than shipped unverified; adding it is a slice of its own and is deliberately
-deferred.
+deferred. For the watch the refusal is the same `501` and is documented in
+[Where this client deviates from the official client (RAD agent watch)](#where-this-client-deviates-from-the-official-client-rad-agent-watch).
 
 ## Authentication
 

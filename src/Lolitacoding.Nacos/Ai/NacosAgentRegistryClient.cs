@@ -21,7 +21,7 @@ namespace Lolitacoding.Nacos.Ai;
 /// contract it speaks, and guessing would send a payload the server may not route.
 /// </para>
 /// </remarks>
-internal sealed class NacosAgentRegistryClient : INacosAgentRegistry
+internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisposable
 {
     /// <summary>The error code Nacos uses for a feature a server does not implement.</summary>
     private const int NotImplementedErrorCode = 501;
@@ -32,26 +32,48 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry
     private readonly NacosAiClient _owner;
     private readonly NacosOptions _options;
     private readonly ILogger<NacosAgentRegistryClient> _logger;
+    private readonly NacosAgentWatchManager _watch;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NacosAgentRegistryClient"/> class.
     /// </summary>
     /// <param name="owner">The AI client that owns the connection.</param>
     /// <param name="options">The client options.</param>
-    /// <param name="logger">The logger.</param>
+    /// <param name="timeProvider">The clock used for retry and timeout timing.</param>
+    /// <param name="loggerFactory">The logger factory.</param>
+    /// <param name="random">The source of retry jitter, or <see langword="null"/> for a shared one.</param>
     public NacosAgentRegistryClient(
         NacosAiClient owner,
         NacosOptions options,
-        ILogger<NacosAgentRegistryClient> logger)
+        TimeProvider timeProvider,
+        ILoggerFactory loggerFactory,
+        Random? random = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
 
         _owner = owner;
         _options = options;
-        _logger = logger;
+        _logger = loggerFactory.CreateLogger<NacosAgentRegistryClient>();
+        _watch = new NacosAgentWatchManager(
+            owner,
+            options,
+            timeProvider,
+            loggerFactory.CreateLogger<NacosAgentWatchManager>(),
+            random);
     }
+
+    /// <summary>
+    /// Gets the watch manager that the AI client routes pushed hints to.
+    /// </summary>
+    /// <remarks>
+    /// The manager is exposed for the AI client rather than reached through this type, because the
+    /// pushes arrive on the connection the AI client owns: the client needs to hand them to the
+    /// manager without a caller being involved.
+    /// </remarks>
+    public NacosAgentWatchManager Watch => _watch;
 
     /// <inheritdoc />
     public async Task<NacosAgentVersionDetail> PublishAgentAsync(
@@ -219,6 +241,29 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry
 
         NacosAiLog.AgentEndpointsDeregistered(_logger, agentName, protocol);
     }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<NacosAgentDiscoveryResult?> WatchAgentAsync(
+        NacosAgentReference reference,
+        NacosAgentDiscoveryFilter? filter = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        ArgumentException.ThrowIfNullOrWhiteSpace(reference.AgentName, nameof(reference));
+
+        return _watch.WatchAsync(reference, filter, ct);
+    }
+
+    /// <summary>
+    /// Releases the watches this client installed.
+    /// </summary>
+    /// <returns>A task that completes once every watch was closed.</returns>
+    /// <remarks>
+    /// This is called by the AI client that owns the connection rather than by a caller: the watches
+    /// are closed with the client they were opened through, and a caller ends an individual watch by
+    /// leaving its enumeration.
+    /// </remarks>
+    public ValueTask DisposeAsync() => _watch.DisposeAsync();
 
     /// <summary>
     /// Gets the connection, failing when the server does not speak the RAD contract.

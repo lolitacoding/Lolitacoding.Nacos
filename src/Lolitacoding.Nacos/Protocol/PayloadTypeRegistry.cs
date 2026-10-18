@@ -85,6 +85,12 @@ internal static class PayloadTypeRegistry
         ["AgentEndpointRegisterRpcRequest"] = NacosJsonContext.Default.AgentEndpointRegisterRpcRequest,
         ["AgentEndpointDeregisterRpcRequest"] = NacosJsonContext.Default.AgentEndpointDeregisterRpcRequest,
         ["AgentEndpointOperationResponse"] = NacosJsonContext.Default.AgentEndpointOperationResponse,
+        ["AgentSubscribeRpcRequest"] = NacosJsonContext.Default.AgentSubscribeRpcRequest,
+        ["AgentSubscribeRpcResponse"] = NacosJsonContext.Default.AgentSubscribeRpcResponse,
+        ["AgentUnsubscribeRpcRequest"] = NacosJsonContext.Default.AgentUnsubscribeRpcRequest,
+        ["AgentUnsubscribeRpcResponse"] = NacosJsonContext.Default.AgentUnsubscribeRpcResponse,
+        ["AgentDiscoveryNotifyRequest"] = NacosJsonContext.Default.AgentDiscoveryNotifyRequest,
+        ["AgentDiscoveryNotifyResponse"] = NacosJsonContext.Default.AgentDiscoveryNotifyResponse,
 
         // Transport and connection management.
         ["ServerCheckRequest"] = NacosJsonContext.Default.ServerCheckRequest,

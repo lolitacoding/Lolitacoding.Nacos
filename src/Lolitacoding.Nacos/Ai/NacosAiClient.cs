@@ -1,5 +1,6 @@
 using Lolitacoding.Nacos.Auth;
 using Lolitacoding.Nacos.Internal;
+using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Microsoft.Extensions.Logging;
 
@@ -96,6 +97,11 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
             // keeps it published across a reconnect.
             connection.Reconnected += OnReconnectedAsync;
 
+            // A watch hint arrives as a pushed request rather than as a reply, and only the AI
+            // module pushes one. The manager that owns the watches is what answers it, because the
+            // watch key only means something to the client that installed the watch.
+            connection.ServerRequestReceived += OnServerRequestAsync;
+
             await connection.ConnectAsync(ct).ConfigureAwait(false);
             return connection;
         });
@@ -118,7 +124,7 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
             this, options, timeProvider, loggerFactory.CreateLogger<NacosAgentCardClient>());
 
         _agent = new NacosAgentRegistryClient(
-            this, options, loggerFactory.CreateLogger<NacosAgentRegistryClient>());
+            this, options, timeProvider, loggerFactory, random);
     }
 
     /// <inheritdoc />
@@ -165,9 +171,24 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
             return;
         }
 
+        // The connection the watches were installed on is gone, so the server forgot them: they are
+        // re-installed and re-read before the endpoints are replayed, because a caller following an
+        // agent is waiting on a state that the outage may have changed.
+        await _agent.Watch.RestoreAsync(ct).ConfigureAwait(false);
         await _mcp.RestoreAsync(ct).ConfigureAwait(false);
         await _agentCard.RestoreAsync(ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Answers a message the server pushed to this connection.
+    /// </summary>
+    /// <param name="request">The pushed message.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>
+    /// The reply, or <see langword="null"/> when no handler recognises the message.
+    /// </returns>
+    private Task<NacosResponse?> OnServerRequestAsync(NacosRequest request, CancellationToken ct) =>
+        _agent.Watch.OnServerRequestAsync(request, ct);
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()
@@ -180,7 +201,9 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
         _disposed = true;
 
         // The subscriptions are stopped first: their refresh loops talk over the connection, and
-        // completing them ends the enumerations a caller may still be reading.
+        // completing them ends the enumerations a caller may still be reading. The watches are
+        // closed for the same reason, and before the connection so a removal can still be sent.
+        await _agent.DisposeAsync().ConfigureAwait(false);
         await _agentCard.DisposeAsync().ConfigureAwait(false);
         await _agentSpec.DisposeAsync().ConfigureAwait(false);
         await _skill.DisposeAsync().ConfigureAwait(false);

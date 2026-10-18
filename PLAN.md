@@ -265,7 +265,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 传输：gRPC 为主、HTTP v3 客户端接口回退；能力位 `mcp` / `agent` / `radWatchV1` 参与协商。
 - 模型：对齐 3.x 全部字段；未知字段以 `JsonExtensionData` 保留。
 - 推送约定（阶段 3 的教训）：服务器推送常把身份放在负载体里（命名推送只填 `serviceInfo`，请求自带的 `namespace` / `serviceName` / `groupName` 恒空），checksum 也可能是空串。AI 的推送 / watch 一律按 `nacos-develop` 发送端的构造方式读取身份、以状态比较判定变更，并各抓一次真实推送核对字段。
-拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，C5 AgentSpec 查询与订阅，C6a A2A AgentCard，C6b RAD v1 Agent 注册，随后 RAD watch、HTTP 回退与宿主/示例。
+拆成若干提交：C1 AI 基础设施 + MCP 查询/发布，C2 MCP 订阅与本地缓存 + 端点注册/注销，C3 Prompt 查询与订阅，C4 Skill 查询与订阅，C5 AgentSpec 查询与订阅，C6a A2A AgentCard，C6b RAD v1 Agent 注册，C7 RAD agent watch，C8 宿主/示例与版本矩阵；gRPC↔HTTP 回退仍为独立切片。
 
 #### C1 · AI 基础设施 + MCP 查询/发布（✅ 已完成）
 
@@ -374,6 +374,24 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **移除按协议**而非按端点：请求只带 agentName + protocol，因为一个进程注册的端点只有作为集合才有意义。
 - 读取：`PublishAgentAsync` / `SearchAgentsAsync` / `DiscoverAgentAsync` / `RegisterEndpointsAsync` / `DeregisterEndpointsAsync`；客户端前置校验（publish 的 name+version、批次的 agent/protocol/非空端点），版本区间留给服务端规范化。日志事件：8029 已发布（Info）、8030 发布缺详情（Warning）、8031 发现缺结果（Warning）、8032/8033 端点批次注册与移除（Info）。
 - 验收：Release 构建零警告零错误；单元测试 **552 个全绿**（新增 14 个：发布字段与线上类型名 / 必填校验 / 缺详情 / 搜索与分页 / 发现与过滤器 / 缺结果 / 端点批次 / 空批次拒绝 / 按协议移除 / 能力位四态）；集成测试新增 5 个用例（整套 **51 个**），跑在 `nacos/nacos-server:v3.3.0-RC` 上：发布→搜索→发现闭环、搜索命中、未知 agent 报错、注册端点后成为发现结果里的 RUNTIME 端点、按协议移除后消失。
+
+#### C7 · RAD agent watch（✅ 已完成）
+
+- `Ai/NacosAgentWatchManager.cs`：watch 的全部状态机。每个 intent（一个「什么 + 过滤器」的规范化身份）持有稳定的 `ClientWatchId`（连接内去重键）、服务端下发的 `WatchKey`、intent 自己的 `Fingerprint` / `PendingFingerprint`、当前已投递状态与它的本地摘要，以及一个 `Wake` 信号。按 intent 懒启动一个循环任务，最后一个调用方退出时退订并停掉循环。
+- 线上类型（`Protocol/Messages/AiMessages.cs`）：`AgentSubscribeRpcRequest`（`clientWatchId` / `discoveryRequest` / `materializedFingerprint`）↔ `AgentSubscribeRpcResponse`（`watchKey` / `observedFingerprint` / `refreshRequired`）；`AgentUnsubscribeRpcRequest`（`watchKey`）↔ `AgentUnsubscribeRpcResponse`；服务端推送 `AgentDiscoveryNotifyRequest`（`watchKey` / `eventType` / `observedFingerprint` / `errorCode`）→ `AgentDiscoveryNotifyResponse`（`watchKey` / `accepted`）。已登记进 `NacosJsonContext` 与 `PayloadTypeRegistry`；`EventType` ∈ `INVALIDATE` / `REVALIDATE` / `TERMINATED`。
+- **客户端能力位新增 `radWatchV1`**（`NacosGrpcConnection.BuildAbilityTable()`），服务端能力位同名；与 RAD 注册中心一样是**严格协商**：能力位缺失即视为不实现，服务端明确 `false` 也拒绝，两种情况都抛 `NacosServerException(501)`，而不是静默降级成「永远不再推送」的 watch。
+- **提示不等于答案**：`INVALIDATE` 带新指纹、`REVALIDATE` 不带指纹，两者都只表示「可能变了」；对外投递的状态永远来自一次 `AgentDiscoveryRpcRequest` 读取，从不来自提示本身。提示指纹等于手上指纹时不做任何读。
+- **指纹只认服务端说的那一份**：`materializedFingerprint` 告诉服务端客户端手上是什么，`observedFingerprint` + `refreshRequired` 是回答。服务端只在非 null 时校验该字段，所以本客户端**订阅时发 null**，随后采用服务端的 `observedFingerprint` 作为后续提示的比对基准。代价是每次装表（含重连后）多一次投影读；换来的是不需要第二份指纹规范化实现，两侧也就不会对「同一个状态的指纹」产生分歧。
+- **提示必须应答**：未被应答的提示服务端会重投，所以不属于本客户端的 `watchKey`（例如退订与推送在线上交错）一律回 `accepted:false`；自相矛盾的提示（没有事件类型、不是本版本定义的事件类型、`TERMINATED` 却不带错误码）同样拒收。
+- **同一个状态不重复投递**：提示只说「可能变了」，读完发现没变就不投递——否则「每来一个元素就动作」的调用方会被同名消息淹没。判等用**本地摘要**（对已服务文档序列化，只在进程内比较，从不上线）；`REVALIDATE` 因此安全。
+- **`TERMINATED` 有两种含义**：带 not-found 码表示 agent 不在了——这是**一种状态**而不是「不再关心」，于是投递一次「未服务」、清掉 `WatchKey` / 指纹，然后用同一个 `ClientWatchId` 重新装表（服务端 `findByClientWatchId` 命中仍注册着的旧 watch，因此重新订阅是重新绑定而非新开）；带其它码表示服务端已经裁决，watch 结束并把错误抛给调用方。
+- **「没发布过」不是失败**：装表时发现目标不存在、以及读取时发现已下线，都投给调用方「未服务」并继续重试装表，等 agent 出现；每个「缺失期」只报一次。这里踩到一个真实的不对称：gRPC 错误映射器报的是 v2 业务码，未知 agent 的发现/装表失败实际到达是 **`20004`（`RESOURCE_NOT_FOUND`）**，而 watch 背后的投影报的是状态码 `404`，旧 A2A 路径还有 `50100` / `50101`——四种拼写都按「未发布」处理（先按 50100 写、真机探测纠正为 20004）。
+- **watch 随连接消亡**：重连后每个 intent 重新装表并**重新读取**（清掉指纹，不假设状态没变）；重连期间到达的提示因 `watchKey` 不在册而被拒收，不会误判。
+- 错误分类按「再问一次能不能改变结果」：服务端明确不实现（501）、拒绝凭据、拒绝负载、回复不合契约 → 结束并把错误交给调用方；连接断开、服务端尚在启动、读取自身失败 → 不结束，按有界抖动退避重试（基准 `NacosOptions.Ai.CacheRefreshInterval`，翻倍至 60 秒上限，±20% 抖动，空闲 5 分钟）。**把 500 归入终止**是本实现有意的偏差：官方客户端的 `activateSynchronously` 会把首次失败抛给调用方，而本客户端的循环模型没有这个「激活屏障」。
+- 公共面：`INacosAgentRegistry.WatchAgentAsync(reference, filter, ct)` 返回 `IAsyncEnumerable<NacosAgentDiscoveryResult?>`（首元素是当前状态，`null` = 当前未服务；服务端终止 watch 时枚举结束）。`NacosAgentRegistryClient` 新增 `Watch`、`WatchAgentAsync`、`DisposeAsync`（`IAsyncDisposable`）；`NacosAiClient` 把推送接进 manager（`ServerRequestReceived`）、在 `Reconnected` 上 `RestoreAsync`、释放时先于 `_connection` 关掉 watch。日志事件 8034–8040（启动/停止/刷新失败/被终止/提示未命中/恢复失败/退订失败）。
+- **偏差**（记入 `docs/protocol-notes.md`「Where this client deviates from the official client (RAD agent watch)」）：①只实现 gRPC 传输——官方有 `AgentWatchTransportRouter`（gRPC → 批量 HTTP 长轮询 → 有界轮询，且线上恢复后升级回 gRPC），本客户端对不声明 `radWatchV1` 的服务器直接 501；②不本地计算指纹（见上）；③可观测形态是异步流（官方是 listener + 事件），官方「不可用」事件对应 `null`、「终止性不可用」对应结束枚举的 `NacosServerException`；④重试节奏是本客户端自己的，不是官方 `AgentWatchRetryPolicy`。
+- **顺带修的集成夹具缺陷**（真机跑出来的，与 C7 无关但会拖垮验证）：①RAD 发布是「写后自己回读」的写操作，回读窗口偶尔读不到刚创建的版本，服务端回内部错误（`AgentPersistenceService` 的 `AgentVersion cannot be read after creation`）。发布对同一请求幂等（已存在的版本原样返回），因此新增 `NacosEventually.WritesAsync` 只用在「发布是前置条件」的用例上，主题是发布的用例仍直连调用以便暴露真实缺陷。②多处 `BecomesAsync` 的等待条件只检查版本可解析，而断言读的是同一回复里的嵌套集合/压缩包（`Skills` / `SupportedInterfaces` / `Variables` / `CallInterfaces` / `ToolSpec.Tools` / `Resource` / `Archive`），服务端把版本行与派生内容分两步落地，于是「等到了版本、内容还空」会随机判负；等待条件改为覆盖断言真正触碰的部分。
+- 验收：Release 构建零警告零错误；单元测试 **573 个全绿**（新增 21 个：首元素/装表报文不含指纹/提示驱动变化/同指纹提示不读/未发布投 null/ACK 已受理/拒收未知名单/`TERMINATED` 带原因 50105 抛错/`TERMINATED` 50100 投 null 并重装/装表被拒 50100 → null/被拒 403 一次即终止/`REVALIDATE` 后状态未变不重复投递/`TERMINATED` 无原因拒收/两调用方共享同一 watch/最后一个停止时退订/能力位缺失 → 501/能力位为 false → 501/重连后重装/`radWatchV1` 已声明/真机同款码 20004 → null/缺失不重复投递）；集成测试新增 `AgentWatchIntegrationTests` 两个用例（发布后 watch 报当前状态、随后一次发布由服务端推送过来；未发布的 agent 报「未服务」），整套 **53 个全绿**，基座套件在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本上分别通过。
 
 #### C8 · DI 收口、示例与版本矩阵（✅ 已完成；gRPC↔HTTP 回退仍推迟）
 

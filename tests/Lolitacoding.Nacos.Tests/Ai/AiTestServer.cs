@@ -39,6 +39,8 @@ internal sealed class AiTestServer
     private readonly List<AgentDiscoveryRpcRequest> _agentDiscoveries = [];
     private readonly List<AgentEndpointRegisterRpcRequest> _agentEndpointRegisters = [];
     private readonly List<AgentEndpointDeregisterRpcRequest> _agentEndpointDeregisters = [];
+    private readonly List<AgentSubscribeRpcRequest> _agentSubscribes = [];
+    private readonly List<AgentUnsubscribeRpcRequest> _agentUnsubscribes = [];
 
     private readonly Dictionary<string, bool> _abilities;
     private readonly HttpMessageHandler? _httpHandler;
@@ -281,6 +283,59 @@ internal sealed class AiTestServer
     public Func<AgentEndpointDeregisterRpcRequest, AgentEndpointOperationResponse> OnAgentEndpointDeregister
     { get; set; } = _ => new AgentEndpointOperationResponse();
 
+    /// <summary>Gets the RAD watch subscriptions the client sent, in order.</summary>
+    public IReadOnlyList<AgentSubscribeRpcRequest> AgentSubscribes
+    {
+        get
+        {
+            lock (_agentSubscribes)
+            {
+                return [.. _agentSubscribes];
+            }
+        }
+    }
+
+    /// <summary>Gets the RAD watch removals the client sent, in order.</summary>
+    public IReadOnlyList<AgentUnsubscribeRpcRequest> AgentUnsubscribes
+    {
+        get
+        {
+            lock (_agentUnsubscribes)
+            {
+                return [.. _agentUnsubscribes];
+            }
+        }
+    }
+
+    /// <summary>Gets or sets how the server answers a RAD watch subscription.</summary>
+    public Func<AgentSubscribeRpcRequest, AgentSubscribeRpcResponse> OnAgentSubscribe { get; set; } =
+        request => AiTest.AgentWatchAdmitted(request);
+
+    /// <summary>Gets or sets how the server answers a RAD watch removal.</summary>
+    public Func<AgentUnsubscribeRpcRequest, AgentUnsubscribeRpcResponse> OnAgentUnsubscribe
+    { get; set; } = _ => new AgentUnsubscribeRpcResponse();
+
+    /// <summary>
+    /// Pushes a RAD watch hint to the client, as a server would.
+    /// </summary>
+    /// <param name="watchKey">The watch the hint is for.</param>
+    /// <param name="eventType">The kind of hint.</param>
+    /// <param name="observedFingerprint">The fingerprint the server holds, if any.</param>
+    /// <param name="errorCode">The error code of a terminated watch, if any.</param>
+    public void PushAgentHint(
+        string watchKey,
+        string eventType,
+        string? observedFingerprint = null,
+        int? errorCode = null) =>
+        Stream.Push(TestPayload.ForRequest(new AgentDiscoveryNotifyRequest
+        {
+            WatchKey = watchKey,
+            EventType = eventType,
+            ObservedFingerprint = observedFingerprint,
+            ErrorCode = errorCode,
+            RequestId = $"hint-{watchKey}",
+        }));
+
     /// <summary>
     /// Builds an AI client that talks to this server.
     /// </summary>
@@ -511,6 +566,30 @@ internal sealed class AiTestServer
                 return PayloadCodec.Encode(OnAgentEndpointDeregister(request));
             }
 
+            case "AgentSubscribeRpcRequest":
+            {
+                AgentSubscribeRpcRequest request = PayloadCodec.Decode<AgentSubscribeRpcRequest>(payload)!;
+
+                lock (_agentSubscribes)
+                {
+                    _agentSubscribes.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentSubscribe(request));
+            }
+
+            case "AgentUnsubscribeRpcRequest":
+            {
+                AgentUnsubscribeRpcRequest request = PayloadCodec.Decode<AgentUnsubscribeRpcRequest>(payload)!;
+
+                lock (_agentUnsubscribes)
+                {
+                    _agentUnsubscribes.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentUnsubscribe(request));
+            }
+
             default:
                 throw new InvalidOperationException(
                     $"The AI server does not serve '{PayloadCodec.ReadTypeName(payload)}'.");
@@ -681,6 +760,60 @@ internal static class AiTest
         ErrorCode = errorCode,
         Message = message,
     };
+
+    /// <summary>Builds a discovery result.</summary>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The resolved version.</param>
+    /// <param name="description">An optional description, used to make two states differ.</param>
+    /// <returns>The result.</returns>
+    public static NacosAgentDiscoveryResult AgentResult(
+        string agentName = "planner",
+        string version = "1.0.0",
+        string? description = null) => new()
+    {
+        NamespaceId = "public",
+        AgentName = agentName,
+        Version = version,
+        Description = description,
+        ContentDigest = description ?? version,
+    };
+
+    /// <summary>Builds the refusal a server gives a watch subscription.</summary>
+    /// <param name="errorCode">The error code the server reports.</param>
+    /// <param name="message">The message the server reports.</param>
+    /// <returns>The answer.</returns>
+    public static AgentSubscribeRpcResponse AgentWatchRefused(int errorCode, string message) => new()
+    {
+        ResultCode = NacosResponse.FailureCode,
+        ErrorCode = errorCode,
+        Message = message,
+    };
+
+    /// <summary>Builds the admission answer a server gives a watch subscription.</summary>
+    /// <param name="request">The subscription.</param>
+    /// <param name="observedFingerprint">
+    /// The fingerprint to report, or <see langword="null"/> to echo the one the client sent, falling
+    /// back to a fixed one when it sent none.
+    /// </param>
+    /// <param name="refreshRequired">
+    /// Whether a read is demanded, or <see langword="null"/> to demand one exactly when the client
+    /// is not already holding the fingerprint being reported.
+    /// </param>
+    /// <returns>The answer.</returns>
+    public static AgentSubscribeRpcResponse AgentWatchAdmitted(
+        AgentSubscribeRpcRequest request,
+        string? observedFingerprint = null,
+        bool? refreshRequired = null)
+    {
+        string fingerprint = observedFingerprint ?? request.MaterializedFingerprint ?? "fp-initial";
+
+        return new AgentSubscribeRpcResponse
+        {
+            WatchKey = string.Concat("watch-", request.ClientWatchId),
+            ObservedFingerprint = fingerprint,
+            RefreshRequired = refreshRequired ?? request.MaterializedFingerprint != fingerprint,
+        };
+    }
 
     /// <summary>Builds a successful prompt query answer.</summary>
     /// <param name="prompt">The prompt to return.</param>

@@ -55,7 +55,7 @@ public sealed class AgentRegistryIntegrationTests
         NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
             () => client.Ai.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
-            value => value.Version == "1.0.0",
+            value => value.Version == "1.0.0" && value.CallInterfaces is { Count: > 0 },
             ct,
             tolerateFailures: true);
 
@@ -75,15 +75,17 @@ public sealed class AgentRegistryIntegrationTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         string agentName = NacosHttp.UniqueId("rad-search");
 
-        await client.Ai.Agent.PublishAgentAsync(
-            new NacosAgentPublishRequest
-            {
-                AgentName = agentName,
-                Version = "1.0.0",
-                Description = "Searchable.",
-                Tags = ["travel"],
-                CallInterfaces = [CallInterface()],
-            },
+        await NacosEventually.WritesAsync(
+            () => client.Ai.Agent.PublishAgentAsync(
+                new NacosAgentPublishRequest
+                {
+                    AgentName = agentName,
+                    Version = "1.0.0",
+                    Description = "Searchable.",
+                    Tags = ["travel"],
+                    CallInterfaces = [CallInterface()],
+                },
+                ct),
             ct);
 
         // A search is a read of the registry's index, so it sees the agent as soon as the publish is
@@ -114,9 +116,14 @@ public sealed class AgentRegistryIntegrationTests
 
         CancellationToken ct = TestContext.Current.CancellationToken;
 
-        await Should.ThrowAsync<NacosServerException>(
+        // The gRPC error mapper reports the v2 business code rather than the HTTP status, so an agent
+        // that was never published arrives as the AI module's own resource-not-found. The watch
+        // decides what to do about an absent agent from that code, which is why it is pinned here.
+        NacosServerException exception = await Should.ThrowAsync<NacosServerException>(
             () => client.Ai.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = NacosHttp.UniqueId("rad-absent") }, ct: ct));
+
+        exception.ErrorCode.ShouldBe(20004);
     }
 
     [Fact]
@@ -129,14 +136,16 @@ public sealed class AgentRegistryIntegrationTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         string agentName = NacosHttp.UniqueId("rad-endpoints");
 
-        await client.Ai.Agent.PublishAgentAsync(
-            new NacosAgentPublishRequest
-            {
-                AgentName = agentName,
-                Version = "1.0.0",
-                Description = "Callable.",
-                CallInterfaces = [CallInterface()],
-            },
+        await NacosEventually.WritesAsync(
+            () => client.Ai.Agent.PublishAgentAsync(
+                new NacosAgentPublishRequest
+                {
+                    AgentName = agentName,
+                    Version = "1.0.0",
+                    Description = "Callable.",
+                    CallInterfaces = [CallInterface()],
+                },
+                ct),
             ct);
 
         await NacosEventually.BecomesAsync(
@@ -191,13 +200,15 @@ public sealed class AgentRegistryIntegrationTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         string agentName = NacosHttp.UniqueId("rad-withdraw");
 
-        await client.Ai.Agent.PublishAgentAsync(
-            new NacosAgentPublishRequest
-            {
-                AgentName = agentName,
-                Version = "1.0.0",
-                CallInterfaces = [CallInterface()],
-            },
+        await NacosEventually.WritesAsync(
+            () => client.Ai.Agent.PublishAgentAsync(
+                new NacosAgentPublishRequest
+                {
+                    AgentName = agentName,
+                    Version = "1.0.0",
+                    CallInterfaces = [CallInterface()],
+                },
+                ct),
             ct);
 
         await client.Ai.Agent.RegisterEndpointsAsync(

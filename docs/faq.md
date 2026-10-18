@@ -17,6 +17,7 @@ against — which is also what an override lets a CI run move:
 | A2A agent card registry | 3.1.0 | `nacos/nacos-server:v3.2.4` | `NACOS_AI_TEST_IMAGE` |
 | Prompt, Skill and AgentSpec registries | 3.2.0 | `nacos/nacos-server:v3.2.4` | `NACOS_AI_TEST_IMAGE` |
 | RAD agent registry | 3.3.0 | `nacos/nacos-server:v3.3.0-RC` | `NACOS_AGENT_TEST_IMAGE` |
+| RAD agent watch | 3.3.0 | `nacos/nacos-server:v3.3.0-RC` | `NACOS_AGENT_TEST_IMAGE` |
 | Distributed lock, full contract | 3.3.0 | `nacos/nacos-server:v3.3.0-RC` | `NACOS_LOCK_TEST_IMAGE` |
 
 Where a surface is *served from* an older release than it is *verified against*, the older release
@@ -44,7 +45,11 @@ Several surfaces are younger than that base release, so their tests choose a ser
   all `@Since("3.3.0")`, so its tests run against `nacos/nacos-server:v3.3.0-RC` and are chosen with
   `NACOS_AGENT_TEST_IMAGE`. Unlike the other AI resources it is negotiated strictly — a server has to
   state the RAD ability before the client sends anything — so a 3.2 server is refused with the
-  not-implemented code rather than sent a payload it may not route.
+  not-implemented code rather than sent a payload it may not route. The **RAD agent watch** — the
+  push half of discovery — travels on the same connection and is negotiated on its own ability,
+  `radWatchV1`, which the same `v3.3.0-RC` server states: like the registry it is refused rather than
+  downgraded when the ability is absent or declined, because a watch whose hints are silently dropped
+  would stop reporting changes without saying so.
 - The distributed **lock** module belongs to Nacos **3.3**: lease renewal, the wait queue, explicit
   owners and the reentrant count are all from that release, and the lock module a 3.2 server ships
   only acquires and releases. Against a 3.2 server this client can therefore acquire and release a

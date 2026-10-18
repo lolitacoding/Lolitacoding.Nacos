@@ -51,7 +51,7 @@ public sealed class AgentCardIntegrationTests
 
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
-            value => value.Version == "1.0.0",
+            value => value.Version == "1.0.0" && value.Skills is { Count: > 0 },
             ct,
             tolerateFailures: true);
 
@@ -125,7 +125,7 @@ public sealed class AgentCardIntegrationTests
         // known at runtime.
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
-            value => !string.IsNullOrEmpty(value.Url),
+            value => value.Url == "http://10.0.0.7:9000/a2a" && value.SupportedInterfaces is { Count: 1 },
             ct,
             tolerateFailures: true);
 
@@ -177,7 +177,7 @@ public sealed class AgentCardIntegrationTests
         // registered address is gone and the placeholder is what a caller sees.
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
-            value => value.Url == PlaceholderUrl,
+            value => value.Url == PlaceholderUrl && value.SupportedInterfaces is { Count: 1 },
             ct,
             tolerateFailures: true);
 

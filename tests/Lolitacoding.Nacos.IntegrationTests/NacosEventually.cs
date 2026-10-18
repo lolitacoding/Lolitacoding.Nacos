@@ -203,4 +203,28 @@ internal static class NacosEventually
 
         throw new TimeoutException("The change was not pushed by the server within the time allowed.");
     }
+
+    /// <summary>
+    /// Applies a fixture write until the server takes it.
+    /// </summary>
+    /// <typeparam name="T">The value the write answers with.</typeparam>
+    /// <param name="write">Issues the write; it must be safe to issue more than once.</param>
+    /// <param name="ct">The cancellation token.</param>
+    /// <returns>The value the write answered with.</returns>
+    /// <remarks>
+    /// <para>
+    /// A RAD agent publish is a write the server reads back before it answers, and that read has a
+    /// window in which it can miss the version the write just created — the server answers with an
+    /// error of its own rather than refusing the request. The write is repeated because it is
+    /// idempotent for an identical request: a version that already exists is answered with, not
+    /// created a second time.
+    /// </para>
+    /// <para>
+    /// This is for a write that sets up a test whose subject is something else. A write a test is
+    /// *about* is issued directly, so that a failure is reported rather than retried away.
+    /// </para>
+    /// </remarks>
+    public static Task<T> WritesAsync<T>(Func<Task<T>> write, CancellationToken ct)
+        where T : notnull
+        => BecomesAsync(write, _ => true, ct, tolerateFailures: true);
 }

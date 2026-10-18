@@ -238,6 +238,15 @@ NacosAgentCardDetail card =
     await client.Ai.AgentCard.GetAgentCardAsync("support-agent", ct: cancellationToken);
 
 Console.WriteLine($"{card.Name} {card.Version} -> {card.Url}");
+
+// A RAD agent can be followed instead of polled. Nacos 3.3 pushes a hint when the answer may have
+// changed, the client reads it again and reports only what the read found, and a null element says
+// the agent stopped being served.
+await foreach (NacosAgentDiscoveryResult? agent in client.Ai.Agent.WatchAgentAsync(
+    new NacosAgentReference { AgentName = "support-agent" }, ct: cancellationToken))
+{
+    Console.WriteLine(agent?.Version);
+}
 ```
 
 `client.Ai` reaches the Nacos AI registry. This release covers the MCP server registry —
@@ -251,9 +260,10 @@ one version of a package and `SubscribeAgentSpecAsync` follows one, the A2A agen
 `GetAgentCardAsync` reads a card, `ReleaseAgentCardAsync` publishes one, `RegisterAgentEndpointAsync`
 makes a service-backed agent callable, and `SubscribeAgentCardAsync` follows one, and the RAD agent
 registry that Nacos 3.3 adds, where `PublishAgentAsync` publishes a version, `SearchAgentsAsync`
-browses, `DiscoverAgentAsync` resolves where to call an agent, and `RegisterEndpointsAsync` publishes
-the addresses it runs at. The MCP servers are the part the transport and the models were built for
-first.
+browses, `DiscoverAgentAsync` resolves where to call an agent, `RegisterEndpointsAsync` publishes
+the addresses it runs at, and `WatchAgentAsync` follows one without polling — the server pushes a
+hint when the answer may have changed rather than the answer itself. The MCP servers are the part the
+transport and the models were built for first.
 
 The models are the MCP protocol's own objects rather than a projection of them — a tool's JSON
 Schema stays JSON, and MCP's `_meta` member keeps its underscore — because Nacos stores what it is
@@ -267,11 +277,14 @@ read over HTTP rather than over the AI connection, because the server exposes th
 endpoints; both subscriptions are the same kind of poll, and both report a resource that stops being
 served the way a prompt is. An agent specification is the one resource whose selector resolves a label
 *before* a version, and whose version and hash are reported in the response headers rather than in the
-payload — so a caller always learns which version it actually received.
+payload — so a caller always learns which version it actually received. The RAD agent watch is the
+one AI surface the server pushes to: a hint says the answer may have changed rather than what it
+changed to, so the client reads again and reports nothing when the read found the state it already
+had, and it re-reads after a reconnect rather than assuming its copy survived the outage.
 
 The AI registry is served from Nacos **3.0.3** on, the agent card registry from **3.1.0** on, the
-prompt, skill and agent-specification registries from **3.2.0** on, and the RAD agent registry from
-**3.3** on;
+prompt, skill and agent-specification registries from **3.2.0** on, and the RAD agent registry and
+its watch from **3.3** on;
 [the FAQ](docs/faq.md#which-nacos-versions-are-supported)
 says which server each module needs. The AI connection is opened on first use, like the lock
 connection, and carries the `ai` module label plus the per-client identifier Nacos records with

@@ -1071,12 +1071,19 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// notification may be pushed to this connection, and whether an MCP release should be served by
     /// the gRPC binding rather than the HTTP one.
     /// </para>
+    /// <para>
+    /// <c>radWatchV1</c> says this client can take a RAD Watch hint push, which the AI server reads
+    /// before it binds a watch: a connection that does not claim it is refused the subscription
+    /// rather than left waiting for a hint that would never be handled. The flag is per client rather
+    /// than per module, so it is advertised on every connection; only the AI module reads it.
+    /// </para>
     /// </remarks>
     private static Dictionary<string, bool> BuildAbilityTable() => new(StringComparer.Ordinal)
     {
         ["fuzzyWatch"] = false,
         ["lock"] = true,
         ["mcp"] = true,
+        ["radWatchV1"] = true,
     };
 
     /// <summary>

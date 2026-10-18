@@ -92,7 +92,7 @@ public sealed class AiIntegrationTests
         // release but not published it yet — so a failing read is repeated over rather than reported.
         NacosMcpServerDetail detail = await NacosEventually.BecomesAsync(
             () => client.Ai.Mcp.GetServerAsync(name, ct: ct),
-            value => value.VersionDetail?.Version == Version,
+            value => value.VersionDetail?.Version == Version && value.ToolSpec?.Tools is { Count: > 0 },
             ct,
             tolerateFailures: true);
 

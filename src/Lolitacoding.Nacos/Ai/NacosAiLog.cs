@@ -498,4 +498,101 @@ internal static partial class NacosAiLog
         ILogger logger,
         string agentName,
         string protocol);
+
+    /// <summary>Logs that a RAD watch was installed on the connection.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The version that was named, if any.</param>
+    /// <param name="label">The label that was named, if any.</param>
+    [LoggerMessage(
+        EventId = 8034,
+        Level = LogLevel.Debug,
+        Message = "Watching agent {AgentName} version {Version} label {Label}.")]
+    public static partial void AgentWatchStarted(
+        ILogger logger,
+        string agentName,
+        string? version,
+        string? label);
+
+    /// <summary>Logs that a RAD watch was removed from the connection.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    [LoggerMessage(
+        EventId = 8035,
+        Level = LogLevel.Debug,
+        Message = "Stopped watching agent {AgentName}.")]
+    public static partial void AgentWatchStopped(ILogger logger, string agentName);
+
+    /// <summary>Logs that reading the state of a watched agent failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A failed read does not end the watch: the last state stays with the caller and the read is
+    /// retried, because the server will push again when the state changes.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8036,
+        Level = LogLevel.Warning,
+        Message = "Reading the watched state of agent {AgentName} failed: {Reason}")]
+    public static partial void AgentWatchRefreshFailed(
+        ILogger logger,
+        string agentName,
+        string reason);
+
+    /// <summary>Logs that a server ended a RAD watch.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="errorCode">The error code the server reported, if any.</param>
+    [LoggerMessage(
+        EventId = 8037,
+        Level = LogLevel.Warning,
+        Message = "The Nacos server ended the watch of agent {AgentName} with error code {ErrorCode}.")]
+    public static partial void AgentWatchTerminated(
+        ILogger logger,
+        string agentName,
+        int? errorCode);
+
+    /// <summary>Logs that a watch hint named a watch this client does not own.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="watchKey">The watch key the hint carried.</param>
+    /// <remarks>
+    /// The hint is declined, which is how the server learns to stop sending it. A hint for a watch
+    /// that was just closed races the removal over the wire, so this is expected at times.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8038,
+        Level = LogLevel.Debug,
+        Message = "Declined a RAD watch hint for the unknown watch {WatchKey}.")]
+    public static partial void AgentWatchHintUnmatched(ILogger logger, string watchKey);
+
+    /// <summary>Logs that a RAD watch could not be installed again after a reconnect.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="reason">The error that was reported.</param>
+    [LoggerMessage(
+        EventId = 8039,
+        Level = LogLevel.Warning,
+        Message = "Reinstalling the watch of agent {AgentName} after a reconnect failed: {Reason}")]
+    public static partial void AgentWatchRestoreFailed(
+        ILogger logger,
+        string agentName,
+        string reason);
+
+    /// <summary>Logs that a RAD watch could not be removed from the connection.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// The removal is best effort: the watch dies with the connection whether or not the server was
+    /// told, so a removal that could not be sent is recorded rather than retried.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8040,
+        Level = LogLevel.Debug,
+        Message = "Removing the watch of agent {AgentName} failed: {Reason}")]
+    public static partial void AgentWatchUnsubscribeFailed(
+        ILogger logger,
+        string agentName,
+        string reason);
 }

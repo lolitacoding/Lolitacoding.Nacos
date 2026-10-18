@@ -454,3 +454,134 @@ internal sealed class AgentEndpointDeregisterRpcRequest : AiRequest
 internal sealed class AgentEndpointOperationResponse : NacosResponse
 {
 }
+
+/// <summary>
+/// A request to install one RAD Watch on the connection.
+/// </summary>
+/// <remarks>
+/// A watch is owned by the connection rather than by the process: it is dropped when the connection
+/// closes and has to be installed again afterwards. The client watch identifier is what makes that
+/// re-installation a re-bind rather than a second watch, so it is stable for the life of the watch.
+/// </remarks>
+internal sealed class AgentSubscribeRpcRequest : AiRequest
+{
+    /// <summary>Gets or sets the client's stable identifier for this watch.</summary>
+    public string? ClientWatchId { get; set; }
+
+    /// <summary>Gets or sets the discovery the watch follows.</summary>
+    public NacosAgentDiscoveryRequest? DiscoveryRequest { get; set; }
+
+    /// <summary>Gets or sets the fingerprint of the result the client already holds.</summary>
+    /// <remarks>
+    /// Only the server decides what counts as a change, so the value is the fingerprint the server
+    /// last reported, not one the client computes. The client sends <see langword="null"/> before it
+    /// has been given one, which the server answers by asking for a refresh.
+    /// </remarks>
+    public string? MaterializedFingerprint { get; set; }
+}
+
+/// <summary>
+/// The result of installing one RAD Watch.
+/// </summary>
+/// <remarks>
+/// The watch key is opaque and connection-scoped: it is the handle a later removal and every hint are
+/// addressed with. The observed fingerprint is the server's view of the current state, which the
+/// client adopts so the two sides agree on what it last saw.
+/// </remarks>
+internal sealed class AgentSubscribeRpcResponse : NacosResponse
+{
+    /// <summary>Gets or sets the key that identifies the watch on this connection.</summary>
+    public string? WatchKey { get; set; }
+
+    /// <summary>Gets or sets the fingerprint of the state the server holds.</summary>
+    public string? ObservedFingerprint { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the client must read the current state.
+    /// </summary>
+    public bool RefreshRequired { get; set; }
+}
+
+/// <summary>
+/// A request to remove one RAD Watch from the connection.
+/// </summary>
+/// <remarks>
+/// The watch is named by the key the server issued rather than by the discovery that created it,
+/// because the key is what the server's own bookkeeping is written in.
+/// </remarks>
+internal sealed class AgentUnsubscribeRpcRequest : AiRequest
+{
+    /// <summary>Gets or sets the watch to remove.</summary>
+    public string? WatchKey { get; set; }
+}
+
+/// <summary>
+/// The acknowledgement of a watch removal.
+/// </summary>
+/// <remarks>
+/// A removal reports nothing beyond success: the watch is the connection's own, and the server
+/// forgets it whether or not the client asks.
+/// </remarks>
+internal sealed class AgentUnsubscribeRpcResponse : NacosResponse
+{
+}
+
+/// <summary>
+/// The push by which a server hints that the state a RAD Watch follows may have changed.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The hint carries no state on purpose: it says only that the client should look again, and the
+/// client answers with <see cref="AgentDiscoveryNotifyResponse"/> so the server can stop re-sending
+/// it. This is the only AI message that travels server to client.
+/// </para>
+/// <para>
+/// The fingerprint is the server's, so the client never has to reproduce the canonical form the
+/// server hashes. A hint that carries the fingerprint the client already holds is one it can act on
+/// by reading again, and a hint that carries a new one is one it must.
+/// </para>
+/// </remarks>
+internal sealed class AgentDiscoveryNotifyRequest : NacosRequest
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AgentDiscoveryNotifyRequest"/> class.
+    /// </summary>
+    /// <remarks>
+    /// The push declares the AI module so the decoded message is indistinguishable from one the
+    /// server would route there, even though the module plays no part in delivering it.
+    /// </remarks>
+    public AgentDiscoveryNotifyRequest() => Module = NacosModule.Ai;
+
+    /// <summary>Gets or sets the watch the hint is for.</summary>
+    public string? WatchKey { get; set; }
+
+    /// <summary>Gets or sets the kind of hint.</summary>
+    /// <remarks>
+    /// <c>INVALIDATE</c> means a new current result may exist, <c>REVALIDATE</c> means the client must
+    /// read again even when the fingerprint matches, and <c>TERMINATED</c> means the watch is over.
+    /// </remarks>
+    public string? EventType { get; set; }
+
+    /// <summary>Gets or sets the fingerprint of the state the server holds now.</summary>
+    public string? ObservedFingerprint { get; set; }
+
+    /// <summary>Gets or sets the error code that ended a terminated watch.</summary>
+    public int? ErrorCode { get; set; }
+}
+
+/// <summary>
+/// The acknowledgement a client sends for a RAD Watch hint.
+/// </summary>
+/// <remarks>
+/// A hint the client declines is answered with a failure result code, because that — not the raw
+/// flag — is what the server's success check reads. Declining is how a client tells a server to stop
+/// sending hints for a watch it no longer owns.
+/// </remarks>
+internal sealed class AgentDiscoveryNotifyResponse : NacosResponse
+{
+    /// <summary>Gets or sets the watch the hint was for.</summary>
+    public string? WatchKey { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the hint was accepted.</summary>
+    public bool Accepted { get; set; }
+}

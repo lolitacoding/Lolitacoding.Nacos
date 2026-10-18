@@ -62,6 +62,26 @@ internal static class NacosAiServerAbility
 }
 
 /// <summary>
+/// The kinds of hint a server pushes for a RAD Watch.
+/// </summary>
+/// <remarks>
+/// Values come from <c>com.alibaba.nacos.api.ai.model.agent.AgentWatchEventType</c> and travel as the
+/// plain enum name. Only the server decides which kind applies: the client reacts to the hint rather
+/// than inferring a change from the state itself.
+/// </remarks>
+internal static class NacosAiWatchEvent
+{
+    /// <summary>A new current result may exist and the client should read it.</summary>
+    public const string Invalidate = "INVALIDATE";
+
+    /// <summary>The client must read again even when the fingerprint it holds matches.</summary>
+    public const string Revalidate = "REVALIDATE";
+
+    /// <summary>The watch is over and the server will send no more hints for it.</summary>
+    public const string Terminated = "TERMINATED";
+}
+
+/// <summary>
 /// The capability contract an AI client binding exposes over HTTP.
 /// </summary>
 /// <remarks>

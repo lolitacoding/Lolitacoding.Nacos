@@ -62,10 +62,13 @@ public sealed class SkillIntegrationTests
             ct: ct);
 
         // A publish answers before the version is servable, and a read that gets there first is
-        // answered the way an unknown skill is.
+        // answered the way an unknown skill is. The archive is what the version serves, and it is
+        // stored a moment after the version row, so the wait is on the archive being there rather
+        // than only on the version resolving — a read that stopped at the version would hand back a
+        // skill with nothing in it.
         NacosSkill skill = await NacosEventually.BecomesAsync(
             () => client.Ai.Skill.GetSkillAsync(skillName, ct: ct),
-            value => value.Version == FirstVersion,
+            value => value.Version == FirstVersion && value.Archive.Length > 0,
             ct,
             tolerateFailures: true);
 
@@ -134,7 +137,7 @@ public sealed class SkillIntegrationTests
         // A read that names no version resolves to the version labelled latest.
         NacosSkill latest = await NacosEventually.BecomesAsync(
             () => client.Ai.Skill.GetSkillAsync(skillName, ct: ct),
-            value => value.Version == SecondVersion,
+            value => value.Version == SecondVersion && value.Archive.Length > 0,
             ct,
             tolerateFailures: true);
 
