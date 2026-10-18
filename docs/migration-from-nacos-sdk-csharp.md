@@ -40,8 +40,9 @@ Under the hood the client opens one gRPC connection per module. Nacos routes a c
 `module` label it declares during the handshake, and the naming, lock and AI servers discard
 connections that did not declare them, so configuration and naming cannot share a stream.
 
-Configuration and naming are connected when the client is; the lock connection is opened the first
-time a lock is used, so an application that never takes one does not pay for it.
+Configuration and naming are connected when the client is; the lock and AI connections are opened the
+first time one of them is used, so an application that never takes a lock or reads the AI registry
+does not pay for either.
 
 Construct with `NacosClient.Create(...)` — the constructor is private — and dispose it when the
 process exits.
@@ -198,8 +199,16 @@ Two capabilities that the older client does not offer in the same form:
 ## What is intentionally not implemented (v1)
 
 - The Nacos **admin/console API** (creating namespaces, managing users).
-- **AI registry** features (MCP, Prompt, Skill, AgentSpec and Agent discovery).
-- **Address-server (endpoint) discovery.** Supply `ServerAddresses` explicitly.
+- **Publishing prompts, skills and agent specifications from the client.** For those three the client
+  surface is the read path, exactly as it is in the official Java client; they are written through the
+  Nacos admin API.
+- **Automatic gRPC-to-HTTP AI fallback.** Every AI operation that has a gRPC contract travels over the
+  AI connection, and only a skill and an agent specification — the two the server exposes as HTTP
+  alone — are read over HTTP. See
+  [the protocol notes](protocol-notes.md#transport-selection-and-http-fallback).
+- **Address-server (endpoint) discovery.** Supply `ServerAddresses` explicitly. The Nacos registry
+  itself is discovered through `Microsoft.Extensions.ServiceDiscovery`, which is a different thing:
+  it resolves service *names*, not the Nacos servers to talk to.
 - **Aliyun MSE AccessKey/SecretKey** authentication. The auth layer leaves room for it, but only
   user name / password is supported today.
 - Multi-targeting to `netstandard` / .NET 8 and below.
