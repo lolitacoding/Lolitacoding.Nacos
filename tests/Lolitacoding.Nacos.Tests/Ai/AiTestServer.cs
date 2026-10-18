@@ -340,8 +340,12 @@ internal sealed class AiTestServer
     /// Builds an AI client that talks to this server.
     /// </summary>
     /// <param name="options">The options to use, or <see langword="null"/> for the test defaults.</param>
+    /// <param name="snapshots">
+    /// The disk failover store to build the client with, or <see langword="null"/> for a client that
+    /// keeps its resources in memory only.
+    /// </param>
     /// <returns>The client.</returns>
-    public NacosAiClient CreateClient(NacosOptions? options = null)
+    public NacosAiClient CreateClient(NacosOptions? options = null, NacosAiSnapshotStore? snapshots = null)
     {
         options ??= new NacosOptions
         {
@@ -366,7 +370,8 @@ internal sealed class AiTestServer
             _httpHandler is null ? new HttpClient() : new HttpClient(_httpHandler),
             TimeProvider.System,
             NullLoggerFactory.Instance,
-            new Random(1234));
+            new Random(1234),
+            snapshots: snapshots);
     }
 
     /// <summary>

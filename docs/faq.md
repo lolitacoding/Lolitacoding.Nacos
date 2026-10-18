@@ -167,7 +167,8 @@ Under `NacosOptions.LocalCacheDirectory`. When it is unset, a per-user folder is
 ~/.local/share/Lolitacoding.Nacos/<namespace>/        (Linux, per XDG)
 ```
 
-Set `Config.EnableLocalCache = false` or `Naming.EnableLocalCache = false` to disable caching.
+Set `Config.EnableLocalCache = false`, `Naming.EnableLocalCache = false` or
+`Ai.EnableLocalCache = false` to disable caching.
 Cached values are only used when the server is unreachable; `NacosConfigResult.FromLocalCache` and
 `NacosServiceInfo.FromLocalCache` tell you when that happened.
 
@@ -178,6 +179,20 @@ snapshot directory, and a lookup that finds no in-memory entry falls back to tha
 in-memory cache only helps a process that stays up; the on-disk snapshot is what keeps a rolling
 restart during a Nacos outage from becoming an application outage. It is written atomically, so a
 process killed mid-write leaves either the previous snapshot or the new one, never a truncated file.
+
+## Does the AI registry cache survive a restart?
+
+Yes, when `Ai.EnableLocalCache` is on (the default). An MCP, prompt, skill, agent-specification or
+agent-card **subscription** writes the resource it read to the snapshot directory, and a client that
+starts while Nacos is unreachable is answered from that copy instead of failing — which is the
+difference between an agent host that comes back up during an outage and one that cannot start.
+Nothing else writes a copy, nothing but an unreachable server makes the client read one, and a
+resource the server reports as withdrawn has its copy removed, so the file is never a better answer
+than the server. The RAD agent watch is the exception: its recovery after a reconnect is in memory.
+
+The official Java client keeps all of these caches in memory only, so this is an extension rather than
+a port; [the protocol notes](protocol-notes.md#the-local-failover-cache) record it as the intended
+deviation.
 
 ## How do I resolve services with `Microsoft.Extensions.ServiceDiscovery`?
 

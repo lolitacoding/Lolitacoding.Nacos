@@ -1,9 +1,46 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
+using System.Text.Json.Serialization.Metadata;
 using System.Threading.Channels;
+using Lolitacoding.Nacos.Internal;
 using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Ai;
+
+/// <summary>
+/// The on-disk failover cache one resource type writes to and reads from.
+/// </summary>
+/// <typeparam name="T">The resource the cache holds.</typeparam>
+/// <remarks>
+/// The store is shared by every resource type, so each cache says which kind it is and how to turn
+/// its resource into the JSON the store writes. Both are required together with the store: a cache
+/// without a policy simply has no disk failover.
+/// </remarks>
+internal sealed class NacosAiSnapshot<T>
+    where T : class
+{
+    /// <summary>Gets the store the snapshots are written to.</summary>
+    public required NacosAiSnapshotStore Store { get; init; }
+
+    /// <summary>Gets the resource kind, which keeps two resources of the same name apart.</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>Gets the contract the resource is serialized with.</summary>
+    public required JsonTypeInfo<T> Type { get; init; }
+
+    /// <summary>
+    /// Builds the policy of a resource type, when the client was given a store.
+    /// </summary>
+    /// <param name="store">The store, or <see langword="null"/> when resources are kept in memory only.</param>
+    /// <param name="kind">The resource kind.</param>
+    /// <param name="type">The contract the resource is serialized with.</param>
+    /// <returns>The policy, or <see langword="null"/> when there is no store to write to.</returns>
+    public static NacosAiSnapshot<T>? Create(
+        NacosAiSnapshotStore? store,
+        string kind,
+        JsonTypeInfo<T> type)
+        => store is null ? null : new NacosAiSnapshot<T> { Store = store, Kind = kind, Type = type };
+}
 
 /// <summary>
 /// The inputs a <see cref="NacosAiResourceCache{T}"/> is built from.
@@ -63,6 +100,12 @@ internal sealed class NacosAiResourceCacheOptions<T>
 
     /// <summary>Gets the interval between two refreshes of a subscribed selector.</summary>
     public required TimeSpan RefreshInterval { get; init; }
+
+    /// <summary>
+    /// Gets the disk failover cache, or <see langword="null"/> when resources are kept in memory
+    /// only.
+    /// </summary>
+    public NacosAiSnapshot<T>? Snapshot { get; init; }
 
     /// <summary>Gets the clock the refresh interval is measured with.</summary>
     public required TimeProvider TimeProvider { get; init; }
@@ -251,6 +294,38 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     }
 
     /// <summary>
+    /// Seeds a selector from its local snapshot, when the client caches on disk.
+    /// </summary>
+    /// <param name="name">The resource name.</param>
+    /// <param name="version">The version, or <see langword="null"/> for none.</param>
+    /// <param name="label">The label, or <see langword="null"/> for none.</param>
+    /// <param name="ct">A token that cancels the read.</param>
+    /// <returns><see langword="true"/> when the selector has a copy, either already or now.</returns>
+    /// <remarks>
+    /// Called before a subscription opens when the server could not be reached. With the copy in
+    /// place the subscription starts from it, and the read that would otherwise need the connection
+    /// is not made at all; the refresh loop reads the server when it comes back and announces a
+    /// change if the copy it holds is no longer what the server serves.
+    /// </remarks>
+    public async Task<bool> RestoreAsync(
+        string name,
+        string? version,
+        string? label,
+        CancellationToken ct)
+    {
+        string key = Key(name, version, label);
+
+        if (Lookup(key) is not null)
+        {
+            return true;
+        }
+
+        T? restored = await LoadSnapshotAsync(key, ct).ConfigureAwait(false);
+
+        return restored is not null && _resources.TryAdd(key, restored);
+    }
+
+    /// <summary>
     /// Builds the key that identifies one selector.
     /// </summary>
     /// <param name="name">The resource name.</param>
@@ -297,7 +372,9 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     /// <returns>The resource, or <see langword="null"/> when the server serves none for the selector.</returns>
     /// <remarks>
     /// This is the seeding read, and it is unconditional: there is nothing to compare against yet, so
-    /// asking for the content is the only useful question.
+    /// asking for the content is the only useful question. It is also the read that falls back to the
+    /// local cache: a subscription that restarts while the control plane is unreachable starts from
+    /// the copy that was last read from the server instead of failing.
     /// </remarks>
     private async Task<T?> TryQueryAsync(
         string name,
@@ -309,15 +386,95 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
         try
         {
             T resource = await _options.Query(name, version, label, null, ct).ConfigureAwait(false);
-            Process(key, resource);
+            await ProcessAsync(key, resource, ct).ConfigureAwait(false);
             return resource;
         }
         catch (NacosServerException ex) when (ex.ErrorCode == NotFoundErrorCode)
         {
             // Nothing is served for this selector right now. The subscription is meant to survive
             // that, so the refresh loop keeps looking instead of the subscription failing.
-            Process(key, null);
+            await ProcessAsync(key, null, ct).ConfigureAwait(false);
             return null;
+        }
+        catch (NacosException ex) when (ex is NacosConnectionException or NacosTimeoutException)
+        {
+            T? restored = await LoadSnapshotAsync(key, ct).ConfigureAwait(false);
+
+            if (restored is null)
+            {
+                // Nothing was cached either, so there is no answer to give and the caller is told
+                // the read failed.
+                throw;
+            }
+
+            // Seeded into the cache rather than processed: this copy was not read just now, so it
+            // is not a change and is not announced to a subscriber that already holds it.
+            _resources.TryAdd(key, restored);
+            NacosAiLog.SnapshotRestored(_options.Logger, _options.Snapshot!.Kind, name, ex.Message);
+
+            return restored;
+        }
+    }
+
+    /// <summary>
+    /// Reads a selector's snapshot, when the resource type caches on disk.
+    /// </summary>
+    /// <param name="key">The cache key.</param>
+    /// <param name="ct">A token that cancels the read.</param>
+    /// <returns>The cached resource, or <see langword="null"/> when there is none to fall back to.</returns>
+    private async Task<T?> LoadSnapshotAsync(string key, CancellationToken ct)
+    {
+        NacosAiSnapshot<T>? snapshot = _options.Snapshot;
+
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        return await snapshot.Store.LoadAsync(snapshot.Kind, key, snapshot.Type, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes a selector's snapshot, when the resource type caches on disk.
+    /// </summary>
+    /// <param name="key">The cache key.</param>
+    /// <param name="resource">The resource the server returned.</param>
+    /// <param name="ct">A token that cancels the write.</param>
+    /// <returns>A task that completes once the snapshot is written, or its failure was reported.</returns>
+    private async Task SaveSnapshotAsync(string key, T resource, CancellationToken ct)
+    {
+        NacosAiSnapshot<T>? snapshot = _options.Snapshot;
+
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await snapshot.Store
+                .SaveAsync(snapshot.Kind, key, resource, snapshot.Type, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The read succeeded, so a snapshot that could not be written is reported rather than
+            // raised: losing the failover copy must not fail a caller.
+            NacosAiLog.SnapshotWriteFailed(_options.Logger, snapshot.Kind, NameOf(key), ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Removes a selector's snapshot, when the resource type caches on disk.
+    /// </summary>
+    /// <param name="key">The cache key.</param>
+    private void RemoveSnapshot(string key)
+    {
+        NacosAiSnapshot<T>? snapshot = _options.Snapshot;
+
+        if (snapshot is not null)
+        {
+            snapshot.Store.Remove(snapshot.Kind, key);
         }
     }
 
@@ -326,12 +483,14 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     /// </summary>
     /// <param name="key">The cache key the resource belongs to.</param>
     /// <param name="resource">The resource the server returned, or <see langword="null"/> when it serves none.</param>
+    /// <param name="ct">A token that cancels the snapshot write.</param>
+    /// <returns>A task that completes once the resource, its snapshot and its subscribers are updated.</returns>
     /// <remarks>
     /// A resource that is not served removes the cached copy and announces the removal, which is how
     /// a subscriber learns that what it was using is gone. Nothing is announced when the state did
     /// not change, so a resource that was never there does not produce a stream of empty updates.
     /// </remarks>
-    private void Process(string key, T? resource)
+    private async Task ProcessAsync(string key, T? resource, CancellationToken ct)
     {
         T? previous = Lookup(key);
         bool changed = !_options.IsSame(previous, resource);
@@ -339,10 +498,20 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
         if (resource is null)
         {
             _resources.TryRemove(key, out _);
+
+            // Removed whether or not the absence is news: a snapshot left behind by an earlier
+            // process would otherwise be served during the next outage for a resource the server
+            // says is gone.
+            RemoveSnapshot(key);
         }
         else
         {
             _resources[key] = resource;
+
+            if (changed)
+            {
+                await SaveSnapshotAsync(key, resource, ct).ConfigureAwait(false);
+            }
         }
 
         if (changed)
@@ -479,14 +648,14 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
                         Lookup(key) is { } cached ? _options.Hash(cached) : null,
                         CancellationToken.None).ConfigureAwait(false);
 
-                    Process(key, resource);
+                    await ProcessAsync(key, resource, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (NacosServerException ex) when (ex.ErrorCode == NotFoundErrorCode)
                 {
                     // Withdrawn, or a version that is no longer served. A subscriber is told, because
                     // a resource that is gone is not indistinguishable from one that has not
                     // arrived yet.
-                    Process(key, null);
+                    await ProcessAsync(key, null, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (NacosServerException ex) when (ex.ErrorCode == NotModifiedErrorCode)
                 {

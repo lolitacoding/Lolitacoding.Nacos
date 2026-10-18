@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
@@ -49,11 +50,15 @@ internal sealed class NacosAgentCardClient : INacosAgentCardRegistry, IAsyncDisp
     /// <param name="options">The client options.</param>
     /// <param name="timeProvider">The clock the subscription refresh interval is measured with.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="snapshots">
+    /// The disk failover store, or <see langword="null"/> when cards are kept in memory only.
+    /// </param>
     public NacosAgentCardClient(
         NacosAiClient owner,
         NacosOptions options,
         TimeProvider timeProvider,
-        ILogger<NacosAgentCardClient> logger)
+        ILogger<NacosAgentCardClient> logger,
+        NacosAiSnapshotStore? snapshots = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(options);
@@ -75,6 +80,8 @@ internal sealed class NacosAgentCardClient : INacosAgentCardRegistry, IAsyncDisp
             RefreshFailed = (name, version, registrationType, reason) =>
                 NacosAiLog.AgentCardRefreshFailed(_logger, name, version, registrationType, reason),
             RefreshInterval = options.Ai.CacheRefreshInterval,
+            Snapshot = NacosAiSnapshot<NacosAgentCardDetail>.Create(
+                snapshots, NacosAiSnapshotStore.AgentCardKind, NacosJsonContext.Default.NacosAgentCardDetail),
             TimeProvider = timeProvider,
             Logger = logger,
         });

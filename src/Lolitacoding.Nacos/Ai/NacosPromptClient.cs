@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
@@ -37,11 +38,15 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
     /// <param name="options">The client options.</param>
     /// <param name="timeProvider">The clock the subscription refresh interval is measured with.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="snapshots">
+    /// The disk failover store, or <see langword="null"/> when resources are kept in memory only.
+    /// </param>
     public NacosPromptClient(
         NacosAiClient owner,
         NacosOptions options,
         TimeProvider timeProvider,
-        ILogger<NacosPromptClient> logger)
+        ILogger<NacosPromptClient> logger,
+        NacosAiSnapshotStore? snapshots = null)
     {
         _owner = owner;
         _options = options;
@@ -63,6 +68,8 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
             RefreshFailed = (name, version, label, reason) =>
                 NacosAiLog.PromptRefreshFailed(_logger, name, version, reason),
             RefreshInterval = options.Ai.CacheRefreshInterval,
+            Snapshot = NacosAiSnapshot<NacosPrompt>.Create(
+                snapshots, NacosAiSnapshotStore.PromptKind, NacosJsonContext.Default.NacosPrompt),
             TimeProvider = timeProvider,
             Logger = logger,
         });
@@ -93,7 +100,21 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
 
         // The connection is opened here rather than at the call, because an async iterator runs on
         // the first move, which is also when a caller that never iterates should pay nothing.
-        await _owner.GetConnectionAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await _owner.GetConnectionAsync(ct).ConfigureAwait(false);
+        }
+        catch (NacosException ex) when (ex is NacosConnectionException or NacosTimeoutException)
+        {
+            // A server that cannot be reached is not fatal when the prompt was cached on disk: the
+            // subscription starts from that copy, and the refresh loop reads the server when it
+            // comes back. With nothing cached there is nothing to start from, and the failure is
+            // the caller's exactly as it was before.
+            if (!await _cache.RestoreAsync(promptKey, version, label, ct).ConfigureAwait(false))
+            {
+                throw;
+            }
+        }
 
         await foreach (NacosPrompt? prompt in _cache.SubscribeAsync(promptKey, version, label, ct).ConfigureAwait(false))
         {

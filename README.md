@@ -272,7 +272,11 @@ server's current state and needs the server to be reachable; a subscription is t
 a local copy, and an endpoint is a Naming instance rather than an AI record, so it is discovered and
 health checked like any other instance. A prompt read is always the server's answer, including the
 version a label resolves to, while a prompt subscription re-reads on the interval and therefore has
-the same local copy an MCP subscription has. A skill and an agent specification are the two resources
+the same local copy an MCP subscription has. A subscription can also keep that copy on disk
+(`Ai.EnableLocalCache`, the shared `LocalCacheDirectory`), so a process that restarts while Nacos is
+unreachable starts from what it last read; the official Java client keeps these caches in memory only,
+and [the protocol notes](docs/protocol-notes.md#the-local-failover-cache) record the extension. A skill
+and an agent specification are the two resources
 read over HTTP rather than over the AI connection, because the server exposes them as OpenAPI
 endpoints; both subscriptions are the same kind of poll, and both report a resource that stops being
 served the way a prompt is. An agent specification is the one resource whose selector resolves a label

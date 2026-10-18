@@ -1,4 +1,6 @@
 using System.Runtime.CompilerServices;
+using Lolitacoding.Nacos.Internal;
+using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Microsoft.Extensions.Logging;
@@ -42,17 +44,27 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
     /// <param name="options">The client options.</param>
     /// <param name="timeProvider">The clock the subscription refresh interval is measured with.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="snapshots">
+    /// The disk failover store, or <see langword="null"/> when details are kept in memory only.
+    /// </param>
     public NacosMcpClient(
         NacosAiClient owner,
         NacosOptions options,
         TimeProvider timeProvider,
-        ILogger<NacosMcpClient> logger)
+        ILogger<NacosMcpClient> logger,
+        NacosAiSnapshotStore? snapshots = null)
     {
         _owner = owner;
         _options = options;
         _logger = logger;
 
-        _cache = new NacosMcpServerCache(QueryAsync, options.Ai.CacheRefreshInterval, timeProvider, logger);
+        _cache = new NacosMcpServerCache(
+            QueryAsync,
+            options.Ai.CacheRefreshInterval,
+            timeProvider,
+            logger,
+            NacosAiSnapshot<NacosMcpServerDetail>.Create(
+                snapshots, NacosAiSnapshotStore.McpKind, NacosJsonContext.Default.NacosMcpServerDetail));
         _endpoints = new NacosMcpEndpointPublication(owner.GetConnectionAsync, options.Namespace, logger);
     }
 
@@ -128,9 +140,22 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
         // The connection is opened here rather than at the call, because an async iterator runs on
-        // the first move, which is also when a caller that never iterates should pay nothing.
-        NacosGrpcConnection connection = await _owner.GetConnectionAsync(ct).ConfigureAwait(false);
-        EnsureSupported(connection, name);
+        // the first move, which is also when a caller that never iterates should pay nothing. The
+        // ability the server advertises is checked on the same connection, so a server that cannot
+        // be reached cannot be gated on: when the version was cached on disk the subscription starts
+        // from that copy and the loop reads the server, and its ability, when it comes back.
+        try
+        {
+            NacosGrpcConnection connection = await _owner.GetConnectionAsync(ct).ConfigureAwait(false);
+            EnsureSupported(connection, name);
+        }
+        catch (NacosException ex) when (ex is NacosConnectionException or NacosTimeoutException)
+        {
+            if (!await _cache.RestoreAsync(name, version, ct).ConfigureAwait(false))
+            {
+                throw;
+            }
+        }
 
         await foreach (NacosMcpServerDetail detail in _cache.SubscribeAsync(name, version, ct).ConfigureAwait(false))
         {

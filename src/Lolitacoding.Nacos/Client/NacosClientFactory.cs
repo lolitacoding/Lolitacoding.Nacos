@@ -143,6 +143,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         NacosConfigSnapshotStore? configSnapshots = CreateConfigSnapshotStore(options);
         NacosServiceSnapshotStore? namingSnapshots = CreateServiceSnapshotStore(options);
+        NacosAiSnapshotStore? aiSnapshots = CreateAiSnapshotStore(options);
 
         var config = new NacosConfigClient(
             options,
@@ -175,7 +176,8 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             clock,
             loggerFactory,
             random,
-            authProvider);
+            authProvider,
+            aiSnapshots);
 
         var factory = new NacosClientFactory(
             options, configConnection, namingConnection, config, naming, @lock, ai,
@@ -324,6 +326,16 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     private static NacosServiceSnapshotStore? CreateServiceSnapshotStore(NacosOptions options) =>
         options.Naming.EnableLocalCache
             ? new NacosServiceSnapshotStore(ResolveCacheDirectory(options))
+            : null;
+
+    /// <summary>
+    /// Creates the AI snapshot store when local caching is enabled.
+    /// </summary>
+    /// <param name="options">The client options.</param>
+    /// <returns>The store, or <see langword="null"/> when caching is disabled.</returns>
+    private static NacosAiSnapshotStore? CreateAiSnapshotStore(NacosOptions options) =>
+        options.Ai.EnableLocalCache
+            ? new NacosAiSnapshotStore(ResolveCacheDirectory(options))
             : null;
 
     /// <summary>

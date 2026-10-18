@@ -59,11 +59,15 @@ internal sealed class NacosAgentSpecClient : INacosAgentSpecRegistry, IAsyncDisp
     /// <param name="options">The client options.</param>
     /// <param name="timeProvider">The clock the subscription refresh interval is measured with.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="snapshots">
+    /// The disk failover store, or <see langword="null"/> when specifications are kept in memory only.
+    /// </param>
     public NacosAgentSpecClient(
         NacosAiHttpClient http,
         NacosOptions options,
         TimeProvider timeProvider,
-        ILogger<NacosAgentSpecClient> logger)
+        ILogger<NacosAgentSpecClient> logger,
+        NacosAiSnapshotStore? snapshots = null)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(options);
@@ -92,6 +96,8 @@ internal sealed class NacosAgentSpecClient : INacosAgentSpecRegistry, IAsyncDisp
             RefreshFailed = (name, version, label, reason) =>
                 NacosAiLog.AgentSpecRefreshFailed(_logger, name, version, label, reason),
             RefreshInterval = options.Ai.CacheRefreshInterval,
+            Snapshot = NacosAiSnapshot<NacosAgentSpec>.Create(
+                snapshots, NacosAiSnapshotStore.AgentSpecKind, NacosJsonContext.Default.NacosAgentSpec),
             TimeProvider = timeProvider,
             Logger = logger,
         });

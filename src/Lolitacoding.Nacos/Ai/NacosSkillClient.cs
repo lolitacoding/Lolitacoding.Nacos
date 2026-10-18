@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Runtime.CompilerServices;
 using Lolitacoding.Nacos.Internal;
+using Lolitacoding.Nacos.Protocol;
 using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Ai;
@@ -61,11 +62,15 @@ internal sealed class NacosSkillClient : INacosSkillRegistry, IAsyncDisposable
     /// <param name="options">The client options.</param>
     /// <param name="timeProvider">The clock the subscription refresh interval is measured with.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="snapshots">
+    /// The disk failover store, or <see langword="null"/> when skills are kept in memory only.
+    /// </param>
     public NacosSkillClient(
         NacosAiHttpClient http,
         NacosOptions options,
         TimeProvider timeProvider,
-        ILogger<NacosSkillClient> logger)
+        ILogger<NacosSkillClient> logger,
+        NacosAiSnapshotStore? snapshots = null)
     {
         ArgumentNullException.ThrowIfNull(http);
         ArgumentNullException.ThrowIfNull(options);
@@ -85,6 +90,8 @@ internal sealed class NacosSkillClient : INacosSkillRegistry, IAsyncDisposable
             RefreshFailed = (name, version, label, reason) =>
                 NacosAiLog.SkillRefreshFailed(_logger, name, version, label, reason),
             RefreshInterval = options.Ai.CacheRefreshInterval,
+            Snapshot = NacosAiSnapshot<NacosSkill>.Create(
+                snapshots, NacosAiSnapshotStore.SkillKind, NacosJsonContext.Default.NacosSkill),
             TimeProvider = timeProvider,
             Logger = logger,
         });

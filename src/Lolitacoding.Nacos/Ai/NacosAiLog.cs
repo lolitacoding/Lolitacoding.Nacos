@@ -595,4 +595,42 @@ internal static partial class NacosAiLog
         ILogger logger,
         string agentName,
         string reason);
+
+    /// <summary>Logs that a resource was answered from the local failover cache.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="resource">The resource kind.</param>
+    /// <param name="name">The resource name.</param>
+    /// <param name="reason">Why the server could not be read.</param>
+    /// <remarks>
+    /// The subscription is handed the copy that was last read from the server, so it starts with
+    /// what it had rather than with nothing while the control plane is unreachable.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8041,
+        Level = LogLevel.Information,
+        Message = "Serving {Resource} {Name} from the local cache: {Reason}")]
+    public static partial void SnapshotRestored(
+        ILogger logger,
+        string resource,
+        string name,
+        string reason);
+
+    /// <summary>Logs that a resource could not be written to the local failover cache.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="resource">The resource kind.</param>
+    /// <param name="name">The resource name.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// The read itself succeeded, so a failed write is reported rather than raised: the cache is an
+    /// optimisation and losing it must not fail a caller.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8042,
+        Level = LogLevel.Warning,
+        Message = "Caching {Resource} {Name} on disk failed: {Reason}")]
+    public static partial void SnapshotWriteFailed(
+        ILogger logger,
+        string resource,
+        string name,
+        string reason);
 }

@@ -55,6 +55,9 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
     /// <param name="loggerFactory">The logger factory.</param>
     /// <param name="random">The random source used for reconnect jitter.</param>
     /// <param name="authProvider">Supplies the access token, or <see langword="null"/> for none.</param>
+    /// <param name="snapshots">
+    /// The disk failover store, or <see langword="null"/> when resources are kept in memory only.
+    /// </param>
     public NacosAiClient(
         NacosOptions options,
         IReadOnlyList<NacosServerAddress> servers,
@@ -63,7 +66,8 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
         Random? random = null,
-        INacosAuthProvider? authProvider = null)
+        INacosAuthProvider? authProvider = null,
+        NacosAiSnapshotStore? snapshots = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(servers);
@@ -106,8 +110,10 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
             return connection;
         });
 
-        _mcp = new NacosMcpClient(this, options, timeProvider, loggerFactory.CreateLogger<NacosMcpClient>());
-        _prompt = new NacosPromptClient(this, options, timeProvider, loggerFactory.CreateLogger<NacosPromptClient>());
+        _mcp = new NacosMcpClient(
+            this, options, timeProvider, loggerFactory.CreateLogger<NacosMcpClient>(), snapshots);
+        _prompt = new NacosPromptClient(
+            this, options, timeProvider, loggerFactory.CreateLogger<NacosPromptClient>(), snapshots);
 
         var http = new NacosAiHttpClient(
             servers,
@@ -116,12 +122,13 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
             loggerFactory.CreateLogger<NacosAiHttpClient>(),
             authProvider);
 
-        _skill = new NacosSkillClient(http, options, timeProvider, loggerFactory.CreateLogger<NacosSkillClient>());
+        _skill = new NacosSkillClient(
+            http, options, timeProvider, loggerFactory.CreateLogger<NacosSkillClient>(), snapshots);
         _agentSpec = new NacosAgentSpecClient(
-            http, options, timeProvider, loggerFactory.CreateLogger<NacosAgentSpecClient>());
+            http, options, timeProvider, loggerFactory.CreateLogger<NacosAgentSpecClient>(), snapshots);
 
         _agentCard = new NacosAgentCardClient(
-            this, options, timeProvider, loggerFactory.CreateLogger<NacosAgentCardClient>());
+            this, options, timeProvider, loggerFactory.CreateLogger<NacosAgentCardClient>(), snapshots);
 
         _agent = new NacosAgentRegistryClient(
             this, options, timeProvider, loggerFactory, random);

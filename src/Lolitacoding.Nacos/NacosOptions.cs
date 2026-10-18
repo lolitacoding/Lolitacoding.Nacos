@@ -68,13 +68,13 @@ public sealed class NacosOptions
     public TimeSpan HealthCheckTimeout { get; set; } = TimeSpan.FromSeconds(3);
 
     /// <summary>
-    /// Gets or sets the directory used to store configuration snapshots and service list
-    /// failover files.
+    /// Gets or sets the directory used to store configuration snapshots, service list failover files
+    /// and AI resource snapshots.
     /// </summary>
     /// <remarks>
-    /// When the server is unreachable the client falls back to these files, which keeps a
-    /// process bootable during a control-plane outage. Set to <see langword="null"/> to
-    /// disable local caching entirely.
+    /// When the server is unreachable the client falls back to these files, which keeps a process
+    /// bootable during a control-plane outage. Left unset, the per-user application data directory is
+    /// used; each module's own <c>EnableLocalCache</c> switch decides whether it caches at all.
     /// </remarks>
     public string? LocalCacheDirectory { get; set; }
 
@@ -390,9 +390,17 @@ public sealed class NacosAiOptions
     /// Gets or sets a value indicating whether AI resources are cached locally for failover.
     /// </summary>
     /// <remarks>
-    /// Reserved for the on-disk failover cache, which is not implemented yet: the in-memory cache a
-    /// subscription uses is always on, and nothing is written to disk. The property exists because the
-    /// official client has it and a caller migrating from it expects to find it.
+    /// <para>
+    /// The in-memory copy a subscription keeps is always on; this adds a copy on disk, under
+    /// <see cref="NacosOptions.LocalCacheDirectory"/>, so a subscription can start from what it last
+    /// read even after the process was restarted. Without it a restart during a control-plane outage
+    /// comes up with an empty cache and nothing to serve.
+    /// </para>
+    /// <para>
+    /// The disk copy is consulted only when a read cannot reach the server, and a resource the
+    /// server reports as no longer served has its copy removed, so a withdrawal is never undone by
+    /// an outage that follows it.
+    /// </para>
     /// </remarks>
     public bool EnableLocalCache { get; set; } = true;
 

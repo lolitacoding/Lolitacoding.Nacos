@@ -276,7 +276,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 版本解析：优先 `versionDetail.version`，回退旧 `version` 字符串；两者皆无则拒绝发布——服务端自行编造的版本调用方无法再次指名。
 - 失败语义：不存在的 MCP 服务器是业务错误（服务器回 `404` + `MCP server not found`，注册表自身的 `MCP_SERVER_NOT_FOUND` 为 `50000`）；因此“成功但无 detail”按契约破坏（`NacosServerException`）处理，而不是当成空结果。
 - 关键发现：MCP 客户端契约属于 **3.0.3**（`McpService` 标注 `@Since("3.0.3")`），而套件固化的最老 3.x（`v3.0.2`）对查询与发布都回 `RequestHandler Not Found`。AI 集成用例改用独立镜像（`NACOS_AI_TEST_IMAGE`，默认 `v3.2.4`——已验证可服务注册表的最老版本），其余套件仍为 `v3.0.2`。
-- 选项 `NacosAiOptions`（`EnableLocalCache` / `CacheRefreshInterval`）随本阶段引入；`CacheRefreshInterval` 在 C2 的订阅中生效，`EnableLocalCache`（落盘 failover）至今仍未实现，内存中的订阅缓存始终开启，文档与 XML 注释都如实写明。
+- 选项 `NacosAiOptions`（`EnableLocalCache` / `CacheRefreshInterval`）随本阶段引入；`CacheRefreshInterval` 在 C2 的订阅中生效，`EnableLocalCache`（落盘 failover）当时尚未实现（内存中的订阅缓存始终开启），已在 D1 补齐。
 - 这一阶段暂不做 gRPC↔HTTP 自动回退：服务器缺失能力位时按上述 501 语义报错即可；回退推迟到 C8 之后的独立切片（C8 说明了为何仍不能真机验证）。
 - 验收：Release 构建零警告零错误；单元测试 **386 个全绿**（新增 26 个：查询/发布的字段映射与参数校验、能力位门禁与“未声明即放行”、服务器错误码上抛、`createDraft` 省略、模型 JSON 契约与整条详情往返）；集成测试新增 2 个用例，在 `nacos/nacos-server:v3.2.4` 上全绿（发布 → 查询（含 `allVersions` 与工具清单）→ 按版本再查；未发布的名字回业务错误且先发布一次以证明注册表确实在服务）。
 
@@ -405,5 +405,20 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 验收：Release 构建零警告零错误；单元测试 **552 个全绿**；集成测试 **51 个全绿**，基座套件在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本上分别通过（四个镜像）。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
+
+#### D1 · AI 本地缓存落盘 failover（✅ 已完成）
+
+- `Internal/NacosAiSnapshotStore.cs`：AI 资源的落盘 failover 存储，形状对齐 `NacosConfigSnapshotStore`（`<LocalCacheDirectory>/ai` 目录、临时文件 + 原子改名、路径安全校验、读不回来即视为不存在）。载荷是资源的 JSON，走协议同一套 source-generated 契约（`NacosJsonContext` 新增 4 个 root），因此格式不需要版本标记：读不回来与从未写过对调用方是同一件事。文件名是 `kind` + 选择器键的 SHA-256 十六进制，`kind` 参与身份（Prompt 与 Skill 可以合法同名）；用 SHA-256 而不是协议的 MD5，是因为这个摘要只做本地文件名、不与任何对端共享。
+- 落盘策略 `NacosAiSnapshot<T>`（`Kind` + `JsonTypeInfo<T>` + 存储）挂在两个缓存上：泛型 `NacosAiResourceCache<T>`（Prompt / Skill / AgentSpec / AgentCard，`NacosAiResourceCacheOptions<T>.Snapshot`）与 `NacosMcpServerCache`（构造参数）。客户端没拿到存储（`EnableLocalCache = false`）时策略为 `null`，缓存退回纯内存行为，与今天完全一致。
+- 写入时机：`Process` / `CompareAndStore` 在**副本发生变化**时写入（首次读、内容更新），在资源被服务端判定为**已撤回**时删除文件（`Process(key, null)`）。删除**不**依赖「是否算变化」——否则上一进程留下的文件会在下一次故障中被复活，这是 failover 唯一不能失败的方向。
+- 读取时机：**只有**读不到服务器时（`NacosConnectionException` / `NacosTimeoutException`）才读文件，服务端可达时永远先问服务端。两条路径都覆盖：
+  - 订阅的首读（`TryQueryAsync`）读不到服务器 → 文件有副本就作为首值投递，没有则原样抛出该异常。
+  - 订阅**装表前**的连接预检失败 → 用 `RestoreAsync` 把副本 seed 进缓存后继续订阅：副本已在缓存里，首读不再需要连接，调用方拿到的是上一次读到的内容，刷新循环照常运行并在服务器回来时发现变化；没有副本时仍然是原来的异常。
+  - 这条预检是本切片的关键发现：Prompt 与 MCP 的 `Subscribe*Async` 会先 `GetConnectionAsync`（MCP 还要查能力位），**「重启碰上故障」会在到达缓存之前就失败**，而能力位在连接不可达时也无从判定；因此只能在「已有副本」的前提下放行预检。没有预检的 Skill / AgentSpec / AgentCard 直接走缓存回调。
+- 接线：`NacosClientFactory` 在 `EnableLocalCache` 为真时创建存储并传给 `NacosAiClient`，后者传给 MCP / Prompt / Skill / AgentSpec / AgentCard 五个客户端；单元测试夹具 `AiTestServer.CreateClient` 增加可选存储参数，不传时行为不变（既有 AI 用例因此零改动）。
+- 与上游的**有意差异**（记入 `docs/protocol-notes.md`「The local failover cache」）：官方 Java 客户端这些缓存**只在内存**（`client/ai/cache` 与 `client/ai/watch` 均为内存实现），落盘是本客户端的扩展，多语言契约允许客户端记录自身偏差。RAD agent watch **不做**磁盘缓存：`specs/en/client/client-local-cache-redo-spec.md` §8 把 RAD 恢复的磁盘部分标为 target 而非契约，其重连恢复仍是内存语义。
+- 日志事件：8041 从本地缓存应答（Info）、8042 落盘失败（Warning；读已经成功，缓存写不进去不判调用方失败）。
+- 文档：`NacosOptions.LocalCacheDirectory` 与 `NacosAiOptions.EnableLocalCache` 的注释改写（原先写「尚未实现」），`docs/configuration.md` 的 `NacosAiOptions` 表、`docs/faq.md` 新增「Does the AI registry cache survive a restart?」、`docs/protocol-notes.md` 新增「The local failover cache」，README 的 AI 段落补一句。
+- 验收：Release 构建零警告零错误；单元测试 **594 个全绿**（新增 21 个：存储的往返（含 Skill 归档字节）/ 分类隔离 / 覆盖写 / 删除 / 读不回来视为不存在 / 空目录校验；缓存的写入时机 / 撤回删文件 / 读不到服务器时投递副本 / 无副本仍抛原异常 / `RestoreAsync` seed 后零读 / 无存储时 `RestoreAsync` 为假；MCP 同样的四条；客户端接线后 Prompt 与 MCP 的落盘；以及一次真正的「重启」——第一个进程读到副本，第二个进程用同目录、指向不可达地址（`Optional = false`，端口 1）仍拿到首值）。集成测试新增 `AiLocalCacheIntegrationTests` 一个用例，整套 **54 个全绿**（10m10s，基座 `v3.0.2`）：真机发布并订阅 → 停掉容器 → 新客户端用同目录订阅同一 prompt 仍是上次读到的模板，而从未服务过的 key 仍然是原来的连接异常。
 
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

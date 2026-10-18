@@ -733,6 +733,31 @@ changed; the caller then reads the state again through the ordinary discovery ca
    status code. `404`, `-404`, `20004`, `50100` and `50101` are all read as "the agent is not
    published".
 
+### The local failover cache
+
+- Every AI resource a subscription holds can also be written to the snapshot directory
+  (`NacosOptions.LocalCacheDirectory`) when `NacosAiOptions.EnableLocalCache` is on, and read back when
+  the control plane cannot be reached. The official client keeps these caches in memory only
+  (`NacosMcpServerCacheHolder` and the rest of `client/ai/cache`, plus the `watch` package), so this is
+  an extension rather than a port; the multi-language contract lets a client document its own
+  deviation, and the behaviour added is the one configuration and naming already have — a process that
+  restarts into an outage starts from what it last read instead of from nothing.
+- Only a subscription writes a copy, and only a read that could not reach the server reads one, so a
+  reachable server is always asked first. The copy never outlives the answer it came from: a resource
+  the server reports as no longer served has its file removed, so a withdrawal is not undone by an
+  outage that follows it.
+- The payload is the resource's JSON, serialized through the same source-generated contract the
+  protocol uses. The file is written beside its target and moved into place, so a process killed
+  mid-write leaves either the previous copy or the new one; a file that does not deserialize is treated
+  as absent, which is why the format needs no version marker.
+- A subscription whose first read cannot open the connection is answered from the copy instead: the
+  connection is not needed to hand out what was already read. Without a copy the failure stays the
+  caller's, exactly as it was.
+- The RAD agent watch has no disk cache of its own. Its recovery contract — a snapshot plus a redo of
+  the subscription — is the official client's in-memory one here, and
+  `specs/en/client/client-local-cache-redo-spec.md` §8 marks the disk part of the RAD recovery as a
+  target rather than a contract.
+
 ### Transport selection and HTTP fallback
 
 The official client can serve an MCP, prompt or agent call over either the AI gRPC connection or the

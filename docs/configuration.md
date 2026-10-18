@@ -69,11 +69,12 @@ drops.
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `EnableLocalCache` | `bool` | `true` | Keep the AI resources this client holds on disk, so a restart during a control-plane outage can still find the MCP servers, prompts and agents it needs. Not implemented yet: the in-memory subscription cache is always on and nothing is written to disk. |
+| `EnableLocalCache` | `bool` | `true` | Keep the AI resources a subscription holds on disk, so a restart during a control-plane outage can still find the MCP servers, prompts, skills, agent specifications and cards it needs. Only a subscription writes a copy and only an unreachable server makes the client read one, and a resource the server reports as withdrawn has its copy removed. Stores under `NacosOptions.LocalCacheDirectory`, alongside the configuration and service snapshots. |
 | `CacheRefreshInterval` | `TimeSpan` | 10 s | How often a subscribed resource is re-read. Nacos has no AI change push, so this interval is the only thing that makes a subscription fire: the client re-reads the server and reports the detail again when it differs from the cached copy. The MCP, prompt, skill and agent-specification subscriptions share it. Must be positive. |
 
 The cache is what a subscription populates; a plain query is served directly from the server and
-always reports what the server currently holds.
+always reports what the server currently holds. The RAD agent watch is not part of the disk cache:
+its recovery after a reconnect is in-memory.
 
 ## `NacosConfigurationSourceOptions`
 

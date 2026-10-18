@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Channels;
+using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol;
 using Microsoft.Extensions.Logging;
 
@@ -43,6 +44,7 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     private readonly TimeSpan _refreshInterval;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
+    private readonly NacosAiSnapshot<NacosMcpServerDetail>? _snapshot;
 
     private readonly ConcurrentDictionary<string, NacosMcpServerDetail> _servers = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _refreshes = new(StringComparer.Ordinal);
@@ -57,11 +59,15 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     /// <param name="refreshInterval">How long to wait between refreshes of a subscribed version.</param>
     /// <param name="timeProvider">The clock the refresh interval is measured with.</param>
     /// <param name="logger">The logger.</param>
+    /// <param name="snapshot">
+    /// The disk failover cache, or <see langword="null"/> when details are kept in memory only.
+    /// </param>
     public NacosMcpServerCache(
         Func<string, string?, CancellationToken, Task<NacosMcpServerDetail>> query,
         TimeSpan refreshInterval,
         TimeProvider timeProvider,
-        ILogger logger)
+        ILogger logger,
+        NacosAiSnapshot<NacosMcpServerDetail>? snapshot = null)
     {
         ArgumentNullException.ThrowIfNull(query);
         ArgumentNullException.ThrowIfNull(timeProvider);
@@ -71,6 +77,7 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
         _refreshInterval = refreshInterval;
         _timeProvider = timeProvider;
         _logger = logger;
+        _snapshot = snapshot;
     }
 
     /// <summary>
@@ -154,6 +161,31 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     /// <returns>The cached detail, or <see langword="null"/> when this version was never read.</returns>
     public NacosMcpServerDetail? Lookup(string name, string? version) => Lookup(Key(name, version));
 
+    /// <summary>
+    /// Seeds a version from its local snapshot, when the client caches on disk.
+    /// </summary>
+    /// <param name="name">The server name.</param>
+    /// <param name="version">The version, or <see langword="null"/> for the latest one.</param>
+    /// <param name="ct">A token that cancels the read.</param>
+    /// <returns><see langword="true"/> when the version has a copy, either already or now.</returns>
+    /// <remarks>
+    /// Called before a subscription opens when the server could not be reached, so the subscription
+    /// starts from the copy it last had instead of failing and reads the server when it comes back.
+    /// </remarks>
+    public async Task<bool> RestoreAsync(string name, string? version, CancellationToken ct)
+    {
+        string key = Key(name, version);
+
+        if (Lookup(key) is not null)
+        {
+            return true;
+        }
+
+        NacosMcpServerDetail? restored = await LoadSnapshotAsync(key, ct).ConfigureAwait(false);
+
+        return restored is not null && _servers.TryAdd(key, restored);
+    }
+
     /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
@@ -205,12 +237,17 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     /// <param name="version">The version, or <see langword="null"/> for the latest one.</param>
     /// <param name="ct">A token that cancels the read.</param>
     /// <returns>The detail, or <see langword="null"/> when the server does not know it yet.</returns>
+    /// <remarks>
+    /// This is also the read that falls back to the local cache: a subscription that restarts while
+    /// the control plane is unreachable starts from the copy that was last read from the server
+    /// instead of failing.
+    /// </remarks>
     private async Task<NacosMcpServerDetail?> TryQueryAsync(string name, string? version, CancellationToken ct)
     {
         try
         {
             NacosMcpServerDetail detail = await _query(name, version, ct).ConfigureAwait(false);
-            Process(detail);
+            await ProcessAsync(detail, ct).ConfigureAwait(false);
             return detail;
         }
         catch (NacosServerException ex) when (ex.ErrorCode == NotFoundErrorCode)
@@ -219,17 +256,86 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
             // that, so the refresh loop keeps looking instead of the subscription failing.
             return null;
         }
+        catch (NacosException ex) when (ex is NacosConnectionException or NacosTimeoutException)
+        {
+            string key = Key(name, version);
+            NacosMcpServerDetail? restored = await LoadSnapshotAsync(key, ct).ConfigureAwait(false);
+
+            if (restored is null)
+            {
+                // Nothing was cached either, so there is no answer to give and the caller is told
+                // the read failed.
+                throw;
+            }
+
+            // Seeded into the cache rather than processed: this copy was not read just now, so it
+            // is not a change and is not announced to a subscriber that already holds it.
+            _servers.TryAdd(key, restored);
+            NacosAiLog.SnapshotRestored(_logger, NacosAiSnapshotStore.McpKind, name, ex.Message);
+
+            return restored;
+        }
+    }
+
+    /// <summary>
+    /// Reads a version's snapshot, when the cache is backed by disk.
+    /// </summary>
+    /// <param name="key">The cache key.</param>
+    /// <param name="ct">A token that cancels the read.</param>
+    /// <returns>The cached detail, or <see langword="null"/> when there is none to fall back to.</returns>
+    private async Task<NacosMcpServerDetail?> LoadSnapshotAsync(string key, CancellationToken ct)
+    {
+        NacosAiSnapshot<NacosMcpServerDetail>? snapshot = _snapshot;
+
+        if (snapshot is null)
+        {
+            return null;
+        }
+
+        return await snapshot.Store.LoadAsync(snapshot.Kind, key, snapshot.Type, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Writes a version's snapshot, when the cache is backed by disk.
+    /// </summary>
+    /// <param name="key">The cache key.</param>
+    /// <param name="detail">The detail the server returned.</param>
+    /// <param name="ct">A token that cancels the write.</param>
+    /// <returns>A task that completes once the snapshot is written, or its failure was reported.</returns>
+    private async Task SaveSnapshotAsync(string key, NacosMcpServerDetail detail, CancellationToken ct)
+    {
+        NacosAiSnapshot<NacosMcpServerDetail>? snapshot = _snapshot;
+
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await snapshot.Store
+                .SaveAsync(snapshot.Kind, key, detail, snapshot.Type, ct)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The read succeeded, so a snapshot that could not be written is reported rather than
+            // raised: losing the failover copy must not fail a caller.
+            NacosAiLog.SnapshotWriteFailed(_logger, snapshot.Kind, detail.Name ?? string.Empty, ex.Message);
+        }
     }
 
     /// <summary>
     /// Stores a detail and announces it when it differs from the copy that was cached.
     /// </summary>
     /// <param name="detail">The detail the server returned.</param>
+    /// <param name="ct">A token that cancels the snapshot write.</param>
+    /// <returns>A task that completes once the detail, its snapshot and its subscribers are updated.</returns>
     /// <remarks>
     /// A detail that carries no name or version cannot be keyed, so it is dropped rather than cached
     /// under a key nothing can look up.
     /// </remarks>
-    private void Process(NacosMcpServerDetail detail)
+    private async Task ProcessAsync(NacosMcpServerDetail detail, CancellationToken ct)
     {
         string? name = detail.Name;
         string? version = detail.VersionDetail?.Version ?? detail.Version;
@@ -243,12 +349,12 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
         string latestKey = Key(name, null);
         bool isLatest = detail.VersionDetail?.IsLatest == true;
 
-        if (CompareAndStore(versionedKey, detail))
+        if (await CompareAndStoreAsync(versionedKey, detail, ct).ConfigureAwait(false))
         {
             Publish(versionedKey, detail);
         }
 
-        if (isLatest && CompareAndStore(latestKey, detail))
+        if (isLatest && await CompareAndStoreAsync(latestKey, detail, ct).ConfigureAwait(false))
         {
             Publish(latestKey, detail);
         }
@@ -259,12 +365,18 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <param name="detail">The detail to store.</param>
+    /// <param name="ct">A token that cancels the snapshot write.</param>
     /// <returns><see langword="true"/> when the stored detail changed.</returns>
-    private bool CompareAndStore(string key, NacosMcpServerDetail detail)
+    private async Task<bool> CompareAndStoreAsync(string key, NacosMcpServerDetail detail, CancellationToken ct)
     {
         bool changed = !_servers.TryGetValue(key, out NacosMcpServerDetail? previous) || !IsSame(previous, detail);
 
         _servers[key] = detail;
+
+        if (changed)
+        {
+            await SaveSnapshotAsync(key, detail, ct).ConfigureAwait(false);
+        }
 
         return changed;
     }
@@ -373,7 +485,7 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
                     NacosMcpServerDetail detail =
                         await _query(name, version, CancellationToken.None).ConfigureAwait(false);
 
-                    Process(detail);
+                    await ProcessAsync(detail, CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (NacosServerException ex) when (ex.ErrorCode == NotFoundErrorCode)
                 {
