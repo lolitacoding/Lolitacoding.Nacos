@@ -92,8 +92,9 @@ jobs:
       - name: Start Nacos
         run: |
           # The tests start their own containers, so this step is what warms the image cache for them.
-          # Two modules run against a newer image than the one the rest of the suite is pinned to:
-          # the lock service the client speaks to arrived after 3.2, and the MCP registry after 3.0.2.
+          # The newer modules run against a newer image than the one the rest of the suite is pinned
+          # to: the AI registry arrived after 3.0.2 and is checked on 3.2.4, while the lock service and
+          # the RAD agent registry both belong to the 3.3 line and are checked on 3.3.0-RC.
           docker pull nacos/nacos-server:v3.3.0-RC
           docker pull nacos/nacos-server:v3.2.4
           # The container image requires a signing key and a server identity from 3.2 on, whether or
@@ -124,6 +125,7 @@ jobs:
           NACOS_TEST_IMAGE: nacos/nacos-server:v3.0.2
           NACOS_LOCK_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
           NACOS_AI_TEST_IMAGE: nacos/nacos-server:v3.2.4
+          NACOS_AGENT_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
           NACOS_TEST_SERVER: http://127.0.0.1:8848
         run: >
           dotnet test tests/Lolitacoding.Nacos.IntegrationTests/Lolitacoding.Nacos.IntegrationTests.csproj
