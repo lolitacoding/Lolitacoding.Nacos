@@ -163,6 +163,82 @@ public sealed class NacosConfigClientTests
     }
 
     [Fact]
+    public async Task Listener_ReplayTellsTheServerWhichHashTheClientHolds()
+    {
+        // The listen request is what lets the server answer "nothing changed for you" instead of
+        // declaring every listened configuration changed. The hash it carries has to be the one of
+        // the value the client was actually given, which is the initial read.
+        using Harness harness = CreateHarness(ListenThenQuery("v1"));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            Key, (_, _) => Task.CompletedTask, TestContext.Current.CancellationToken);
+
+        await harness.DropAndReconnectAsync(TestContext.Current.CancellationToken);
+
+        using JsonDocument body = harness.LastRequestBody();
+        JsonElement root = body.RootElement;
+
+        root.GetProperty("listen").GetBoolean().ShouldBeTrue();
+
+        JsonElement context = root.GetProperty("configListenContexts")[0];
+        context.GetProperty("dataId").GetString().ShouldBe(DataId);
+        context.GetProperty("group").GetString().ShouldBe(Group);
+        context.GetProperty("md5").GetString().ShouldBe(NacosMd5.Compute("v1"));
+    }
+
+    [Fact]
+    public async Task Listener_ReceivesAConfigurationThatChangedWhileTheConnectionWasDown()
+    {
+        // A listener dies with the connection, so nothing can be pushed during an outage and a
+        // change would sit unnoticed until something else changed the same configuration. The
+        // answer to the replay names every configuration that no longer matches the hash the client
+        // holds, and those changes must reach the listener.
+        using Harness harness = CreateHarness(ListenThenQuery("v1"));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var changes = new List<NacosConfigChange>();
+
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            Key,
+            (change, _) =>
+            {
+                lock (changes)
+                {
+                    changes.Add(change);
+                }
+
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken);
+
+        changes.Count.ShouldBe(1);
+        changes[0].Content.ShouldBe("v1");
+
+        // The configuration changes while the client is disconnected, so the push that would have
+        // carried it went to nobody.
+        harness.Handler = request =>
+            PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+                ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse
+                {
+                    ChangedConfigs =
+                    [
+                        new ConfigContext { DataId = DataId, Group = Group, Tenant = "public" },
+                    ],
+                })
+                : QueryResponse("v2", "text");
+
+        await harness.DropAndReconnectAsync(TestContext.Current.CancellationToken);
+
+        await WaitForNotificationsAsync(changes, 2, TestContext.Current.CancellationToken);
+
+        changes[1].Content.ShouldBe("v2");
+        changes[1].PreviousMd5.ShouldBe(NacosMd5.Compute("v1"));
+    }
+
+    [Fact]
     public async Task PublishConfig_SendsContentTypeInsideTheAdditionMap()
     {
         // The server reads the content type out of the free-form addition map under "type"; it is
@@ -309,6 +385,44 @@ public sealed class NacosConfigClientTests
             LastModified = 1_700_000_000_000,
         });
 
+    /// <summary>Answers a listener registration and the read that follows it.</summary>
+    /// <param name="content">The content the server holds.</param>
+    /// <returns>The scripted handler.</returns>
+    /// <remarks>
+    /// A registration that is answered with configuration content instead of an acknowledgement
+    /// fails the whole registration, so the two request kinds have to be told apart.
+    /// </remarks>
+    private static Func<Payload, Payload> ListenThenQuery(string content) => request =>
+        PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+            ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+            : QueryResponse(content, "text");
+
+    /// <summary>Waits until a listener has been notified a given number of times.</summary>
+    /// <param name="changes">The notifications observed so far.</param>
+    /// <param name="expected">How many are expected.</param>
+    /// <param name="ct">A token that cancels the wait.</param>
+    /// <returns>A task that completes once the expected number was reached.</returns>
+    private static async Task WaitForNotificationsAsync(
+        List<NacosConfigChange> changes,
+        int expected,
+        CancellationToken ct)
+    {
+        for (int i = 0; i < 1000; i++)
+        {
+            lock (changes)
+            {
+                if (changes.Count >= expected)
+                {
+                    return;
+                }
+            }
+
+            await Task.Delay(10, ct);
+        }
+
+        throw new TimeoutException("The listener was never notified of the missed change.");
+    }
+
     private static Harness CreateHarness(
         Func<Payload, Payload>? handler = null,
         string @namespace = "public",
@@ -321,9 +435,11 @@ public sealed class NacosConfigClientTests
     /// </summary>
     private sealed class Harness : IDisposable
     {
-        private readonly List<ConfigQueryResponse> _responses = [];
-        private readonly FakeNacosChannel _channel;
+        private readonly List<FakeNacosChannel> _channels = [];
+        private readonly Queue<FakeNacosDuplexStream> _streams;
         private readonly string _snapshotRoot;
+
+        private FakeNacosDuplexStream _currentStream = null!;
 
         public Harness(
             Func<Payload, Payload> handler,
@@ -334,32 +450,46 @@ public sealed class NacosConfigClientTests
             Handler = handler;
             _snapshotRoot = TestPaths.CreateScratchDirectory("config-client");
 
-            var stream = new FakeNacosDuplexStream();
-            Func<Payload, Payload> serverCheck = FakeServerCheck.Responding();
+            // A supply of streams so a test can drop one and let the reconnect replace it, the same
+            // way the transport tests exercise recovery.
+            _streams = new Queue<FakeNacosDuplexStream>(
+                Enumerable.Range(0, 4).Select(_ => new FakeNacosDuplexStream()));
 
-            _channel = new FakeNacosChannel(
-                NacosServerAddress.Parse("127.0.0.1:8848"),
-                // The handshake must always be answered, or nothing else can be exercised; every
-                // other request goes to the test's scripted server.
-                request => PayloadCodec.ReadTypeName(request) == "ServerCheckRequest"
-                    ? serverCheck(request)
-                    // Routed through the property rather than closing over the argument so a test
-                    // can swap the server's behaviour midway.
-                    : Handler(request),
-                stream);
+            var factory = new FakeNacosChannelFactory(address =>
+            {
+                var channel = new FakeNacosChannel(
+                    address,
+                    // The handshake must always be answered, or nothing else can be exercised;
+                    // every other request goes to the test's scripted server.
+                    request => PayloadCodec.ReadTypeName(request) == "ServerCheckRequest"
+                        ? FakeServerCheck.Responding()(request)
+                        // Routed through the property rather than closing over the argument so a
+                        // test can swap the server's behaviour midway.
+                        : Handler(request),
+                    NextStream());
+
+                _channels.Add(channel);
+                return channel;
+            });
 
             var options = new NacosOptions
             {
                 ServerAddresses = ["127.0.0.1:8848"],
                 Namespace = @namespace,
                 Config = new NacosConfigOptions { VerifyMd5 = verifyMd5 },
+                Reconnect = new NacosReconnectOptions
+                {
+                    InitialDelay = TimeSpan.FromMilliseconds(1),
+                    MaxDelay = TimeSpan.FromMilliseconds(2),
+                    JitterFactor = 0,
+                },
             };
 
             var connection = new NacosGrpcConnection(
                 options,
                 NacosConnectionModule.Config,
                 [NacosServerAddress.Parse("127.0.0.1:8848")],
-                new FakeNacosChannelFactory(_ => _channel),
+                factory,
                 TimeProvider.System,
                 NullLogger.Instance);
 
@@ -395,11 +525,25 @@ public sealed class NacosConfigClientTests
         /// <returns>A task that completes once connected.</returns>
         public Task ConnectAsync(CancellationToken ct) => Connection.ConnectAsync(ct);
 
+        /// <summary>Drops the current connection and waits for the reconnect to replace it.</summary>
+        /// <param name="ct">A token that cancels the wait.</param>
+        /// <returns>A task that completes once a fresh channel is in use.</returns>
+        public async Task DropAndReconnectAsync(CancellationToken ct)
+        {
+            int channelsBefore = _channels.Count;
+            _currentStream.EndStream();
+
+            await WaitForAsync(() => _channels.Count > channelsBefore, ct);
+
+            // Wait for the fresh channel to have completed a handshake before returning.
+            await WaitForAsync(() => _channels[^1].UnaryRequests.Count >= 1, ct);
+        }
+
         /// <summary>Gets the JSON body of the most recent unary request.</summary>
         /// <returns>The parsed body.</returns>
         public JsonDocument LastRequestBody()
         {
-            Payload payload = _channel.UnaryRequests[^1];
+            Payload payload = _channels[^1].UnaryRequests[^1];
             return JsonDocument.Parse(PayloadCodec.ReadBodyBytes(payload));
         }
 
@@ -409,6 +553,31 @@ public sealed class NacosConfigClientTests
             Connection.DisposeAsync().AsTask().GetAwaiter().GetResult();
 
             TestPaths.TryDelete(_snapshotRoot);
+        }
+
+        /// <summary>Waits until a condition holds, or throws when it never does.</summary>
+        /// <param name="condition">The condition to wait for.</param>
+        /// <param name="ct">A token that cancels the wait.</param>
+        /// <returns>A task that completes once the condition holds.</returns>
+        private static async Task WaitForAsync(Func<bool> condition, CancellationToken ct)
+        {
+            for (int i = 0; i < 1000; i++)
+            {
+                if (condition())
+                {
+                    return;
+                }
+
+                await Task.Delay(10, ct);
+            }
+
+            throw new TimeoutException("The expected condition was not met within the timeout.");
+        }
+
+        private FakeNacosDuplexStream NextStream()
+        {
+            _currentStream = _streams.Count > 0 ? _streams.Dequeue() : new FakeNacosDuplexStream();
+            return _currentStream;
         }
     }
 }

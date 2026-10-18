@@ -128,10 +128,11 @@ public sealed class ConfigIntegrationTests
 
         // The listener's push handler is registered only when the enumeration is resumed, and after
         // the server returns the client reconnects on its own backoff. Waiting for a read to succeed
-        // before the registration keeps it from racing that reconnect: a request made while one is in
-        // progress is refused rather than queued, a gap the protocol notes record, not a property
-        // this test is about. Repeating the publish then covers the window between the first value
-        // and the registration, in which a change is not pushed to this subscriber.
+        // before the registration keeps it from racing that reconnect: a request made while a
+        // reconnect is in progress waits for the connection to come back, but only until the
+        // recovery's first attempt is refused or its request budget runs out, so the retry stays.
+        // Repeating the publish then covers the window between the first value and the registration,
+        // in which a change is not pushed to this subscriber.
         await NacosEventually.PushedAsync(
             async ct =>
             {
@@ -154,6 +155,76 @@ public sealed class ConfigIntegrationTests
         enumerator.Current.Content.ShouldBe(updated);
     }
 
+    [Fact]
+    public async Task Reconnect_ServesTheRequestWaitingOnItAndTheChangesItMissed()
+    {
+        // Both halves of the reconnect window, against a real server. A request that arrives with no
+        // connection to send on waits for the recovery instead of failing, and a configuration that
+        // changed while nobody could be pushed to it is reported by the listener replay.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory client = CreateReconnectWindowClient(container);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromMinutes(5));
+
+        await client.ConnectAsync(cts.Token);
+
+        string dataId = NacosHttp.UniqueId("config-reconnect-window-it");
+        var key = new NacosConfigKey(dataId, "DEFAULT_GROUP");
+        string before = NacosHttp.ConfigContent("before-the-outage");
+
+        await client.Config.PublishConfigAsync(key, before, "text", ct: cts.Token);
+
+        // A publish answers before the value is readable, and the listener's first delivery is
+        // whatever is readable when it registers, so the read is what makes the fixture certain.
+        await NacosEventually.BecomesAsync(
+            () => client.Config.GetConfigAsync(key, cts.Token),
+            result => result.Exists,
+            cts.Token);
+
+        await using IAsyncEnumerator<NacosConfigChange> changes =
+            client.Config.ListenAsync(key, cts.Token).GetAsyncEnumerator(cts.Token);
+
+        (await changes.MoveNextAsync()).ShouldBeTrue();
+        changes.Current.Content.ShouldBe(before);
+
+        // The token survives the restart: it is signed with the identity the container was given, and
+        // the account that issued it is on the container's own disk.
+        string token;
+        using (var http = new HttpClient())
+        {
+            token = await container.CreateAccessTokenAsync(cts.Token);
+        }
+
+        // The server goes away, and the client's recovery waits well past the restart before its
+        // first attempt, so it is provably still disconnected while the value changes below.
+        await container.StopAsync(cts.Token);
+
+        Task restart = Task.Run(() => container.StartAsync(cts.Token), cts.Token);
+
+        string during = NacosHttp.ConfigContent("during-the-outage");
+
+        await restart;
+
+        using (var http = new HttpClient())
+        {
+            await NacosHttp.PublishConfigAsync(
+                http, container.HttpAddress, dataId, "DEFAULT_GROUP", during, token, cts.Token);
+        }
+
+        // Nothing is registered with the server at this point, so no push exists to carry the change:
+        // only the recovery can recover it. The read is issued with no connection to send on, and it
+        // has to wait for the connection to come back rather than fail against its local copy.
+        NacosConfigResult read = await client.Config.GetConfigAsync(key, cts.Token);
+
+        read.Content.ShouldBe(during);
+
+        // And the change that had nobody to be pushed to is reported once the listener is replayed.
+        await NacosEventually.ReportsAsync(changes, change => change.Content == during, cts.Token);
+
+        changes.Current.Content.ShouldBe(during);
+    }
+
     private static NacosClientFactory CreateClient(NacosContainer container) =>
         NacosClientFactory.Create(
             new NacosOptions
@@ -165,6 +236,39 @@ public sealed class ConfigIntegrationTests
                     InitialDelay = TimeSpan.FromMilliseconds(500),
                     MaxDelay = TimeSpan.FromSeconds(5),
                     JitterFactor = 0.1,
+                },
+            },
+            httpClient: null,
+            channelFactory: null,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance);
+
+    /// <summary>
+    /// Builds a client whose recovery first tries again long after the server is back, and whose
+    /// requests are willing to wait that long.
+    /// </summary>
+    /// <param name="container">The container to point at.</param>
+    /// <returns>The client factory.</returns>
+    /// <remarks>
+    /// A real server takes tens of seconds to become ready again, so a recovery that tried
+    /// immediately would be refused and, by design, would stop being worth waiting for. Delaying the
+    /// first attempt past the restart is what makes the reconnect window observable instead of a
+    /// race: the client is provably still away when the change below is written.
+    /// </remarks>
+    private static NacosClientFactory CreateReconnectWindowClient(NacosContainer container) =>
+        NacosClientFactory.Create(
+            new NacosOptions
+            {
+                ServerAddresses = [container.HttpAddress],
+                ConnectionTimeout = TimeSpan.FromSeconds(15),
+                // The request budget is also the budget of the wait for a reconnection, so it has to
+                // outlast the recovery delay below.
+                RequestTimeout = TimeSpan.FromMinutes(2),
+                Reconnect = new NacosReconnectOptions
+                {
+                    InitialDelay = TimeSpan.FromSeconds(90),
+                    MaxDelay = TimeSpan.FromSeconds(90),
+                    JitterFactor = 0,
                 },
             },
             httpClient: null,

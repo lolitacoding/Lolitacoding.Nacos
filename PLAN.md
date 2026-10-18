@@ -249,12 +249,12 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
   - 写入配置的 HTTP 助手只能走 v3 admin API（`/nacos/v3/admin/cs/config`，表单参数是 `groupName`）：v3 客户端接口只读，v1 写接口在 3.x 已下线；该 admin 接口即使关闭鉴权也要求令牌，而在关闭鉴权的服务器上没有任何账号可登录。因此传输层用例改为直接用 gRPC 发布配置（顺带更贴合该用例的定位）。
   - 配置与命名集成用例从未调用 `ConnectAsync`，而客户端不会隐式连接（宿主服务与单元测试都会显式连接）：补上。同时修正 `NacosClient` 中“首个请求会隐式连接”的错误注释。
   - 写入是最终一致的：配置发布返回后约 234ms 才可读，实例注册约 18ms 可读，注销约 656ms 才消失。读回断言改为轮询（`NacosEventually.BecomesAsync`）。
-  - `ListenAsync` / `SubscribeAsync` 先产出当前快照、再向服务器注册监听，落在这个窗口里的变更不会被推送（`SubscribeServiceResponse` 携带订阅生效瞬间的服务状态，Java 客户端即以此为准，本客户端尚未使用它，留待阶段 4）。推送类断言改为重复施加变更直到收到推送（`NacosEventually.PushedAsync`）。
+  - `ListenAsync` / `SubscribeAsync` 先产出当前快照、再向服务器注册监听，落在这个窗口里的变更不会被推送（`SubscribeServiceResponse` 携带订阅生效瞬间的服务状态，Java 客户端即以此为准，本客户端当时尚未使用它；该窗口已在 G2 关闭）。推送类断言改为重复施加变更直到收到推送（`NacosEventually.PushedAsync`）。
 - 命名推送的两个真实缺陷（由该用例暴露，已修，随阶段 3 一并提交）：
   - **推送身份读错了位置**：服务器用 `NotifySubscriberRequest.buildNotifySubscriberRequest(serviceInfo)` 构造推送，**只填 `serviceInfo`**，请求自身的 `namespace` / `serviceName` / `groupName` 在线上恒为缺失（即便 Java 类声明了这三个字段），而旧实现在这三个字段为空时直接返回，于是每一条推送都被静默丢弃。改为像 Java 的 `NamingPushRequestHandler` 一样，从 `serviceInfo.name` / `serviceInfo.groupName` 读取服务身份，`namespace` 缺省时回落到客户端配置的命名空间；抓包实证记入 `docs/protocol-grpc-spec.md` §3.10 与 `docs/protocol-notes.md`。
   - **变更判定依赖了服务器不发的字段**：推送里的 `serviceInfo.checksum` 恒为空串，旧实现“checksum 相同即忽略”，会把**每一条**推送当作重复丢掉。改为复刻 Java `ServiceInfoHolder.processServiceInfo` → `InstancesDiffer.doDiff`：按地址（`ip:port`）比较两边实例表并逐项比较实例描述（权重 / 集群 / 健康 / 可用 / 临时 / 元数据 / `instanceId`），顺序无关；另按 `lastRefTime` 丢弃早于已应用状态的推送（每条推送各自在独立任务上落地，旧状态可能后完成），新增日志事件 5012。
   - 单元测试此前用“顶栏也带身份字段”的脚本推送，正好掩盖了这两个缺陷；已改为服务器实际发送的形状（只带 `serviceInfo`），见 `NacosNamingClientTests.Push` 的说明。
-- 已知缺口（留待阶段 4）：连接尚未建立时请求直接抛 `NacosConnectionException`，重连期间的请求不排队等待；监听/订阅的快照与注册之间仍非原子。
+- 两个协议缺口（当时记为“留待阶段 4”）：连接尚未建立时请求直接抛 `NacosConnectionException`，重连期间的请求不排队等待；监听/订阅的快照与注册之间非原子。两者已由 G1 / G2 关闭（见下）。
 - 文档：`docs/faq.md`、`docs/protocol-notes.md`、`docs/protocol-grpc-spec.md` §3.13、`README.md`、`docs/aspire.md` 与 `NacosLockTypes` 注释写明 3.3 要求及 3.2 的降级行为。
 
 验收（阶段级）：单元测试 **360 个全绿**（覆盖获取/释放/续租/超时/重入/等待通知）；与真实服务器集成 **21 个用例全绿（3m54s）**：锁的 4 个用例跑在 `nacos/nacos-server:v3.3.0-RC`，其余（配置 / 命名 / 传输 / 鉴权）跑在受支持的最老 3.x 版本 `nacos/nacos-server:v3.0.2`。
@@ -401,7 +401,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 新增可运行示例 `samples/Sample.AiRegistry`：从容器解析 `INacosAiClient`，读取 MCP / Prompt / Skill / AgentSpec / AgentCard 五种资源并订阅一个 MCP server，按常规方式释放 host。
 - **gRPC↔HTTP 自动回退仍不做**：官方客户端有 `McpTransportRouter` / `PromptTransportRouter` / `AgentTransportRouter`（配 `AiCapabilityCache` 与约 1165 行的 `AiHttpClientProxy`），按能力缓存把调用分流到 gRPC 或 HTTP；本客户端仍只走 gRPC（技能与 agent spec 本来就是 HTTP）。差别只在“gRPC 能力缺失但 HTTP 面存在”的服务器上体现，而现有镜像没有这种服务器可验证，故按“宁可不做也不发未验证代码”的原则推迟为独立切片，当前行为记录在 `docs/protocol-notes.md` 的「Transport selection and HTTP fallback」。
 - 版本矩阵与四个集成镜像的对应关系补入 `docs/faq.md`。CI 的集成任务改为矩阵：基座套件在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本上各跑一遍（本地分别 51/51 验证），模块镜像保持固定。
-- 修复 `ConfigIntegrationTests.Listen_SurvivesAServerRestart` 的固有竞态：`ListenAsync` 的推送注册只在枚举恢复到下一个元素时才发生，会与容器重启后客户端的重连赛跑——连接尚未建立时注册被拒，异常从 `MoveNextAsync` 抛出并直接判负。测试现在先等一次读成功（`tolerateFailures`）再恢复枚举，竞态消除；“重连期间请求不排队”这一产品缺口另有文档记录，不由该测试断言。
+- 修复 `ConfigIntegrationTests.Listen_SurvivesAServerRestart` 的固有竞态：`ListenAsync` 的推送注册只在枚举恢复到下一个元素时才发生，会与容器重启后客户端的重连赛跑——连接尚未建立时注册被拒，异常从 `MoveNextAsync` 抛出并直接判负。测试现在先等一次读成功（`tolerateFailures`）再恢复枚举，竞态消除；当时“重连期间请求不排队”这一产品缺口另有文档记录，已由 G1 关闭（见下）。
 - 验收：Release 构建零警告零错误；单元测试 **552 个全绿**；集成测试 **51 个全绿**，基座套件在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个版本上分别通过（四个镜像）。
 
 - 验收：查询/发布/订阅端到端通过；AI 推送与 watch 可用（阶段级，随各子阶段推进）。
@@ -420,5 +420,18 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 日志事件：8041 从本地缓存应答（Info）、8042 落盘失败（Warning；读已经成功，缓存写不进去不判调用方失败）。
 - 文档：`NacosOptions.LocalCacheDirectory` 与 `NacosAiOptions.EnableLocalCache` 的注释改写（原先写「尚未实现」），`docs/configuration.md` 的 `NacosAiOptions` 表、`docs/faq.md` 新增「Does the AI registry cache survive a restart?」、`docs/protocol-notes.md` 新增「The local failover cache」，README 的 AI 段落补一句。
 - 验收：Release 构建零警告零错误；单元测试 **594 个全绿**（新增 21 个：存储的往返（含 Skill 归档字节）/ 分类隔离 / 覆盖写 / 删除 / 读不回来视为不存在 / 空目录校验；缓存的写入时机 / 撤回删文件 / 读不到服务器时投递副本 / 无副本仍抛原异常 / `RestoreAsync` seed 后零读 / 无存储时 `RestoreAsync` 为假；MCP 同样的四条；客户端接线后 Prompt 与 MCP 的落盘；以及一次真正的「重启」——第一个进程读到副本，第二个进程用同目录、指向不可达地址（`Optional = false`，端口 1）仍拿到首值）。集成测试新增 `AiLocalCacheIntegrationTests` 一个用例，整套 **54 个全绿**（10m10s，基座 `v3.0.2`）：真机发布并订阅 → 停掉容器 → 新客户端用同目录订阅同一 prompt 仍是上次读到的模板，而从未服务过的 key 仍然是原来的连接异常。
+
+#### G1 / G2 · 关闭两个已记录的协议缺口（✅ 已完成）
+
+- **G1 · 重连期间到达的请求等待连接，而不是直接失败。** `Transport/NacosGrpcConnection.cs` 新增 `_everConnected`、`_reconnectProbe`、`_reconnectAttemptFailed` 与 `ResolveChannelAsync`：`SendAsync` 取通道时不再「没有就抛」，而是先看有没有正在恢复的连接可等。等待由「恢复的**第一次**尝试的结果」结束（成功即发送；被拒即回到调用方自己的本地 failover），整段等待再由 `NacosOptions.RequestTimeout`（默认 5 秒，即该请求自身的预算）封顶；没有新增公共选项。
+  - 为什么等第一次尝试就够：Java 的 `RpcClient.request(request, timeoutMills, maxRetries)` 是在预算内轮询重试，而 `MaxAttempts = 0`（无限重试）下「只按预算等待」会让持续故障期间的每一次读都耗满预算——那正是本地副本存在的意义所要避免的延迟。以尝试为界，抖动（一次被拒）立刻交还给本地副本，真正短暂的断链则被吸收。
+  - 从未连上过的客户端立刻失败，不等后台探测：那不是在恢复连接，而是在尝试建立**第一个**连接，调用方等它没有意义（D1 与配置/命名的本地 failover 延迟因此不变）。客户端已释放时同理。
+  - 实现细节：`HandleConnectionLossAsync` 在 `TearDown()` 之后建立探测，`finally` 里无条件完成它（成功、放弃、取消、关停四条退出路径都释放等待者，等待者重新读取通道后要么拿到连接要么失败）；被拒的尝试置 `_reconnectAttemptFailed` 并完成探测。日志新增 3006（等待被放弃，Info）。
+- **G2 · 用服务器在注册时给出的状态，而不是丢掉它。** 命名侧把推送处理器里的「落地一份服务状态」抽成 `ApplyServiceStateAsync`，`SubscribeAsync` 与 `OnReconnectedAsync` 都拿 `SubscribeServiceResponse.ServiceInfo` 走同一条路径：订阅在服务端生效的瞬间客户端看不见，落在读快照与订阅生效之间的变更不会推给任何人，而服务端的应答正好是那一刻的状态——重连时它还是「断链期间错过了什么」的唯一报告。幂等由阶段 3 已有的机制保证（逐实例比较 + `lastRefTime` 丢弃更早状态）：服务器确实会填 `lastRefTime`（`ServiceUtil.doSelectInstances` 取当前钟），所以应答与推送之间可以比较；既有夹具的应答与读回同一份状态，因此对既有用例是空操作。
+  - 配置侧 `SendListenRequestAsync` 改为返回 `ConfigChangeBatchListenResponse`：注册后把**首次读到的 md5** 记进监听注册（这正是让服务端回答「你手上没变」的字段，也避免重连时把从未变过的配置报成变化），重连重放时把 `ChangedConfigs` 里的每一项当作一次推送处理（`OnConfigChangedAsync`，同样是「重读 + 比较 + 通知」）。**首次注册刻意不处理该列表**：紧随其后的读覆盖同一窗口，处理它会把首值投递两次。日志新增 4011（断链期间有配置变化，Info）。
+- 单元测试新增 9 个（传输 4：等待重连后被服务、首次尝试被拒即刻失败、从未连上即刻失败、等待被 `RequestTimeout` 封顶；命名 3：订阅应答的状态被应用、应答回显同一状态不重复投递、重连后投递断链期间的变化；配置 2：重放请求携带客户端手上的 md5、断链期间的配置变化被投递给监听）。每个新行为都做过**反证**：把对应实现改回原样后，其用例确实失败（命名与配置的等待改为有界读取，失败是断言信息而不是挂住整套）。
+- 集成测试新增 `ConfigIntegrationTests.Reconnect_ServesTheRequestWaitingOnItAndTheChangesItMissed`：客户端首次重连推迟到 90 秒后（真实服务器回到就绪只要十几秒），于是「服务器已回、客户端尚未重连」这个窗口是确定的——期间用一个 HTTP 客户端改掉配置（此时没有任何监听注册在服务端，不可能有推送），随后断言两件事：断链期间发出的那次读**不会被拒绝**而是等连接回来并读到新值（G1），以及重连重放把这次无人可推的变更报给监听（G2）。
+- 文档：`docs/protocol-notes.md` 记录等待语义与「注册时状态」的用法，`docs/faq.md` 增加「重连期间的请求会怎样」与「订阅期间的变化会不会漏掉」两问。
+- 验收：Release 构建零警告零错误；单元测试 **603 个全绿**（新增 9 个）；集成测试新增 1 个用例，整套 **55 个全绿**（基座 `v3.0.2`，1m44s 为新增用例单独耗时）。
 
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

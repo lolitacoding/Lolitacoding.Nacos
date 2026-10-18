@@ -296,6 +296,80 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
+    public async Task Subscribe_AppliesTheStateTheServerReportsWhenTheSubscriptionBecomesLive()
+    {
+        // The read that seeds a subscription happens before the subscription exists on the server,
+        // so a change landing in between is pushed to nobody and would be lost. The answer to the
+        // subscribe request carries the state at the instant the subscription became live, and
+        // applying it is what closes that window.
+        using NamingHarness harness = new(handler: request => PayloadCodec.ReadTypeName(request) switch
+        {
+            "ServiceQueryRequest" => QueryResponse([Host(8080)]),
+            "SubscribeServiceRequest" => SubscribeResponse(checksum: "sum-2", ports: [8080, 8082]),
+            _ => NamingHarness.Fallback(request),
+        });
+
+        await using Subscription subscription = await harness.SubscribeAsync(Service);
+
+        NacosServiceChange initial = await subscription.RequireNextAsync();
+        initial.PreviousChecksum.ShouldBeNull();
+        initial.Service.Checksum.ShouldBe("sum-1");
+        initial.Instances.Count.ShouldBe(1);
+
+        // The state the server reported at registration is newer than the one the read produced, so
+        // the consumer is told about it exactly as if it had arrived as a push.
+        NacosServiceChange live = await subscription.RequireNextAsync();
+        live.PreviousChecksum.ShouldBe("sum-1");
+        live.Service.Checksum.ShouldBe("sum-2");
+        live.Instances.ShouldContain(instance => instance.Port == 8082);
+    }
+
+    [Fact]
+    public async Task Subscribe_DoesNotRepeatTheStateTheServerEchoesBack()
+    {
+        // The answer to a subscription normally repeats the state the seeding read already
+        // produced. Delivering it again would look to a consumer like a change that never happened.
+        using NamingHarness harness = new();
+
+        await using Subscription subscription = await harness.SubscribeAsync(Service);
+
+        (await subscription.RequireNextAsync()).Service.Checksum.ShouldBe("sum-1");
+
+        (await subscription.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Reconnect_DeliversWhatChangedWhileTheSubscriptionWasGone()
+    {
+        // The server discarded the subscription with the connection, so nothing could be pushed
+        // while the client was away. The answer to the replay carries the state at the instant the
+        // subscription was restored, which is the only report of what was missed.
+        using NamingHarness harness = new();
+
+        await using Subscription subscription = await harness.SubscribeAsync(Service);
+        (await subscription.NextAsync()).Service.Checksum.ShouldBe("sum-1");
+
+        // The service changes while the client is disconnected.
+        harness.Handler = request => PayloadCodec.ReadTypeName(request) switch
+        {
+            "SubscribeServiceRequest" => SubscribeResponse(checksum: "sum-3", ports: [8080, 8083]),
+            _ => NamingHarness.Fallback(request),
+        };
+
+        int subscriptionsBefore = harness.CountRequests("SubscribeServiceRequest");
+
+        await harness.DropAndReconnectAsync();
+
+        await NamingHarness.WaitForAsync(
+            () => harness.CountRequests("SubscribeServiceRequest") > subscriptionsBefore);
+
+        NacosServiceChange missed = await subscription.RequireNextAsync();
+        missed.PreviousChecksum.ShouldBe("sum-1");
+        missed.Service.Checksum.ShouldBe("sum-3");
+        missed.Instances.ShouldContain(instance => instance.Port == 8083);
+    }
+
+    [Fact]
     public async Task Reconnect_ReplaysRegistrationsAndSubscriptions()
     {
         // PLAN.md requires the client to restore everything the server discarded with the
@@ -360,17 +434,24 @@ public sealed class NacosNamingClientTests
         });
 
     /// <summary>Builds a successful subscription response for the default service.</summary>
-    private static Payload SubscribeResponse() =>
-        PayloadCodec.Encode(new SubscribeServiceResponse
+    /// <param name="checksum">The checksum of the state the server reports.</param>
+    /// <param name="ports">The ports the server reports.</param>
+    /// <returns>The encoded response.</returns>
+    private static Payload SubscribeResponse(string checksum = "sum-1", IReadOnlyList<int>? ports = null)
+    {
+        IReadOnlyList<int> effectivePorts = ports ?? new[] { 8080, 8081 };
+
+        return PayloadCodec.Encode(new SubscribeServiceResponse
         {
             ServiceInfo = new ServiceInfo
             {
                 Name = "order-service",
                 GroupName = "DEFAULT_GROUP",
-                Checksum = "sum-1",
-                Hosts = [Host(8080), Host(8081)],
+                Checksum = checksum,
+                Hosts = [.. effectivePorts.Select(port => Host(port))],
             },
         });
+    }
 
     /// <summary>Builds a full subscriber push for the default service.</summary>
     /// <remarks>
@@ -628,6 +709,22 @@ public sealed class NacosNamingClientTests
         /// <returns>The change.</returns>
         public Task<NacosServiceChange> NextAsync() =>
             _reader.ReadAsync(TestContext.Current.CancellationToken).AsTask();
+
+        /// <summary>
+        /// Waits for the next change and fails the test when it never arrives.
+        /// </summary>
+        /// <returns>The change.</returns>
+        /// <remarks>
+        /// Reading without a bound would hang the whole suite when the delivery under test never
+        /// happens, which hides the failure instead of reporting it.
+        /// </remarks>
+        public async Task<NacosServiceChange> RequireNextAsync()
+        {
+            NacosServiceChange? change = await TryNextAsync(TimeSpan.FromSeconds(10));
+
+            change.ShouldNotBeNull("The subscription produced no change but one was expected.");
+            return change;
+        }
 
         /// <summary>Waits a bounded time for a change, returning null when none arrives.</summary>
         /// <param name="timeout">How long to wait.</param>

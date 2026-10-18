@@ -149,14 +149,27 @@ replays it after a reconnect, so subscriptions keep working. Check the logs at `
 to see the replay; replayed listeners are counted, and a subscriber that fails to restore logs an
 error without taking the connection down.
 
+## What happens to a request made while the client is reconnecting?
+
+It waits for the connection instead of failing against one that is momentarily absent.
+`NacosOptions.RequestTimeout` — the same budget a request gets anyway, 5 seconds by default — bounds
+the wait, and the wait ends with the **first** attempt the recovery makes. If that attempt
+succeeds, the request is sent; if the server refuses it, the request fails with
+`NacosConnectionException` right away, so a caller with a local copy is not held any longer than the
+attempt took. Two cases do not wait at all: a client that has **never** connected, because there is
+no connection to wait for (that is `Optional`'s fail-fast startup), and a request that arrives after
+a reconnect attempt was already refused, because the outage is then not a blip to sit out.
+
 ## Can a change to a subscribed service slip through?
 
-Rarely, yes — and only one. Both in this client and in the official Java client, `ListenAsync` /
-`SubscribeAsync` first hand you the state as it was read, and only then register the listener or
-subscription with the server. A change that the server applies in that window is not pushed, so it
-is not delivered until the next change. Everything after the registration is pushed, and a push that
-repeats a state you already have is filtered out rather than reported twice. `PLAN.md` tracks closing
-the window by seeding the subscription from the state the subscribe response carries.
+No. `ListenAsync` / `SubscribeAsync` first hand you the state as it was read, and only then register
+the listener or subscription on the server; the answer to that registration carries the state at the
+instant the registration took effect, and it is applied exactly like a push. A change made in the
+window between the read and the registration is therefore delivered too, and a registration whose
+answer repeats a state you already have is filtered out rather than reported twice. The same holds
+after a reconnect: replaying the registration is answered with the state at the instant it was
+restored, which is what recovers a change that happened while the connection was down and had nobody
+to be pushed to.
 
 ## Where are cached values stored?
 

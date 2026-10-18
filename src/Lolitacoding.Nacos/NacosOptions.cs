@@ -44,6 +44,11 @@ public sealed class NacosOptions
     /// <summary>
     /// Gets or sets the timeout applied to a single request.
     /// </summary>
+    /// <remarks>
+    /// A request that arrives while the client is reconnecting has no connection to send on, and
+    /// this is the budget it waits for one within before it is failed and the caller falls back to
+    /// its local copy. See <c>docs/faq.md</c>.
+    /// </remarks>
     public TimeSpan RequestTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>

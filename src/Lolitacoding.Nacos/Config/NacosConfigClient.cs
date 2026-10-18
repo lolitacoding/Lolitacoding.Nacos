@@ -406,6 +406,11 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         // separate read to learn where it is starting from.
         NacosConfigResult current = await GetConfigAsync(key, ct).ConfigureAwait(false);
 
+        // Recording the hash that was just read is what lets the server answer "nothing changed for
+        // you" instead of listing this configuration at the next reconnect, and what keeps a
+        // spurious or repeated notification from being delivered as a change.
+        registration.LastMd5 = current.Md5;
+
         await InvokeSafelyAsync(registration, new NacosConfigChange(key, current), ct).ConfigureAwait(false);
 
         return new ListenerHandle(this, id, registration, onChange);
@@ -531,8 +536,11 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
 
         try
         {
-            await SendListenRequestAsync(keys, listen: true, ct).ConfigureAwait(false);
+            ConfigChangeBatchListenResponse response = await SendListenRequestAsync(keys, listen: true, ct)
+                .ConfigureAwait(false);
             NacosConfigLog.ListenersRestored(_logger, keys.Count);
+
+            await ApplyMissedChangesAsync(response, ct).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -543,13 +551,73 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     }
 
     /// <summary>
+    /// Delivers the changes the server reported while the client was disconnected.
+    /// </summary>
+    /// <param name="response">The acknowledgement of the listener replay.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>A task that completes once every reported change was handled.</returns>
+    /// <remarks>
+    /// A configuration that changed during an outage has nobody to be pushed to: the listener died
+    /// with the connection, so the change would sit unnoticed until something else changed the same
+    /// configuration. The replay tells the server the hash held before the outage, and its answer
+    /// names every configuration that no longer matches it; each one is then handled exactly the
+    /// way the corresponding push would have been.
+    /// </remarks>
+    private async Task ApplyMissedChangesAsync(
+        ConfigChangeBatchListenResponse response,
+        CancellationToken ct)
+    {
+        if (response.ChangedConfigs is not { Count: > 0 } changed)
+        {
+            return;
+        }
+
+        NacosConfigLog.ChangesMissedWhileAway(_logger, changed.Count);
+
+        foreach (ConfigContext context in changed)
+        {
+            if (string.IsNullOrEmpty(context.DataId) || string.IsNullOrEmpty(context.Group))
+            {
+                continue;
+            }
+
+            var key = new NacosConfigKey(
+                context.DataId,
+                context.Group,
+                string.IsNullOrEmpty(context.Tenant) ? _options.Namespace : context.Tenant);
+
+            try
+            {
+                // The same path a push takes: re-read with the hash the client holds, and deliver
+                // only when the value really differs from it.
+                await OnConfigChangedAsync(
+                    new ConfigChangeNotifyRequest
+                    {
+                        DataId = key.DataId,
+                        Group = key.Group,
+                        Tenant = key.Namespace,
+                    },
+                    ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One configuration that cannot be read must not hide the changes to the others.
+                NacosConfigLog.ListenerFailed(_logger, key.ToString(), ex.Message);
+            }
+        }
+    }
+
+    /// <summary>
     /// Sends a batch listen request that adds or removes registrations.
     /// </summary>
     /// <param name="keys">The configurations to register or unregister.</param>
     /// <param name="listen">Whether to register or unregister.</param>
     /// <param name="ct">A token that cancels the request.</param>
-    /// <returns>A task that completes once the server acknowledged the change.</returns>
-    private async Task SendListenRequestAsync(
+    /// <returns>
+    /// The acknowledgement, which lists the configurations the server holds a different value for
+    /// than the client said it had.
+    /// </returns>
+    private async Task<ConfigChangeBatchListenResponse> SendListenRequestAsync(
         IReadOnlyList<NacosConfigKey> keys,
         bool listen,
         CancellationToken ct)
@@ -577,7 +645,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         }
 
         // This goes over the unary RPC, not the stream, despite being listener-related.
-        await _connection
+        return await _connection
             .RequestAsync<ConfigChangeBatchListenResponse>(request, ct)
             .ConfigureAwait(false);
     }

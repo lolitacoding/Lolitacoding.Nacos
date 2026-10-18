@@ -145,14 +145,18 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
 - **Listeners** use `ConfigBatchListenRequest` (note: the request class is `ConfigBatchListenRequest`;
   its *response* is `ConfigChangeBatchListenResponse`). The hash the client already holds is sent so
   the server can skip notifying about a change the client has already applied, and a change whose
-  MD5 matches the last one delivered is suppressed.
+  MD5 matches the last one delivered is suppressed. The response's `changedConfigs` list is what the
+  reconnect replay acts on — see *Reconnection and state replay*.
 
 ## Naming specifics
 
 - Registration, deregistration and queries use `InstanceRequest`/`PersistentInstanceRequest` and
   `ServiceQueryRequest`.
 - Subscriptions use `SubscribeServiceRequest`; changes arrive as `NotifySubscriberRequest`, which
-  carries the complete instance list, and are answered with `NotifySubscriberResponse`.
+  carries the complete instance list, and are answered with `NotifySubscriberResponse`. The
+  subscription's own response carries `serviceInfo`: the state of the service at the instant the
+  subscription took effect, which is the one the seeding read cannot see. It is applied through the
+  same path as a push — see *Reconnection and state replay*.
 - A push identifies the service **inside** `serviceInfo` (`name`, `groupName`): the server builds it
   with `NotifySubscriberRequest.buildNotifySubscriberRequest(serviceInfo)`, so the request's own
   `namespace`/`serviceName`/`groupName` fields are absent on the wire even though the class declares
@@ -802,8 +806,33 @@ Two subtle rules are worth calling out:
   connection that superseded it.
 - After a reconnect, every configuration listener, service subscription and ephemeral instance
   registration is replayed, because the server discarded that connection-scoped state.
+- A request that finds no connection waits for the recovery instead of being failed against a
+  connection that is momentarily absent. The wait ends with the recovery's *first* attempt: a
+  success sends the request (once — a failing request is still never replayed), a refusal hands the
+  caller back to its own local copy, and the whole wait is bounded by `NacosOptions.RequestTimeout`,
+  which is the same budget the request itself gets. A client that has never connected does not wait
+  at all: that is a first connection rather than a reconnect, and blocking a caller on the
+  background probe that is establishing it would only make a failed startup slow. The official
+  client's `RpcClient.request` polls for the same property within its own budget; a signal is the
+  same contract without the polling, and the attempt boundary is what keeps a long outage from
+  costing every read the whole budget.
+- The state the server reports when a registration is confirmed is applied rather than discarded.
+  `SubscribeServiceResponse.ServiceInfo` carries the service state at the instant the subscription
+  took effect — exactly the window the seeding read cannot see — and is applied through the same
+  path as a push, both on the first subscription and at the reconnect replay. The server fills
+  `lastRefTime` (`ServiceUtil.doSelectInstances` uses the wall clock), so the instance comparison and
+  the staleness check that already guard pushes also suppress the echo of an unchanged state.
+- `ConfigChangeBatchListenResponse.ChangedConfigs` is acted on at the reconnect replay: it names the
+  configurations the server holds a different value for than the hash the client said it had, which
+  is what changed while the listener was gone. Registration also records the hash of the value it
+  just read, so the server answers "nothing changed for you" instead of reporting every listened
+  configuration, and a configuration that never changed is not announced as changed on a reconnect.
+  The first registration deliberately ignores the list, because the read that follows it covers the
+  same window and acting on it would deliver the initial value twice.
 
-See `NacosGrpcConnection.HandleConnectionLossAsync`, `ReadLoopAsync` and `RaiseReconnectedAsync`.
+See `NacosGrpcConnection.HandleConnectionLossAsync`, `ResolveChannelAsync`, `ReadLoopAsync` and
+`RaiseReconnectedAsync`, and `NacosNamingClient.ApplyServiceStateAsync` /
+`NacosConfigClient.ApplyMissedChangesAsync`.
 
 ## References
 

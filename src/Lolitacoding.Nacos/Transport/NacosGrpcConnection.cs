@@ -68,6 +68,25 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     private int _connectionEpoch;
 
     /// <summary>
+    /// Whether a usable connection was ever established, so a loss is a reconnect rather than a
+    /// client that never came up.
+    /// </summary>
+    private volatile bool _everConnected;
+
+    /// <summary>
+    /// The reconnect a request can wait on, or <see langword="null"/> while no recovery is running.
+    /// </summary>
+    /// <remarks>
+    /// It completes when the recovery establishes a connection or makes the first attempt that the
+    /// server refused, whichever comes first, so a waiting request learns whether the outage is a
+    /// blip or something it should stop waiting for.
+    /// </remarks>
+    private volatile TaskCompletionSource? _reconnectProbe;
+
+    /// <summary>Whether the recovery in progress has already had an attempt refused.</summary>
+    private volatile bool _reconnectAttemptFailed;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="NacosGrpcConnection"/> class.
     /// </summary>
     /// <param name="options">The client options.</param>
@@ -241,6 +260,85 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// </summary>
     private const int AccessDeniedErrorCode = 10001;
 
+    /// <summary>The failure reported when there is no connection to send on.</summary>
+    private const string NotEstablishedMessage = "The Nacos connection has not been established yet.";
+
+    /// <summary>
+    /// Gets the channel to send on, waiting for the connection a reconnect is bringing back.
+    /// </summary>
+    /// <param name="ct">A token that cancels the wait.</param>
+    /// <returns>The channel to send the request on.</returns>
+    /// <exception cref="NacosConnectionException">
+    /// There is no connection and there is nothing to wait for.
+    /// </exception>
+    /// <remarks>
+    /// <para>
+    /// A request that arrives while the client is reconnecting waits for the reconnect instead of
+    /// failing against a connection that is momentarily absent. The official client does the same,
+    /// polling until its request budget is spent; here the wait is a signal rather than a poll.
+    /// </para>
+    /// <para>
+    /// Three conditions keep that from turning a control-plane outage into a hang, because every
+    /// caller of this method has a local copy it would rather use than wait for:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>
+    /// The client must have had a connection to lose. A client that has never connected has no
+    /// reconnect to wait for — its background probe is trying to establish a first connection —
+    /// and the caller is owed the failure at once.
+    /// </description></item>
+    /// <item><description>
+    /// The wait ends with the first reconnect attempt. A server that refuses the connection once is
+    /// a server that is not coming back in time to serve this request, so the caller is handed back
+    /// to its own failover rather than left gambling on the next attempt.
+    /// </description></item>
+    /// <item><description>
+    /// The whole wait is bounded by <see cref="NacosOptions.RequestTimeout"/>, the same budget the
+    /// request itself gets, so a connection attempt that never answers cannot outlive it.
+    /// </description></item>
+    /// </list>
+    /// </remarks>
+    private async Task<INacosChannel> ResolveChannelAsync(CancellationToken ct)
+    {
+        if (_channel is { } connected)
+        {
+            return connected;
+        }
+
+        TaskCompletionSource? probe = _reconnectProbe;
+
+        if (probe is null || !_everConnected || _reconnectAttemptFailed || _disposed)
+        {
+            throw new NacosConnectionException(NotEstablishedMessage);
+        }
+
+        long startTimestamp = _timeProvider.GetTimestamp();
+
+        using var budget = new CancellationTokenSource(_options.RequestTimeout, _timeProvider);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            ct, budget.Token, _shutdown.Token);
+
+        try
+        {
+            await probe.Task.WaitAsync(linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            // The budget ran out or the client started shutting down. Both mean the same thing to
+            // the caller: no connection is coming within the time this request was given.
+        }
+
+        if (_channel is { } reconnected)
+        {
+            return reconnected;
+        }
+
+        NacosTransportLog.ReconnectWaitAbandoned(
+            _logger, _timeProvider.GetElapsedTime(startTimestamp).TotalMilliseconds);
+
+        throw new NacosConnectionException(NotEstablishedMessage);
+    }
+
     /// <summary>
     /// Sends one attempt of a request, attaching the current access token.
     /// </summary>
@@ -268,8 +366,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             }
         }
 
-        INacosChannel channel = _channel
-            ?? throw new NacosConnectionException("The Nacos connection has not been established yet.");
+        INacosChannel channel = await ResolveChannelAsync(ct).ConfigureAwait(false);
 
         string requestType = PayloadTypeRegistry.GetTypeName(request);
         long startTimestamp = _timeProvider.GetTimestamp();
@@ -552,6 +649,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
                     await ConnectToAsync(address, ct).ConfigureAwait(false);
 
                     _serverIndex = index;
+                    _everConnected = true;
                     SetState(NacosTransportState.Connected, address.Original);
 
                     if (isReconnect)
@@ -872,6 +970,8 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             return;
         }
 
+        TaskCompletionSource? probe = null;
+
         try
         {
             if (_disposed || _state == NacosTransportState.Shutdown || _shutdown.IsCancellationRequested)
@@ -894,6 +994,13 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             }
 
             TearDown();
+
+            // A request that arrives now has nothing to send on, so it is given something to wait
+            // for: the outcome of this recovery's first attempt.
+            var recovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            probe = recovery;
+            _reconnectProbe = recovery;
+            _reconnectAttemptFailed = false;
 
             int attempt = 0;
             while (!_disposed && _state != NacosTransportState.Shutdown)
@@ -919,7 +1026,11 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
                 }
                 catch (NacosConnectionException)
                 {
-                    // Keep backing off; the loop decides when the attempt budget is spent.
+                    // Keep backing off; the loop decides when the attempt budget is spent. The
+                    // refusal is what a request waiting on this recovery is told about, so it stops
+                    // waiting for a connection that is not coming back in time to serve it.
+                    _reconnectAttemptFailed = true;
+                    recovery.TrySetResult();
                 }
                 catch (OperationCanceledException) when (ct.IsCancellationRequested)
                 {
@@ -929,6 +1040,10 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         }
         finally
         {
+            // Every exit releases the waiters: they re-read the connection and either find one or
+            // are failed, so no request waits for a recovery that has already ended.
+            probe?.TrySetResult();
+            _reconnectProbe = null;
             _reconnectGate.Release();
         }
     }

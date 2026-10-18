@@ -106,4 +106,14 @@ internal static partial class NacosTransportLog
         Level = LogLevel.Error,
         Message = "A handler for the Nacos push '{TypeName}' threw and the push was dropped: {Reason}")]
     public static partial void PushHandlerFailed(ILogger logger, string typeName, string reason);
+
+    /// <summary>Logs that a request stopped waiting for a reconnect and failed instead.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="waitedMs">How long the request waited for the connection.</param>
+    [LoggerMessage(
+        EventId = 3006,
+        Level = LogLevel.Information,
+        Message = "A Nacos request waited {WaitedMs}ms for a reconnect that did not arrive and is being "
+            + "failed instead, so the caller can fall back to its local copy")]
+    public static partial void ReconnectWaitAbandoned(ILogger logger, double waitedMs);
 }

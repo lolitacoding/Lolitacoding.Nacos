@@ -19,7 +19,7 @@ and `Naming`.
 | `Namespace` | `string` | `"public"` | The namespace (tenant) all operations default to. An empty value is normalised to `public`. Must be ASCII. |
 | `UserName` | `string?` | `null` | Credential for an auth-enabled server. Must be set together with `Password`. |
 | `Password` | `string?` | `null` | Must be set together with `UserName`. |
-| `RequestTimeout` | `TimeSpan` | 5 s | Timeout for a single request. Must be positive. |
+| `RequestTimeout` | `TimeSpan` | 5 s | Timeout for a single request, and the budget a request waits for a connection when it arrives during a reconnect (see `docs/faq.md`). Must be positive. |
 | `ConnectionTimeout` | `TimeSpan` | 10 s | Timeout for establishing the connection and finishing the gRPC handshake. Must be positive. |
 | `HealthCheckInterval` | `TimeSpan` | 5 s | How long a connection may sit idle before it is probed. Mirrors the official client's keep-alive. |
 | `HealthCheckTimeout` | `TimeSpan` | 3 s | Timeout for a single health check. |

@@ -223,7 +223,18 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 
         try
         {
-            await SendSubscribeRequestAsync(resolved, clusters, subscribe: true, ct).ConfigureAwait(false);
+            SubscribeServiceResponse response = await SendSubscribeRequestAsync(
+                resolved, clusters, subscribe: true, ct).ConfigureAwait(false);
+
+            // The subscription takes effect on the server at an instant the client cannot observe:
+            // the read above happened before the request was sent, so a change landing in between
+            // was never pushed to anybody and would be lost. The response carries the service state
+            // as it was when the subscription became live, so applying it here closes that window —
+            // it is exactly what a push would have delivered.
+            if (response.ServiceInfo is { } atSubscription)
+            {
+                await ApplyServiceStateAsync(resolved, atSubscription, ct).ConfigureAwait(false);
+            }
 
             await foreach (NacosServiceChange change in queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
@@ -306,6 +317,27 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             groupName,
             string.IsNullOrEmpty(notification.Namespace) ? _options.Namespace : notification.Namespace);
 
+        await ApplyServiceStateAsync(key, pushed, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Applies a service state the server supplied, whether as a push or as the answer to a
+    /// subscribe request.
+    /// </summary>
+    /// <param name="key">The resolved service key.</param>
+    /// <param name="pushed">The service state the server reported.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>A task that completes once subscribers were notified.</returns>
+    /// <remarks>
+    /// Both sources go through here because they mean the same thing: the state of the service at
+    /// the moment the server produced it. The comparison below is what keeps the second delivery of
+    /// an unchanged state — a re-subscription after a reconnect, say — from reaching a consumer.
+    /// </remarks>
+    private async Task ApplyServiceStateAsync(
+        NacosServiceKey key,
+        ServiceInfo pushed,
+        CancellationToken ct)
+    {
         NacosServiceInfo info = Materialize(key, pushed, fromLocalCache: false);
 
         // The cache is refreshed on every push, so a later outage has the freshest possible list
@@ -500,8 +532,17 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         {
             try
             {
-                await SendSubscribeRequestAsync(
+                SubscribeServiceResponse response = await SendSubscribeRequestAsync(
                     subscription.Service, subscription.Clusters, subscribe: true, ct).ConfigureAwait(false);
+
+                // The server discarded the subscription with the old connection, so the client was
+                // blind to everything that changed while it was away — no push could reach it. The
+                // response reports the state at the instant the subscription was restored, which is
+                // exactly what was missed, and the comparison inside drops it when nothing changed.
+                if (response.ServiceInfo is { } restoredState)
+                {
+                    await ApplyServiceStateAsync(subscription.Service, restoredState, ct).ConfigureAwait(false);
+                }
 
                 restored++;
             }
@@ -575,8 +616,11 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     /// <param name="clusters">The cluster filter.</param>
     /// <param name="subscribe">Whether to subscribe or unsubscribe.</param>
     /// <param name="ct">A token that cancels the request.</param>
-    /// <returns>A task that completes once the server acknowledged the change.</returns>
-    private async Task SendSubscribeRequestAsync(
+    /// <returns>
+    /// The acknowledgement, whose service info is the state of the service at the instant the
+    /// subscription took effect on the server.
+    /// </returns>
+    private async Task<SubscribeServiceResponse> SendSubscribeRequestAsync(
         NacosServiceKey service,
         string? clusters,
         bool subscribe,
@@ -591,7 +635,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             Clusters = clusters,
         };
 
-        await _connection.RequestAsync<SubscribeServiceResponse>(request, ct).ConfigureAwait(false);
+        return await _connection.RequestAsync<SubscribeServiceResponse>(request, ct).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -647,22 +647,232 @@ public sealed class NacosGrpcConnectionTests
         Volatile.Read(ref created).ShouldBe(1);
     }
 
+    [Fact]
+    public async Task Request_WaitsForAReconnectInsteadOfFailingOnTheMissingConnection()
+    {
+        // The connection is gone but a reconnect is under way, so the request has something to wait
+        // for. Failing here would hand the caller a failure for an outage it is about to survive.
+        var first = new FakeNacosDuplexStream();
+        var second = new FakeNacosDuplexStream();
+        using var handshakeGate = new ManualResetEventSlim(false);
+        int created = 0;
+
+        var factory = new FakeNacosChannelFactory(address =>
+        {
+            int index = Interlocked.Increment(ref created);
+
+            return index == 1
+                ? new FakeNacosChannel(address, FakeServerCheck.Responding(), first)
+                : new FakeNacosChannel(address, Reconnect(handshakeGate), second);
+        });
+
+        await using var connection = CreateConnection(factory);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        // The server drops the connection, which starts the reconnect.
+        first.EndStream();
+
+        // The reconnect is holding its handshake open, so the connection is provably absent and
+        // provably coming back.
+        await WaitForConditionAsync(
+            () => Volatile.Read(ref created) >= 2,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+
+        Task<ConfigQueryResponse> pending = connection.RequestAsync<ConfigQueryResponse>(
+            new ConfigQueryRequest { DataId = "a", Group = "g" },
+            TestContext.Current.CancellationToken);
+
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+
+        // The only two possible outcomes for the request are "still waiting" and "failed". Waiting
+        // is the one this test is about: the connection cannot serve it yet, and the request must
+        // not have given up on the reconnect.
+        pending.IsCompleted.ShouldBeFalse();
+
+        handshakeGate.Set();
+
+        ConfigQueryResponse response = await pending;
+
+        response.Content.ShouldBe("reconnected");
+        connection.State.ShouldBe(NacosTransportState.Connected);
+    }
+
+    [Fact]
+    public async Task Request_StopsWaitingWhenTheFirstReconnectAttemptIsRefused()
+    {
+        // Waiting for a reconnect is only worth anything while a connection is coming. Once the
+        // server has refused an attempt, the caller is handed back to its own failover rather than
+        // being held until the whole request budget runs out.
+        var stream = new FakeNacosDuplexStream();
+        int requests = 0;
+
+        var factory = new FakeNacosChannelFactory(address => new FakeNacosChannel(
+            address,
+            request =>
+            {
+                // The initial handshake succeeds; every later attempt is refused.
+                if (Interlocked.Increment(ref requests) == 1)
+                {
+                    return FakeServerCheck.Responding()(request);
+                }
+
+                throw new NacosConnectionException("refused");
+            },
+            stream));
+
+        await using var connection = CreateConnection(factory);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        stream.EndStream();
+
+        await WaitForConditionAsync(
+            () => Volatile.Read(ref requests) >= 2,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+
+        await Should.ThrowAsync<NacosConnectionException>(
+            () => connection.RequestAsync<ConfigQueryResponse>(
+                new ConfigQueryRequest { DataId = "a", Group = "g" },
+                TestContext.Current.CancellationToken));
+
+        // The request budget is five seconds, so a request that waited for the reconnect would sit
+        // here for that long before failing.
+        (DateTimeOffset.UtcNow - start).ShouldBeLessThan(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public async Task Request_FailsAtOnceWhenTheClientNeverConnected()
+    {
+        // A client that never connected has no reconnect to wait for: its background probe is
+        // trying to establish a first connection. Waiting for it would turn a failed startup into
+        // a slow one, and the caller is owed the failure so it can serve its own local copy.
+        var stream = new FakeNacosDuplexStream();
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(
+                address,
+                _ => throw new NacosConnectionException("refused"),
+                stream));
+
+        await using var connection = CreateConnection(
+            factory,
+            optional: true,
+            reconnectDelay: TimeSpan.FromSeconds(30));
+
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        connection.State.ShouldBe(NacosTransportState.Disconnected);
+
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+
+        await Should.ThrowAsync<NacosConnectionException>(
+            () => connection.RequestAsync<ConfigQueryResponse>(
+                new ConfigQueryRequest { DataId = "a", Group = "g" },
+                TestContext.Current.CancellationToken));
+
+        // The probe is still in its first half-minute backoff, so a request that waited for it
+        // would block for far longer than this.
+        (DateTimeOffset.UtcNow - start).ShouldBeLessThan(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task Request_GivesUpOnTheReconnectOnceTheRequestBudgetIsSpent()
+    {
+        // A connection attempt that never answers must not outlive the request that is waiting for
+        // it, or a black-holed server would stall every caller indefinitely.
+        var first = new FakeNacosDuplexStream();
+        var second = new FakeNacosDuplexStream();
+        using var handshakeGate = new ManualResetEventSlim(false);
+        int created = 0;
+
+        var factory = new FakeNacosChannelFactory(address =>
+        {
+            int index = Interlocked.Increment(ref created);
+
+            return index == 1
+                ? new FakeNacosChannel(address, FakeServerCheck.Responding(), first)
+                : new FakeNacosChannel(address, Reconnect(handshakeGate), second);
+        });
+
+        await using var connection = CreateConnection(
+            factory,
+            requestTimeout: TimeSpan.FromMilliseconds(300));
+
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        first.EndStream();
+
+        await WaitForConditionAsync(
+            () => Volatile.Read(ref created) >= 2,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+
+        DateTimeOffset start = DateTimeOffset.UtcNow;
+
+        await Should.ThrowAsync<NacosConnectionException>(
+            () => connection.RequestAsync<ConfigQueryResponse>(
+                new ConfigQueryRequest { DataId = "a", Group = "g" },
+                TestContext.Current.CancellationToken));
+
+        // The handshake is still held open, so only the request's own budget can end the wait.
+        (DateTimeOffset.UtcNow - start).ShouldBeLessThan(TimeSpan.FromSeconds(3));
+
+        handshakeGate.Set();
+
+        await WaitForConditionAsync(
+            () => connection.State == NacosTransportState.Connected,
+            TimeSpan.FromSeconds(10),
+            TestContext.Current.CancellationToken);
+    }
+
+    /// <summary>
+    /// Builds a handler for the channel a reconnect is carried on.
+    /// </summary>
+    /// <param name="gate">The gate that holds the handshake open.</param>
+    /// <returns>The handler.</returns>
+    /// <remarks>
+    /// Holding the handshake open puts the client in the state this behaviour is about: a
+    /// connection that is neither usable nor abandoned, so a test can observe a request that is
+    /// waiting for it rather than racing the reconnect.
+    /// </remarks>
+    private static Func<Payload, Payload> Reconnect(ManualResetEventSlim gate) => request =>
+    {
+        if (PayloadCodec.ReadTypeName(request) == "ServerCheckRequest")
+        {
+            gate.Wait(TimeSpan.FromSeconds(10));
+            return FakeServerCheck.Responding()(request);
+        }
+
+        return PayloadCodec.Encode(new ConfigQueryResponse
+        {
+            Content = "reconnected",
+            Md5 = "after",
+        });
+    };
+
     private static NacosGrpcConnection CreateConnection(
         FakeNacosChannelFactory factory,
         IReadOnlyList<NacosServerAddress>? servers = null,
         TimeProvider? timeProvider = null,
         NacosConnectionModule module = NacosConnectionModule.Config,
-        IReadOnlyDictionary<string, string>? extraLabels = null)
+        IReadOnlyDictionary<string, string>? extraLabels = null,
+        bool optional = false,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? reconnectDelay = null)
     {
         var options = new NacosOptions
         {
             AppName = "test-app",
             ConnectionTimeout = TimeSpan.FromSeconds(5),
+            Optional = optional,
+            RequestTimeout = requestTimeout ?? TimeSpan.FromSeconds(5),
             Reconnect = new NacosReconnectOptions
             {
                 // Small real delays keep reconnect tests fast without hanging: a fake clock would
                 // never elapse the backoff timer, so the retry loop would block forever.
-                InitialDelay = TimeSpan.FromMilliseconds(1),
+                InitialDelay = reconnectDelay ?? TimeSpan.FromMilliseconds(1),
                 MaxDelay = TimeSpan.FromMilliseconds(2),
                 JitterFactor = 0,
             },

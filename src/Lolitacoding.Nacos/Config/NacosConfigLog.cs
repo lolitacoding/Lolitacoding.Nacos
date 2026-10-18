@@ -109,4 +109,14 @@ internal static partial class NacosConfigLog
         Level = LogLevel.Debug,
         Message = "Could not write a local snapshot for configuration {Key}: {Reason}")]
     public static partial void SnapshotWriteFailed(ILogger logger, string key, string reason);
+
+    /// <summary>Logs that configurations changed while the client was disconnected.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">The number of configurations that changed.</param>
+    [LoggerMessage(
+        EventId = 4011,
+        Level = LogLevel.Information,
+        Message = "{Count} listened configuration(s) changed while the Nacos connection was down; "
+            + "the changes are being delivered now")]
+    public static partial void ChangesMissedWhileAway(ILogger logger, int count);
 }
