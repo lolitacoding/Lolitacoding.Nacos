@@ -28,6 +28,15 @@ namespace Lolitacoding.Nacos.Naming;
 /// </remarks>
 internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 {
+    /// <summary>The error code a server uses to report a capability it does not implement.</summary>
+    private const int NotImplementedErrorCode = 501;
+
+    /// <summary>The error code a server uses when the connection watches too many patterns.</summary>
+    private const int PatternOverLimitErrorCode = 50310;
+
+    /// <summary>The error code a server uses when one pattern matches too many services.</summary>
+    private const int MatchCountOverLimitErrorCode = 50311;
+
     private readonly NacosOptions _options;
     private readonly NacosGrpcConnection _connection;
     private readonly NacosServiceSnapshotStore? _snapshots;
@@ -45,6 +54,21 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     /// served from local state.
     /// </summary>
     private readonly ConcurrentDictionary<string, NacosServiceInfo> _cache = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Fuzzy watch registrations keyed by pattern, so every subscription to the same pattern shares
+    /// one server-side watch.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ServiceWatchRegistration> _serviceWatches =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Serialises fuzzy watch creation, subscription changes and cancellation.</summary>
+    private readonly SemaphoreSlim _serviceWatchSync = new(1, 1);
+
+    /// <summary>
+    /// Re-sends every watch periodically, or <see langword="null"/> until the first watch is opened.
+    /// </summary>
+    private ITimer? _serviceWatchResyncTimer;
 
     private bool _disposed;
 
@@ -254,11 +278,47 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async IAsyncEnumerable<NacosServiceWatchEvent> WatchAsync(
+        string serviceNamePattern,
+        string groupPattern,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // Building the pattern validates both arguments; the namespace is what the client is
+        // configured for, because one fuzzy watch cannot span namespaces.
+        string pattern = NacosFuzzyPattern.Generate(
+            _options.Namespace, groupPattern, serviceNamePattern);
+
+        ServiceWatchSubscription subscription =
+            await SubscribeServiceWatchAsync(pattern, ct).ConfigureAwait(false);
+
+        try
+        {
+            await foreach (NacosServiceWatchEvent item in
+                subscription.Queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                yield return item;
+            }
+        }
+        finally
+        {
+            await UnsubscribeServiceWatchAsync(pattern, subscription).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<NacosServiceWatchEvent> WatchAsync(
+        string groupPattern,
+        CancellationToken ct) =>
+        WatchAsync("*", groupPattern, ct);
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
     {
         if (_disposed)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _disposed = true;
@@ -274,7 +334,34 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         _registrations.Clear();
         _cache.Clear();
 
-        return ValueTask.CompletedTask;
+        // A fuzzy watch subscription is ended by completing its channel rather than by dropping it:
+        // a consumer awaiting the next event would otherwise stay parked until its own token was
+        // cancelled. Taking the gate first keeps a registration from being created behind the sweep.
+        await _serviceWatchSync.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _serviceWatchResyncTimer?.Dispose();
+            _serviceWatchResyncTimer = null;
+
+            foreach (ServiceWatchRegistration registration in _serviceWatches.Values)
+            {
+                lock (registration.Sync)
+                {
+                    foreach (ServiceWatchSubscription subscription in registration.Subscriptions)
+                    {
+                        subscription.Queue.Writer.TryComplete();
+                    }
+
+                    registration.Subscriptions.Clear();
+                }
+            }
+
+            _serviceWatches.Clear();
+        }
+        finally
+        {
+            _serviceWatchSync.Release();
+        }
     }
 
     /// <summary>
@@ -552,6 +639,8 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             }
         }
 
+        await RestoreServiceWatchesAsync(ct).ConfigureAwait(false);
+
         if (restored > 0)
         {
             NacosNamingLog.RestoredAfterReconnect(_logger, restored);
@@ -796,6 +885,611 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         }
     }
 
+    /// <summary>
+    /// Registers a subscription to a naming fuzzy watch, creating the shared server-side watch when
+    /// it is the first one for the pattern.
+    /// </summary>
+    /// <param name="pattern">The resolved pattern.</param>
+    /// <param name="ct">A token that cancels registration.</param>
+    /// <returns>The subscription, whose channel starts receiving events immediately.</returns>
+    /// <exception cref="NacosServerException">
+    /// The server states that it does not implement fuzzy watch, or refused the pattern.
+    /// </exception>
+    private async Task<ServiceWatchSubscription> SubscribeServiceWatchAsync(
+        string pattern,
+        CancellationToken ct)
+    {
+        // The ability table only exists once the handshake has happened, so a client that has not
+        // connected yet would otherwise skip the refusal below and send the watch anyway. The watch
+        // request would establish the connection a moment later, so this costs no extra round trip.
+        await _connection.ConnectAsync(ct).ConfigureAwait(false);
+
+        EnsureFuzzyWatchSupported();
+
+        var subscription = new ServiceWatchSubscription();
+
+        await _serviceWatchSync.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            ServiceWatchRegistration registration = _serviceWatches.GetOrAdd(
+                pattern, value => new ServiceWatchRegistration(value, _options.Namespace));
+
+            bool isFirst;
+            lock (registration.Sync)
+            {
+                isFirst = registration.Subscriptions.Count == 0;
+                registration.Subscriptions.Add(subscription);
+                ReplayKnownKeysLocked(registration, subscription);
+            }
+
+            if (!isFirst)
+            {
+                // The watch is already installed and synchronised, so the replay above is all this
+                // subscriber needs; a second registration would only duplicate the diff stream.
+                return subscription;
+            }
+
+            StartServiceWatchResyncTimer();
+
+            try
+            {
+                await SendServiceWatchRequestAsync(registration, watch: true, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // The watch was never installed, so it must not stay behind claiming one.
+                lock (registration.Sync)
+                {
+                    registration.Subscriptions.Remove(subscription);
+                }
+
+                _serviceWatches.TryRemove(pattern, out _);
+                StopServiceWatchResyncTimerIfIdle();
+                throw;
+            }
+
+            return subscription;
+        }
+        finally
+        {
+            _serviceWatchSync.Release();
+        }
+    }
+
+    /// <summary>
+    /// Removes a subscription, cancelling the server-side watch when it was the last one.
+    /// </summary>
+    /// <param name="pattern">The pattern the subscription belongs to.</param>
+    /// <param name="subscription">The subscription to remove.</param>
+    /// <returns>A task that completes once the watch is cancelled.</returns>
+    private async Task UnsubscribeServiceWatchAsync(
+        string pattern,
+        ServiceWatchSubscription subscription)
+    {
+        await _serviceWatchSync.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!_serviceWatches.TryGetValue(pattern, out ServiceWatchRegistration? registration))
+            {
+                return;
+            }
+
+            bool isLast;
+            lock (registration.Sync)
+            {
+                registration.Subscriptions.Remove(subscription);
+                isLast = registration.Subscriptions.Count == 0;
+            }
+
+            if (!isLast)
+            {
+                return;
+            }
+
+            _serviceWatches.TryRemove(pattern, out _);
+            StopServiceWatchResyncTimerIfIdle();
+
+            if (_disposed || _connection.State != NacosTransportState.Connected)
+            {
+                // Nothing to tell the server: either the client is gone, or the watch already died
+                // with the connection.
+                return;
+            }
+
+            try
+            {
+                await SendServiceWatchRequestAsync(registration, watch: false, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (NacosException)
+            {
+                // The watch is gone locally, which is what matters; the server drops the
+                // registration when the connection closes.
+            }
+        }
+        finally
+        {
+            _serviceWatchSync.Release();
+        }
+    }
+
+    /// <summary>
+    /// Fails a naming fuzzy watch when the server explicitly says it has none.
+    /// </summary>
+    /// <exception cref="NacosServerException">
+    /// The connected server advertises <c>fuzzyWatch = false</c>.
+    /// </exception>
+    /// <remarks>
+    /// An absent key is not a refusal: it means the server did not state the ability, which is what
+    /// a handshake without an acknowledgement looks like. Only a stated <see langword="false"/> is
+    /// treated as "this server cannot do it".
+    /// </remarks>
+    private void EnsureFuzzyWatchSupported()
+    {
+        if (_connection.ServerAbilities.TryGetValue(NacosServerAbility.FuzzyWatch, out bool supported)
+            && !supported)
+        {
+            throw new NacosServerException(
+                NotImplementedErrorCode,
+                "The connected Nacos server states that it does not implement fuzzy watch, so a "
+                + "pattern subscription cannot be installed.");
+        }
+    }
+
+    /// <summary>
+    /// Starts the periodic resynchronisation of every naming watch.
+    /// </summary>
+    private void StartServiceWatchResyncTimer()
+    {
+        TimeSpan interval = _options.Naming.FuzzyWatchResyncInterval;
+
+        _serviceWatchResyncTimer ??= _timeProvider.CreateTimer(
+            static state => ((NacosNamingClient)state!).OnServiceWatchResyncTimer(),
+            this,
+            Timeout.InfiniteTimeSpan,
+            Timeout.InfiniteTimeSpan);
+
+        _serviceWatchResyncTimer.Change(interval, interval);
+    }
+
+    /// <summary>
+    /// Stops the periodic resynchronisation when no watch is left.
+    /// </summary>
+    private void StopServiceWatchResyncTimerIfIdle()
+    {
+        if (_serviceWatches.IsEmpty)
+        {
+            _serviceWatchResyncTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    /// <summary>
+    /// Runs one periodic resynchronisation.
+    /// </summary>
+    private void OnServiceWatchResyncTimer() => _ = ResyncServiceWatchesAsync();
+
+    /// <summary>
+    /// Re-sends every naming watch so a push lost while the connection looked healthy is repaired.
+    /// </summary>
+    /// <returns>A task that completes once every watch was re-sent.</returns>
+    /// <remarks>
+    /// The server only pushes a change once. A push dropped between the server and this client
+    /// would otherwise leave the matched set wrong until the next reconnect, so the full diff is
+    /// requested on a timer as well.
+    /// </remarks>
+    private async Task ResyncServiceWatchesAsync()
+    {
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            await _serviceWatchSync.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                foreach (ServiceWatchRegistration registration in _serviceWatches.Values)
+                {
+                    try
+                    {
+                        await SendServiceWatchRequestAsync(
+                            registration, watch: true, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (NacosException ex)
+                    {
+                        // One pattern that cannot be resynchronised must not stop the others; the
+                        // next tick tries again.
+                        NacosNamingLog.FuzzyWatchSyncFailed(_logger, registration.Pattern, ex.Message);
+                    }
+                }
+            }
+            finally
+            {
+                _serviceWatchSync.Release();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A timer callback has no caller to report to; an escaping exception would be
+            // unobserved and could take the process down on finalisation.
+            NacosNamingLog.FuzzyWatchSyncFailed(_logger, "<all>", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Re-registers every naming fuzzy watch after the transport reconnected.
+    /// </summary>
+    /// <param name="ct">A token that cancels the replay.</param>
+    /// <returns>A task that completes once every watch was re-sent.</returns>
+    private async Task RestoreServiceWatchesAsync(CancellationToken ct)
+    {
+        if (_serviceWatches.IsEmpty)
+        {
+            return;
+        }
+
+        await _serviceWatchSync.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            int count = 0;
+            foreach (ServiceWatchRegistration registration in _serviceWatches.Values)
+            {
+                await SendServiceWatchRequestAsync(registration, watch: true, ct).ConfigureAwait(false);
+                count++;
+            }
+
+            NacosNamingLog.FuzzyWatchesRestored(_logger, count);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The connection itself is healthy; the next reconnect or the periodic resync repairs
+            // whatever did not get re-registered here.
+            NacosNamingLog.FuzzyWatchSyncFailed(_logger, "<all>", ex.Message);
+        }
+        finally
+        {
+            _serviceWatchSync.Release();
+        }
+    }
+
+    /// <summary>
+    /// Sends a naming watch registration or cancellation.
+    /// </summary>
+    /// <param name="registration">The watch to send.</param>
+    /// <param name="watch">Whether to register or cancel.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server acknowledged the request.</returns>
+    /// <exception cref="NacosServerException">
+    /// The server refused the pattern because a limit was reached.
+    /// </exception>
+    private async Task SendServiceWatchRequestAsync(
+        ServiceWatchRegistration registration,
+        bool watch,
+        CancellationToken ct)
+    {
+        List<string> knownKeys;
+        bool initializing;
+
+        lock (registration.Sync)
+        {
+            knownKeys = [.. registration.KnownKeys];
+            initializing = !registration.Initialized;
+        }
+
+        var request = new NamingFuzzyWatchRequest
+        {
+            Namespace = registration.Namespace,
+            GroupKeyPattern = registration.Pattern,
+
+            // The set the client already holds is what makes the answer a diff. It is sent on
+            // every request, including a cancellation, exactly as the official client does.
+            ReceivedGroupKeys = knownKeys,
+            WatchType = watch ? FuzzyWatchProtocol.Watch : FuzzyWatchProtocol.CancelWatch,
+            Initializing = initializing,
+        };
+
+        try
+        {
+            await _connection.RequestAsync<NamingFuzzyWatchResponse>(request, ct).ConfigureAwait(false);
+        }
+        catch (NacosServerException ex)
+            when (ex.ErrorCode is PatternOverLimitErrorCode or MatchCountOverLimitErrorCode)
+        {
+            NacosNamingLog.FuzzyWatchRefused(_logger, registration.Pattern, ex.ErrorCode);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Applies a service diff pushed by the server.
+    /// </summary>
+    /// <param name="request">The pushed diff.</param>
+    /// <remarks>
+    /// Runs on the read loop, so it must not block: every event is written to an unbounded channel
+    /// and delivered by the consumer's own enumeration.
+    /// </remarks>
+    internal void OnFuzzyWatchSync(NamingFuzzyWatchSyncRequest request)
+    {
+        if (request.GroupKeyPattern is not { Length: > 0 } pattern
+            || !_serviceWatches.TryGetValue(pattern, out ServiceWatchRegistration? registration))
+        {
+            // A diff for a watch this client does not hold: the server may still have it registered
+            // until the cancellation reaches it, so it is ignored rather than treated as an error.
+            return;
+        }
+
+        lock (registration.Sync)
+        {
+            if (string.Equals(
+                request.SyncType,
+                FuzzyWatchProtocol.FinishInitNotify,
+                StringComparison.Ordinal))
+            {
+                MarkInitializedLocked(registration);
+                return;
+            }
+
+            if (request.Contexts is { Count: > 0 } contexts)
+            {
+                foreach (NamingFuzzyWatchContext context in contexts)
+                {
+                    if (!NacosFuzzyPattern.TryParseServiceKey(
+                        context.ServiceKey,
+                        out string namespaceId,
+                        out string group,
+                        out string serviceName))
+                    {
+                        NacosNamingLog.FuzzyWatchMalformedServiceKey(
+                            _logger, pattern, context.ServiceKey);
+                        continue;
+                    }
+
+                    var key = new NacosServiceKey(serviceName, group, namespaceId);
+                    string serviceKey = context.ServiceKey!;
+
+                    if (string.Equals(
+                        context.ChangedType,
+                        NamingFuzzyWatchChangeType.AddService,
+                        StringComparison.Ordinal))
+                    {
+                        if (registration.KnownKeys.Add(serviceKey))
+                        {
+                            DeliverLocked(registration, NacosServiceWatchKind.Added, key, serviceKey);
+                        }
+                    }
+                    else if (string.Equals(
+                        context.ChangedType,
+                        NamingFuzzyWatchChangeType.DeleteService,
+                        StringComparison.Ordinal))
+                    {
+                        // The official Java client adds the key back here, which leaves its set
+                        // wrong after a delete; this client removes it, matching the configuration
+                        // watch.
+                        if (registration.KnownKeys.Remove(serviceKey))
+                        {
+                            DeliverLocked(registration, NacosServiceWatchKind.Removed, key, serviceKey);
+                        }
+                    }
+                    else
+                    {
+                        NacosNamingLog.FuzzyWatchUnknownChangeType(
+                            _logger, pattern, context.ChangedType);
+                    }
+                }
+            }
+
+            // The server ends the initial phase with FINISH_FUZZY_WATCH_INIT_NOTIFY: immediately
+            // when the diff is empty, and after the last batch has been acknowledged otherwise. The
+            // phase is also ended here at the last batch, so a consumer does not wait for that extra
+            // round trip and a lost marker cannot leave it hanging. A marker that arrives afterwards
+            // finds every subscription initialised and changes nothing. The one thing this must not
+            // do is end before the last batch: a batch is only pushed after the previous one, so
+            // receiving the last one means the whole diff has been applied.
+            if (string.Equals(request.SyncType, FuzzyWatchProtocol.InitNotify, StringComparison.Ordinal)
+                && request.TotalBatch > 0
+                && request.CurrentBatch >= request.TotalBatch)
+            {
+                MarkInitializedLocked(registration);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies a single-service change pushed by the server.
+    /// </summary>
+    /// <param name="notification">The pushed change.</param>
+    internal void OnFuzzyWatchChange(NamingFuzzyWatchChangeNotifyRequest notification)
+    {
+        if (!NacosFuzzyPattern.TryParseServiceKey(
+            notification.ServiceKey,
+            out string namespaceId,
+            out string group,
+            out string serviceName))
+        {
+            NacosNamingLog.FuzzyWatchMalformedServiceKey(_logger, "<push>", notification.ServiceKey);
+            return;
+        }
+
+        var key = new NacosServiceKey(serviceName, group, namespaceId);
+        string serviceKey = notification.ServiceKey!;
+
+        foreach (ServiceWatchRegistration registration in _serviceWatches.Values)
+        {
+            // The server pushes to every pattern it matched, but routing by the local registrations
+            // keeps a push for an unrelated watch from being delivered.
+            if (!NacosFuzzyPattern.Matches(
+                registration.Pattern, key.Namespace, key.GroupName, key.ServiceName))
+            {
+                continue;
+            }
+
+            lock (registration.Sync)
+            {
+                if (string.Equals(
+                    notification.ChangedType,
+                    NamingFuzzyWatchChangeType.AddService,
+                    StringComparison.Ordinal))
+                {
+                    if (registration.KnownKeys.Add(serviceKey))
+                    {
+                        DeliverLocked(registration, NacosServiceWatchKind.Added, key, serviceKey);
+                    }
+                }
+                else if (string.Equals(
+                    notification.ChangedType,
+                    NamingFuzzyWatchChangeType.DeleteService,
+                    StringComparison.Ordinal))
+                {
+                    if (registration.KnownKeys.Remove(serviceKey))
+                    {
+                        DeliverLocked(registration, NacosServiceWatchKind.Removed, key, serviceKey);
+                    }
+                }
+                else if (string.Equals(
+                    notification.ChangedType,
+                    NamingFuzzyWatchChangeType.InstanceChanged,
+                    StringComparison.Ordinal))
+                {
+                    // The server only pushes a change to the matched membership, so this is
+                    // defensive: an INSTANCE_CHANGED for a service the watch does not hold is
+                    // treated as an add, exactly as the official client does for every instance
+                    // change, and one for a known service is reported without changing the set.
+                    NacosServiceWatchKind kind = registration.KnownKeys.Add(serviceKey)
+                        ? NacosServiceWatchKind.Added
+                        : NacosServiceWatchKind.InstancesChanged;
+
+                    DeliverLocked(registration, kind, key, serviceKey);
+                }
+                else if (!string.Equals(
+                    notification.ChangedType,
+                    NamingFuzzyWatchChangeType.HeartBeat,
+                    StringComparison.Ordinal))
+                {
+                    // A heartbeat does not change the matched set, so it is ignored silently rather
+                    // than logged as an unknown change type.
+                    NacosNamingLog.FuzzyWatchUnknownChangeType(
+                        _logger, registration.Pattern, notification.ChangedType);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Delivers one event to every subscription, suppressing what a subscription already knows.
+    /// </summary>
+    /// <param name="registration">The watch that produced the event.</param>
+    /// <param name="kind">The kind of change.</param>
+    /// <param name="service">The service.</param>
+    /// <param name="serviceKey">The wire service key, which is the deduplication identity.</param>
+    private void DeliverLocked(
+        ServiceWatchRegistration registration,
+        NacosServiceWatchKind kind,
+        NacosServiceKey service,
+        string serviceKey)
+    {
+        NacosNamingLog.FuzzyWatchEvent(_logger, registration.Pattern, kind, service.ToString());
+
+        foreach (ServiceWatchSubscription subscription in registration.Subscriptions)
+        {
+            bool deliver = kind switch
+            {
+                NacosServiceWatchKind.Added => subscription.KnownKeys.Add(serviceKey),
+                NacosServiceWatchKind.Removed => subscription.KnownKeys.Remove(serviceKey),
+                _ => true,
+            };
+
+            if (deliver)
+            {
+                // Unbounded on purpose: dropping an add or a remove would silently corrupt the
+                // consumer's view of the matched set, and no later event repairs it.
+                subscription.Queue.Writer.TryWrite(
+                    new NacosServiceWatchEvent(kind, registration.Pattern, service));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ends the initial phase and reports it to every subscription that has not seen it.
+    /// </summary>
+    /// <param name="registration">The watch that finished its initial catch-up.</param>
+    private void MarkInitializedLocked(ServiceWatchRegistration registration)
+    {
+        bool first = !registration.Initialized;
+        registration.Initialized = true;
+
+        foreach (ServiceWatchSubscription subscription in registration.Subscriptions)
+        {
+            if (subscription.Initialized)
+            {
+                continue;
+            }
+
+            subscription.Initialized = true;
+            subscription.Queue.Writer.TryWrite(new NacosServiceWatchEvent(
+                NacosServiceWatchKind.InitialSyncCompleted,
+                registration.Pattern,
+                service: null));
+        }
+
+        if (first)
+        {
+            NacosNamingLog.FuzzyWatchInitialized(
+                _logger, registration.Pattern, registration.KnownKeys.Count);
+        }
+    }
+
+    /// <summary>
+    /// Seeds a new subscription with the services the watch already holds.
+    /// </summary>
+    /// <param name="registration">The watch being joined.</param>
+    /// <param name="subscription">The subscription to seed.</param>
+    private static void ReplayKnownKeysLocked(
+        ServiceWatchRegistration registration,
+        ServiceWatchSubscription subscription)
+    {
+        foreach (string serviceKey in registration.KnownKeys)
+        {
+            if (!NacosFuzzyPattern.TryParseServiceKey(
+                serviceKey,
+                out string namespaceId,
+                out string group,
+                out string serviceName))
+            {
+                continue;
+            }
+
+            subscription.KnownKeys.Add(serviceKey);
+            subscription.Queue.Writer.TryWrite(new NacosServiceWatchEvent(
+                NacosServiceWatchKind.Added,
+                registration.Pattern,
+                new NacosServiceKey(serviceName, group, namespaceId)));
+        }
+
+        if (!registration.Initialized)
+        {
+            return;
+        }
+
+        subscription.Initialized = true;
+        subscription.Queue.Writer.TryWrite(new NacosServiceWatchEvent(
+            NacosServiceWatchKind.InitialSyncCompleted,
+            registration.Pattern,
+            service: null));
+    }
+
     private static string RegistrationId(NacosServiceKey service, NacosInstance instance) =>
         string.Concat(
             service.ToString(), "|", instance.IpAddress, ":",
@@ -922,5 +1616,71 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
                 writer.TryComplete();
             }
         }
+    }
+
+    /// <summary>
+    /// The shared state of one naming fuzzy watch pattern.
+    /// </summary>
+    private sealed class ServiceWatchRegistration
+    {
+        public ServiceWatchRegistration(string pattern, string @namespace)
+        {
+            Pattern = pattern;
+            Namespace = @namespace;
+        }
+
+        /// <summary>Gets the pattern the server watches.</summary>
+        public string Pattern { get; }
+
+        /// <summary>
+        /// Gets the namespace sent with every request, which scopes the watch to the namespace the
+        /// client is configured for.
+        /// </summary>
+        public string Namespace { get; }
+
+        /// <summary>
+        /// Gets an object that guards <see cref="KnownKeys"/>, <see cref="Initialized"/> and
+        /// <see cref="Subscriptions"/>.
+        /// </summary>
+        public object Sync { get; } = new();
+
+        /// <summary>
+        /// Gets the service keys the server last reported as matching, which is the set a new
+        /// subscriber is seeded from and what the next diff is computed against.
+        /// </summary>
+        public HashSet<string> KnownKeys { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the initial diff has been applied, so a later
+        /// request asks for a diff rather than a fresh initialisation.
+        /// </summary>
+        public bool Initialized { get; set; }
+
+        /// <summary>Gets the subscriptions that receive this watch's events.</summary>
+        public List<ServiceWatchSubscription> Subscriptions { get; } = [];
+    }
+
+    /// <summary>
+    /// One consumer's view of a naming fuzzy watch.
+    /// </summary>
+    private sealed class ServiceWatchSubscription
+    {
+        /// <summary>
+        /// Gets the queue of events. It is unbounded because dropping an add or a remove would leave
+        /// the consumer's set wrong with no way to notice, unlike a value stream where only the
+        /// newest value matters.
+        /// </summary>
+        public Channel<NacosServiceWatchEvent> Queue { get; } =
+            Channel.CreateUnbounded<NacosServiceWatchEvent>(
+                new UnboundedChannelOptions { SingleReader = true });
+
+        /// <summary>Gets the service keys already delivered to this subscription.</summary>
+        public HashSet<string> KnownKeys { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Gets or sets a value indicating whether this subscription has received its one
+        /// <see cref="NacosServiceWatchKind.InitialSyncCompleted"/> marker.
+        /// </summary>
+        public bool Initialized { get; set; }
     }
 }

@@ -91,6 +91,68 @@ public sealed class NamingIntegrationTests
     }
 
     [Fact]
+    public async Task Watch_ReportsServicesEnteringAndLeavingTheMatchedSet()
+    {
+        // A naming fuzzy watch tracks which services match a pattern, not their instances: the
+        // server pushes an add when the first instance creates the service and a delete when its
+        // last instance goes away. Instance lists stay the job of SubscribeAsync.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        string prefix = NacosHttp.UniqueId("naming-fuzzy-it");
+        var service = new NacosServiceKey(prefix, "DEFAULT_GROUP");
+        var instance = new NacosInstance("10.20.30.43", 8083);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromMinutes(2));
+
+        await using IAsyncEnumerator<NacosServiceWatchEvent> events =
+            client.Naming.WatchAsync($"{prefix}*", "DEFAULT_GROUP", cts.Token)
+                .GetAsyncEnumerator(cts.Token);
+
+        // Nothing matches the pattern yet, so the initial sync is the finish marker alone.
+        await NacosEventually.ReportsAsync(
+            events,
+            item => item.Kind == NacosServiceWatchKind.InitialSyncCompleted,
+            cts.Token);
+
+        // The watch is effective by now, so the first registration is pushed. The cycle is repeated
+        // because a second registration of an instance the server already holds is not a change.
+        await NacosEventually.PushedAsync(
+            async ct =>
+            {
+                await client.Naming.DeregisterInstanceAsync(service, instance, ct).ConfigureAwait(false);
+                await client.Naming.RegisterInstanceAsync(service, instance, ct).ConfigureAwait(false);
+            },
+            events,
+            item => item.Kind == NacosServiceWatchKind.Added
+                && item.Service?.ServiceName == service.ServiceName,
+            cts.Token);
+
+        events.Current.Service!.GroupName.ShouldBe("DEFAULT_GROUP");
+        events.Current.Service.Namespace.ShouldBe("public");
+
+        await NacosEventually.PushedAsync(
+            ct => client.Naming.DeregisterInstanceAsync(service, instance, ct),
+            events,
+            item => item.Kind == NacosServiceWatchKind.Removed
+                && item.Service?.ServiceName == service.ServiceName,
+            cts.Token);
+
+        // The service is gone from the set, so registering it again is an addition rather than an
+        // update to something the subscription never learned about.
+        await NacosEventually.PushedAsync(
+            ct => client.Naming.RegisterInstanceAsync(service, instance, ct),
+            events,
+            item => item.Kind == NacosServiceWatchKind.Added
+                && item.Service?.ServiceName == service.ServiceName,
+            cts.Token);
+
+        events.Current.Kind.ShouldBe(NacosServiceWatchKind.Added);
+    }
+
+    [Fact]
     public async Task Dispose_RemovesTheEphemeralInstanceFromTheServer()
     {
         // The server removes an ephemeral instance when the connection that owns it closes, which

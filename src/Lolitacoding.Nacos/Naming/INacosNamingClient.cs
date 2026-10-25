@@ -78,4 +78,56 @@ public interface INacosNamingClient : IAsyncDisposable
         NacosServiceKey service,
         string? clusters = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Observes which services match a pattern until the caller stops enumerating or cancels.
+    /// </summary>
+    /// <param name="serviceNamePattern">
+    /// The service name pattern: a literal name, <c>*</c>, <c>prefix*</c>, <c>*suffix</c> or
+    /// <c>*text*</c>.
+    /// </param>
+    /// <param name="groupPattern">The group pattern, with the same forms.</param>
+    /// <param name="ct">A token that ends the enumeration.</param>
+    /// <returns>
+    /// A stream of service events. The initial catch-up reports every service that matched when the
+    /// watch began, then ends with <see cref="NacosServiceWatchKind.InitialSyncCompleted"/>.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// This is the naming counterpart of the configuration fuzzy watch: it follows the <em>set</em>
+    /// of services that match, not the instances of any one service. An event names a service, and a
+    /// consumer that needs its instances opens a subscription for it with
+    /// <see cref="SubscribeAsync"/> or reads them with <see cref="GetInstancesAsync"/>.
+    /// </para>
+    /// <para>
+    /// The watch is scoped to the namespace the client is configured for, because one pattern cannot
+    /// span namespaces. The stream never completes on its own; it ends when the token is cancelled
+    /// or the client is disposed.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="NacosServerException">
+    /// The server states that it does not implement fuzzy watch, or refuses the pattern because its
+    /// pattern or match limit was reached.
+    /// </exception>
+    IAsyncEnumerable<NacosServiceWatchEvent> WatchAsync(
+        string serviceNamePattern,
+        string groupPattern,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Observes every service in a group until the caller stops enumerating or cancels.
+    /// </summary>
+    /// <param name="groupPattern">The group pattern.</param>
+    /// <param name="ct">A token that ends the enumeration.</param>
+    /// <returns>
+    /// A stream of service events, as <see cref="WatchAsync(string, string, CancellationToken)"/>.
+    /// </returns>
+    /// <remarks>
+    /// The token is required rather than optional: a watch that follows every service in a group
+    /// would otherwise have no way to be ended by accident, and an accidental unbounded watch is
+    /// harder to notice than a missing argument.
+    /// </remarks>
+    IAsyncEnumerable<NacosServiceWatchEvent> WatchAsync(
+        string groupPattern,
+        CancellationToken ct);
 }

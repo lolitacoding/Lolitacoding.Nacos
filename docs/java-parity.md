@@ -25,7 +25,7 @@ the bottom with the reason it is not implemented here.
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
 | P0-1 | Configuration fuzzy watch | `ConfigService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | **Done** — `INacosConfigClient.WatchAsync`, `NacosConfigWatchEvent`, `Config.FuzzyWatchResyncInterval` | The only protocol capability this client explicitly told the server it could not do. It is how a process discovers configuration keys it does not know by name. |
-| P0-2 | Naming fuzzy watch | `NamingService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | Missing; same ability flag | Discovers services by pattern and keeps that set current, without polling a service list. |
+| P0-2 | Naming fuzzy watch | `NamingService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | **Done** — `INacosNamingClient.WatchAsync`, `NacosServiceWatchEvent`, `Naming.FuzzyWatchResyncInterval` | Discovers services by pattern and keeps that set current, without polling a service list. |
 | P1-3 | Client-side naming selectors | `NamingService.subscribe(..., NamingSelector, ...)`, `getAllInstances(..., Selector)`, `selectOneHealthyInstance(..., Selector)`; `client.naming.selector` | Missing | Zone and label routing is the normal way to keep traffic local; without it every consumer sees every instance. |
 | P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | Missing; the key is on the wire but dropped | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
 | P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | Missing; `ServiceListRequest`/`ServiceListResponse` already exist on the wire | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
@@ -102,8 +102,24 @@ protocol:
 ## P0-2: naming fuzzy watch
 
 The naming protocol is the same shape with service keys (`namespace@@group@@service`) and
-`ADD_SERVICE`, `DELETE_SERVICE`, `INSTANCE_CHANGED`, `HEART_BEAT`. The .NET surface is the same
-`IAsyncEnumerable` shape over `NacosServiceWatchEvent`.
+`ADD_SERVICE`, `DELETE_SERVICE`, `INSTANCE_CHANGED`, `HEART_BEAT`. `INacosNamingClient.WatchAsync`
+has the same two overloads as the configuration watch and returns `NacosServiceWatchEvent`, whose
+kind is `Added`, `InstancesChanged`, `Removed` or `InitialSyncCompleted`. The group-only overload
+requires the token, for the same ambiguity reason as configuration.
+
+- The set is the server's, keyed by service key. A late subscriber is seeded from it, and a
+  `CANCEL_WATCH` is sent for the last subscriber only while connected.
+- `NacosNamingOptions.FuzzyWatchResyncInterval` (3 minutes) re-sends every watch, and a reconnect
+  re-sends it with the keys the client still holds; `initializing` is `!registration.Initialized`.
+- **The server tracks membership, not instances.** `syncServiceContext` returns `false` for
+  `INSTANCE_CHANGED`, so a service whose instances change while it stays matched is not pushed;
+  `ADD_SERVICE` and `DELETE_SERVICE` follow the first and last instance. `SubscribeAsync` remains the
+  API for instances.
+- `INSTANCE_CHANGED` is mapped defensively: a known service becomes `InstancesChanged` (Java folds
+  it into an add and loses the distinction), an unknown one becomes `Added`; `HEART_BEAT` is ignored.
+- `DELETE_SERVICE` removes the key from the set. Java's sync handler adds it back for every context
+  type, which leaves its set wrong after a delete; this client follows the configuration watch and
+  removes it.
 
 ## P1-3: naming selectors
 

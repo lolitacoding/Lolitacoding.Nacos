@@ -257,7 +257,7 @@ cross-confirmed against `RequestHandler<T, S>` generic signatures and `specs/en/
 | `NotifySubscriberRequest` | `NotifySubscriberResponse` | **stream push (S→C)** | client-side only |
 | `NamingFuzzyWatchRequest` | `NamingFuzzyWatchResponse` | unary | `NamingFuzzyWatchRequestHandler` (new in 3.x) |
 | `NamingFuzzyWatchChangeNotifyRequest` | `NamingFuzzyWatchChangeNotifyResponse` | stream push | new in 3.x |
-| `NamingFuzzyWatchSyncRequest` | `NamingFuzzyWatchSyncResponse` | stream push | new in 3.x |
+| `NamingFuzzyWatchSyncRequest` | `NamingFuzzyWatchChangeNotifyResponse` | stream push | new in 3.x; `NamingFuzzyWatchSyncResponse` exists but no handler returns it |
 | `ConnectionSetupRequest` | **`SetupAckRequest`** (no `ConnectionSetupResponse`) | **stream** | `GrpcBiStreamRequestAcceptor` inline |
 | `ServerCheckRequest` | `ServerCheckResponse` | **unary** | inline in `GrpcRequestAcceptor` |
 | `HealthCheckRequest` | `HealthCheckResponse` | unary | `HealthCheckRequestHandler` |

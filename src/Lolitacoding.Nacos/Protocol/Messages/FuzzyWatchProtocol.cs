@@ -13,6 +13,17 @@ internal static class FuzzyWatchProtocol
     /// <summary>Separates the three segments of a watch pattern.</summary>
     public const string PatternSplitter = ">>";
 
+    /// <summary>
+    /// Separates the three segments of a naming service key, as
+    /// <c>namespace@@group@@service</c>.
+    /// </summary>
+    /// <remarks>
+    /// The naming side reuses the constant from <c>NamingUtils.SERVICE_INFO_SPLITER</c>; unlike a
+    /// configuration group key, a service key is not percent-escaped, because a namespace, group and
+    /// service name may not contain the separator in the first place.
+    /// </remarks>
+    public const string ServiceKeySplitter = "@@";
+
     /// <summary>Registers a watch.</summary>
     public const string Watch = "WATCH";
 

@@ -171,4 +171,73 @@ public sealed class NacosFuzzyPatternTests
         group.ShouldBeEmpty();
         tenant.ShouldBeNull();
     }
+
+    [Theory]
+    [InlineData("public", DefaultGroup, "app", "public@@DEFAULT_GROUP@@app")]
+    // A blank namespace is the public one, which is what the official codec writes.
+    [InlineData(null, DefaultGroup, "app", "public@@DEFAULT_GROUP@@app")]
+    [InlineData("", DefaultGroup, "app", "public@@DEFAULT_GROUP@@app")]
+    [InlineData("tenant-a", "group-a", "service-a", "tenant-a@@group-a@@service-a")]
+    // Unlike a configuration group key, a service key is not escaped: the separator may not appear
+    // inside a namespace, group or service name.
+    [InlineData("public", "g+h", "svc", "public@@g+h@@svc")]
+    public void EncodeServiceKey_UsesTheProtocolSeparator(
+        string? namespaceId,
+        string group,
+        string serviceName,
+        string expected)
+    {
+        NacosFuzzyPattern.EncodeServiceKey(namespaceId, group, serviceName).ShouldBe(expected);
+    }
+
+    [Theory]
+    [InlineData("public@@DEFAULT_GROUP@@app", "public", DefaultGroup, "app")]
+    [InlineData("tenant-a@@group-a@@service-a", "tenant-a", "group-a", "service-a")]
+    public void TryParseServiceKey_DecodesTheThreeSegments(
+        string key,
+        string namespaceId,
+        string group,
+        string serviceName)
+    {
+        NacosFuzzyPattern.TryParseServiceKey(key, out string parsedNamespace, out string parsedGroup, out string parsedService)
+            .ShouldBeTrue();
+
+        parsedNamespace.ShouldBe(namespaceId);
+        parsedGroup.ShouldBe(group);
+        parsedService.ShouldBe(serviceName);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("app")]
+    [InlineData("public@@app")]
+    [InlineData("@@DEFAULT_GROUP@@app")]
+    [InlineData("public@@@@app")]
+    [InlineData("public@@DEFAULT_GROUP@@")]
+    [InlineData("public@@DEFAULT_GROUP@@app@@extra")]
+    public void TryParseServiceKey_RejectsAMalformedKey(string? key)
+    {
+        NacosFuzzyPattern.TryParseServiceKey(key, out string namespaceId, out string group, out string serviceName)
+            .ShouldBeFalse();
+
+        namespaceId.ShouldBeEmpty();
+        group.ShouldBeEmpty();
+        serviceName.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData("public", DefaultGroup, "app")]
+    [InlineData("tenant-a", "group-a", "service-a")]
+    public void ServiceKey_RoundTripsEveryComponent(string namespaceId, string group, string serviceName)
+    {
+        string key = NacosFuzzyPattern.EncodeServiceKey(namespaceId, group, serviceName);
+
+        NacosFuzzyPattern.TryParseServiceKey(key, out string parsedNamespace, out string parsedGroup, out string parsedService)
+            .ShouldBeTrue();
+
+        parsedNamespace.ShouldBe(namespaceId);
+        parsedGroup.ShouldBe(group);
+        parsedService.ShouldBe(serviceName);
+    }
 }

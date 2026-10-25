@@ -87,6 +87,14 @@ await client.Naming.RegisterInstanceAsync(
 
 NacosServiceInfo info = await client.Naming.GetInstancesAsync(service);
 IReadOnlyList<NacosInstance> instances = info.HealthyInstances;
+
+// Follow which services exist instead of one service's instances. The events name services;
+// subscribe to one it reports when the instances matter.
+await foreach (NacosServiceWatchEvent item in
+    client.Naming.WatchAsync("order-*", NacosConstants.DefaultGroup))
+{
+    Console.WriteLine($"{item.Kind}: {item.Service}");
+}
 ```
 
 ### Dependency injection

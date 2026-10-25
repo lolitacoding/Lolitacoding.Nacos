@@ -93,6 +93,24 @@ internal sealed class FakeNamingClient : INacosNamingClient
     }
 
     /// <inheritdoc />
+    public async IAsyncEnumerable<NacosServiceWatchEvent> WatchAsync(
+        string serviceNamePattern,
+        string groupPattern,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // The provider under test only subscribes to individual services; a pattern watch is
+        // outside its contract, so this fake reports an empty stream rather than standing one up.
+        await Task.CompletedTask;
+        yield break;
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<NacosServiceWatchEvent> WatchAsync(
+        string groupPattern,
+        CancellationToken ct) =>
+        WatchAsync("*", groupPattern, ct);
+
+    /// <inheritdoc />
     public ValueTask DisposeAsync()
     {
         _changes.Writer.TryComplete();

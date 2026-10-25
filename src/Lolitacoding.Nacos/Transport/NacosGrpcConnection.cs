@@ -1180,10 +1180,9 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// ability names, not Java enum member names.
     /// </para>
     /// <para>
-    /// This client implements fuzzy watch for configuration, so the server is told it may push
-    /// fuzzy watch events to this connection. The flag is a property of the SDK and cannot differ
-    /// per module, so it is set once any module implements the capability; a push only ever follows
-    /// a watch the client registered, and this client registers no naming watch yet. The distributed
+    /// This client implements fuzzy watch for configuration and naming, so the server is told it may
+    /// push fuzzy watch events to this connection. The flag is a property of the SDK and cannot
+    /// differ per module, so it is set once any module implements the capability. The distributed
     /// lock and the MCP server registry are implemented as well: the server reads the flags to decide
     /// whether a lock notification may be pushed to this connection, and whether an MCP release should
     /// be served by the gRPC binding rather than the HTTP one.

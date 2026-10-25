@@ -272,16 +272,30 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// <returns>The response the server expects, or <see langword="null"/> when none is due.</returns>
     private Task<NacosResponse?> OnNamingServerRequestAsync(NacosRequest request, CancellationToken ct)
     {
-        if (request is not NotifySubscriberRequest notification)
+        switch (request)
         {
-            return Task.FromResult<NacosResponse?>(null);
-        }
+            case NotifySubscriberRequest notification:
+                // Unlike a configuration change this push carries the complete instance list, so it
+                // is applied directly and acknowledged.
+                _ = _naming.OnServiceChangedAsync(notification, ct);
+                return Task.FromResult<NacosResponse?>(
+                    new NotifySubscriberResponse { RequestId = notification.RequestId });
 
-        // Unlike a configuration change this push carries the complete instance list, so it is
-        // applied directly and acknowledged.
-        _ = _naming.OnServiceChangedAsync(notification, ct);
-        return Task.FromResult<NacosResponse?>(
-            new NotifySubscriberResponse { RequestId = notification.RequestId });
+            case NamingFuzzyWatchSyncRequest sync:
+                // A diff only updates local state, so it is applied inline: it writes to channels
+                // and never blocks, which keeps the acknowledgement immediate.
+                _naming.OnFuzzyWatchSync(sync);
+                return Task.FromResult<NacosResponse?>(
+                    new NamingFuzzyWatchChangeNotifyResponse { RequestId = sync.RequestId });
+
+            case NamingFuzzyWatchChangeNotifyRequest change:
+                _naming.OnFuzzyWatchChange(change);
+                return Task.FromResult<NacosResponse?>(
+                    new NamingFuzzyWatchChangeNotifyResponse { RequestId = change.RequestId });
+
+            default:
+                return Task.FromResult<NacosResponse?>(null);
+        }
     }
 
     /// <summary>

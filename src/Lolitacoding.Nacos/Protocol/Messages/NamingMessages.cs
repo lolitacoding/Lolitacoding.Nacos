@@ -357,3 +357,159 @@ internal sealed class NotifySubscriberRequest : NacosRequest
 internal sealed class NotifySubscriberResponse : NacosResponse
 {
 }
+
+/// <summary>
+/// Registers or cancels a naming fuzzy watch.
+/// <c>metadata.type = "NamingFuzzyWatchRequest"</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// A naming fuzzy watch names a pattern over namespace, group and service name, and the server
+/// keeps the matching set of service keys in sync with the client. Unlike a subscription it carries
+/// no instance lists: it answers <em>which services exist</em>, and a consumer that needs the
+/// instances subscribes to the service it learned about.
+/// </para>
+/// <para>
+/// <see cref="ReceivedGroupKeys"/> is the set of service keys the client already holds, which is
+/// what makes the answer a diff rather than the whole match. It is sent on every request, including
+/// a cancellation, exactly as the official client does.
+/// </para>
+/// </remarks>
+internal sealed class NamingFuzzyWatchRequest : NamingRequest
+{
+    /// <summary>
+    /// Gets or sets the pattern, as <c>namespace&gt;&gt;groupPattern&gt;&gt;serviceNamePattern</c>.
+    /// </summary>
+    public string? GroupKeyPattern { get; set; }
+
+    /// <summary>
+    /// Gets or sets the service keys the client already holds, each
+    /// <c>namespace@@group@@service</c>.
+    /// </summary>
+    public List<string>? ReceivedGroupKeys { get; set; }
+
+    /// <summary>
+    /// Gets or sets the watch type: <c>WATCH</c> to register, <c>CANCEL_WATCH</c> to remove.
+    /// </summary>
+    public string? WatchType { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the client is still in its initial synchronisation.
+    /// </summary>
+    /// <remarks>
+    /// Nacos' Java bean getter is <c>isInitializing()</c>, which Jackson maps to
+    /// <c>initializing</c>; the property name is what produces that wire name.
+    /// </remarks>
+    public bool Initializing { get; set; }
+}
+
+/// <summary>
+/// Confirms a naming fuzzy watch registration or cancellation. Carries no fields.
+/// <c>metadata.type = "NamingFuzzyWatchResponse"</c>.
+/// </summary>
+internal sealed class NamingFuzzyWatchResponse : NacosResponse
+{
+}
+
+/// <summary>
+/// One service in a naming fuzzy watch diff.
+/// </summary>
+internal sealed class NamingFuzzyWatchContext
+{
+    /// <summary>Gets or sets the service key, as <c>namespace@@group@@service</c>.</summary>
+    public string? ServiceKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the change type: <c>ADD_SERVICE</c> or <c>DELETE_SERVICE</c>.
+    /// </summary>
+    public string? ChangedType { get; set; }
+}
+
+/// <summary>
+/// Server push carrying the difference between the client's set and the server's match.
+/// <c>metadata.type = "NamingFuzzyWatchSyncRequest"</c>.
+/// </summary>
+/// <remarks>
+/// Arrives in batches during initialisation (<see cref="FuzzyWatchProtocol.InitNotify"/>), on a
+/// later diff (<see cref="FuzzyWatchProtocol.DiffSyncNotify"/>), and once more with
+/// <see cref="FuzzyWatchProtocol.FinishInitNotify"/> to end the initial phase. The last one has no
+/// contexts. The server sends ten services per batch for naming, where configuration sends twenty.
+/// </remarks>
+internal sealed class NamingFuzzyWatchSyncRequest : NacosRequest
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NamingFuzzyWatchSyncRequest"/> class.
+    /// </summary>
+    public NamingFuzzyWatchSyncRequest() => Module = NacosModule.Naming;
+
+    /// <summary>Gets or sets the pattern this diff belongs to.</summary>
+    public string? GroupKeyPattern { get; set; }
+
+    /// <summary>Gets or sets the services that differ.</summary>
+    public List<NamingFuzzyWatchContext>? Contexts { get; set; }
+
+    /// <summary>Gets or sets the sync type.</summary>
+    public string? SyncType { get; set; }
+
+    /// <summary>Gets or sets the total number of batches in this sync.</summary>
+    public int TotalBatch { get; set; }
+
+    /// <summary>Gets or sets the index of this batch.</summary>
+    public int CurrentBatch { get; set; }
+}
+
+/// <summary>
+/// Server push announcing that one service in a fuzzy watched pattern changed.
+/// <c>metadata.type = "NamingFuzzyWatchChangeNotifyRequest"</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The push carries only the service key and the change type. The server derives the type from
+/// whether the service still exists: <c>ADD_SERVICE</c> when the first instance of a service
+/// appears, <c>DELETE_SERVICE</c> when its last instance goes away, <c>INSTANCE_CHANGED</c> when an
+/// instance is added to or removed from a service that already exists, and <c>HEART_BEAT</c> for a
+/// heartbeat. It only pushes to a pattern when the matched membership actually changed, so an
+/// <c>INSTANCE_CHANGED</c> is not sent for a service that stays matched.
+/// </para>
+/// <para>
+/// The official Java client folds <c>ADD_SERVICE</c> and <c>INSTANCE_CHANGED</c> into its single
+/// "add" notification. This client reports an <c>INSTANCE_CHANGED</c> for an already known service
+/// as <see cref="Lolitacoding.Nacos.Naming.NacosServiceWatchKind.InstancesChanged"/> instead, so a
+/// push the server did send is never silently discarded; the matched set is unchanged either way.
+/// </para>
+/// </remarks>
+internal sealed class NamingFuzzyWatchChangeNotifyRequest : NacosRequest
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NamingFuzzyWatchChangeNotifyRequest"/> class.
+    /// </summary>
+    public NamingFuzzyWatchChangeNotifyRequest() => Module = NacosModule.Naming;
+
+    /// <summary>
+    /// Gets or sets the sync type, which the server sets to
+    /// <see cref="FuzzyWatchProtocol.ResourceChanged"/>.
+    /// </summary>
+    public string? SyncType { get; set; }
+
+    /// <summary>Gets or sets the service key, as <c>namespace@@group@@service</c>.</summary>
+    public string? ServiceKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the change type: <c>ADD_SERVICE</c>, <c>DELETE_SERVICE</c>,
+    /// <c>INSTANCE_CHANGED</c> or <c>HEART_BEAT</c>.
+    /// </summary>
+    public string? ChangedType { get; set; }
+}
+
+/// <summary>
+/// Acknowledges a naming fuzzy watch diff or change notification. Carries no fields.
+/// <c>metadata.type = "NamingFuzzyWatchChangeNotifyResponse"</c>.
+/// </summary>
+/// <remarks>
+/// The official client answers both push types with this one response, and the server only
+/// inspects the result code. The API does declare a separate <c>NamingFuzzyWatchSyncResponse</c>,
+/// but no client handler returns it, so this client does not carry one either.
+/// </remarks>
+internal sealed class NamingFuzzyWatchChangeNotifyResponse : NacosResponse
+{
+}

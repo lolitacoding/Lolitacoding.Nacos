@@ -129,4 +129,86 @@ internal static partial class NacosNamingLog
         Message = "Ignoring a notification for {Service}: it was built at {PushTime}, before the applied state at {AppliedTime}.")]
     public static partial void StaleChangeIgnored(
         ILogger logger, string service, long pushTime, long appliedTime);
+
+    /// <summary>Logs that a naming fuzzy watch finished its initial catch-up.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="count">The number of services that matched.</param>
+    [LoggerMessage(
+        EventId = 5013,
+        Level = LogLevel.Information,
+        Message = "Naming fuzzy watch {Pattern} completed its initial synchronisation with {Count} matching service(s).")]
+    public static partial void FuzzyWatchInitialized(ILogger logger, string pattern, int count);
+
+    /// <summary>Logs that re-registering or resynchronising a naming fuzzy watch failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 5014,
+        Level = LogLevel.Warning,
+        Message = "Naming fuzzy watch {Pattern} could not be synchronised with the server: {Reason}")]
+    public static partial void FuzzyWatchSyncFailed(ILogger logger, string pattern, string reason);
+
+    /// <summary>Logs that a service key pushed by the server could not be decoded.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="serviceKey">The malformed key.</param>
+    [LoggerMessage(
+        EventId = 5015,
+        Level = LogLevel.Warning,
+        Message = "Ignoring a naming fuzzy watch event for {Pattern}: the service key {ServiceKey} is malformed.")]
+    public static partial void FuzzyWatchMalformedServiceKey(
+        ILogger logger,
+        string pattern,
+        string? serviceKey);
+
+    /// <summary>Logs that naming fuzzy watches were re-registered after a reconnect.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">The number of watches re-registered.</param>
+    [LoggerMessage(
+        EventId = 5016,
+        Level = LogLevel.Information,
+        Message = "Re-registered {Count} naming fuzzy watch(es) after reconnecting.")]
+    public static partial void FuzzyWatchesRestored(ILogger logger, int count);
+
+    /// <summary>Logs that a naming fuzzy watch delivered an event.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="service">The service the event is about.</param>
+    [LoggerMessage(
+        EventId = 5017,
+        Level = LogLevel.Debug,
+        Message = "Naming fuzzy watch {Pattern} reported {Kind} for {Service}.")]
+    public static partial void FuzzyWatchEvent(
+        ILogger logger,
+        string pattern,
+        NacosServiceWatchKind kind,
+        string service);
+
+    /// <summary>Logs that the server suppressed a naming fuzzy watch because a limit was reached.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="errorCode">The code the server reported.</param>
+    [LoggerMessage(
+        EventId = 5018,
+        Level = LogLevel.Warning,
+        Message = "Naming fuzzy watch {Pattern} was refused by the server with code {ErrorCode}; "
+            + "the server suppresses a pattern once its pattern or match limit is reached.")]
+    public static partial void FuzzyWatchRefused(ILogger logger, string pattern, int errorCode);
+
+    /// <summary>Logs that a pushed naming event carried a change type this client does not know.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern, or the push when it is not tied to one.</param>
+    /// <param name="changeType">The unrecognised change type.</param>
+    [LoggerMessage(
+        EventId = 5019,
+        Level = LogLevel.Debug,
+        Message = "Ignoring a naming fuzzy watch event for {Pattern}: the change type {ChangeType} is not "
+            + "part of the protocol this client implements.")]
+    public static partial void FuzzyWatchUnknownChangeType(
+        ILogger logger,
+        string pattern,
+        string? changeType);
 }

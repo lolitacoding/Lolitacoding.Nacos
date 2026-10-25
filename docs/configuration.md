@@ -65,6 +65,7 @@ drops.
 | `DefaultCluster` | `string` | `"DEFAULT"` | Cluster attached to registered instances when none is given. Cannot be empty. |
 | `Ephemeral` | `bool` | `true` | Register instances as ephemeral by default. |
 | `EnableLocalCache` | `bool` | `true` | Write the last known service list to disk so a restart during an outage can still resolve it. |
+| `FuzzyWatchResyncInterval` | `TimeSpan` | 3 min | How often every naming pattern watch is re-sent so a push lost on a healthy connection is repaired. The server answers a re-sent watch with a diff, so the repetition is idempotent. Must be positive. |
 
 ### `NacosAiOptions`
 

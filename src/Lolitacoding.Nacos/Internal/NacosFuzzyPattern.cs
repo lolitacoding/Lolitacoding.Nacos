@@ -18,6 +18,11 @@ namespace Lolitacoding.Nacos.Internal;
 /// <c>%25</c>. That is the whole codec: no other percent escape is legal, and the parser rejects
 /// one rather than guessing.
 /// </para>
+/// <para>
+/// Naming uses the same pattern language with a service key instead of a group key. A service key
+/// is <c>namespace@@group@@service</c>, with no escaping: the separator is not legal inside any of
+/// the three components. The same matcher decides whether a pushed service belongs to a watch.
+/// </para>
 /// </remarks>
 internal static class NacosFuzzyPattern
 {
@@ -248,6 +253,81 @@ internal static class NacosFuzzyPattern
         {
             tenant = segments[2];
         }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Encodes a service's coordinates as the protocol's service key.
+    /// </summary>
+    /// <param name="namespaceId">The namespace, or <see langword="null"/> when there is none.</param>
+    /// <param name="group">The group.</param>
+    /// <param name="serviceName">The service name.</param>
+    /// <returns>The service key, as <c>namespace@@group@@service</c>.</returns>
+    /// <remarks>
+    /// A blank namespace becomes <c>public</c>, which is what <c>NamingUtils.getServiceKey</c> does.
+    /// No escaping is applied: the protocol assumes none of the three components contains
+    /// <c>@@</c>.
+    /// </remarks>
+    public static string EncodeServiceKey(string? namespaceId, string group, string serviceName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(group);
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceName);
+
+        string scope = string.IsNullOrWhiteSpace(namespaceId) ? DefaultNamespace : namespaceId;
+
+        return string.Concat(
+            scope,
+            Protocol.Messages.FuzzyWatchProtocol.ServiceKeySplitter,
+            group,
+            Protocol.Messages.FuzzyWatchProtocol.ServiceKeySplitter,
+            serviceName);
+    }
+
+    /// <summary>
+    /// Decodes a naming service key into its coordinates.
+    /// </summary>
+    /// <param name="serviceKey">The service key, as <c>namespace@@group@@service</c>.</param>
+    /// <param name="namespaceId">The decoded namespace.</param>
+    /// <param name="group">The decoded group.</param>
+    /// <param name="serviceName">The decoded service name.</param>
+    /// <returns><see langword="false"/> when the key is malformed.</returns>
+    /// <remarks>
+    /// A malformed key is reported rather than thrown because it arrives from the server: one bad
+    /// push must not take down the read loop that carries every other notification. Exactly three
+    /// non-blank segments are required; the Java parser would silently accept a shorter key and
+    /// index past the end, which is not a behaviour worth reproducing.
+    /// </remarks>
+    public static bool TryParseServiceKey(
+        string? serviceKey,
+        out string namespaceId,
+        out string group,
+        out string serviceName)
+    {
+        namespaceId = string.Empty;
+        group = string.Empty;
+        serviceName = string.Empty;
+
+        if (string.IsNullOrEmpty(serviceKey))
+        {
+            return false;
+        }
+
+        string[] segments = serviceKey.Split(
+            Protocol.Messages.FuzzyWatchProtocol.ServiceKeySplitter,
+            StringSplitOptions.None);
+
+        if (segments.Length != 3
+            || string.IsNullOrWhiteSpace(segments[0])
+            || string.IsNullOrWhiteSpace(segments[1])
+            || string.IsNullOrWhiteSpace(segments[2]))
+        {
+            return false;
+        }
+
+        namespaceId = segments[0];
+        group = segments[1];
+        serviceName = segments[2];
 
         return true;
     }

@@ -215,6 +215,38 @@ configuration, and the protocol is a small state machine over three request type
   compares the descriptions, and drops a push whose `lastRefTime` predates the applied state.
 - `ServiceInfo.allIps` serialises as `allIPs` (capital `IP`) on the wire.
 
+### Naming fuzzy watch
+
+A naming fuzzy watch (`WatchAsync(serviceNamePattern, groupPattern)`) follows which services exist
+rather than one service's instances. It reuses the configuration protocol's shape with service keys
+and its own request names:
+
+| Message | Direction | Meaning |
+| --- | --- | --- |
+| `NamingFuzzyWatchRequest` | client → server | `WATCH` or `CANCEL_WATCH` for `groupKeyPattern`, carrying the service keys the client already holds, an `initializing` flag and the client's namespace. |
+| `NamingFuzzyWatchSyncRequest` | server → client | A diff: `FUZZY_WATCH_INIT_NOTIFY` batches during the initial catch-up, `FUZZY_WATCH_DIFF_SYNC_NOTIFY` for a later resync, and `FINISH_FUZZY_WATCH_INIT_NOTIFY` to end the initial catch-up. Answered with `NamingFuzzyWatchChangeNotifyResponse`. |
+| `NamingFuzzyWatchChangeNotifyRequest` | server → client | One service entering (`ADD_SERVICE`) or leaving (`DELETE_SERVICE`) the matched set, `INSTANCE_CHANGED` for an instance list change, or `HEART_BEAT`. Answered with `NamingFuzzyWatchChangeNotifyResponse`. |
+
+- The pattern is `namespace>>groupPattern>>serviceNamePattern`; the namespace is the client's
+  configured one (blank → `public`), because one watch cannot span namespaces. A service key is
+  `namespace@@group@@service` (`NamingUtils.getServiceKey`) and is **not** escaped: `@@` may not
+  appear inside any of the three components. The server sends ten services per batch, where
+  configuration sends twenty.
+- The initial catch-up and resync follow the configuration rules: it ends at the finish marker or at
+  the last initial batch, a late subscriber is seeded from the current set, a re-sent watch carries
+  the known service keys and asks for a diff, and the last subscriber's departure sends
+  `CANCEL_WATCH`. The resync interval is `NacosNamingOptions.FuzzyWatchResyncInterval` (3 minutes).
+- **The server pushes only membership changes.** `syncServiceContext` returns `false` for
+  `INSTANCE_CHANGED`, so a service whose instance list changes while it stays matched is not pushed;
+  `ADD_SERVICE` and `DELETE_SERVICE` are sent when the first or last instance appears or disappears.
+  `SubscribeAsync` remains the API for instances. If an `INSTANCE_CHANGED` ever arrives, a known
+  service is reported as `InstancesChanged` and an unknown one as `Added`, so a push the server did
+  send is never silently discarded; `HEART_BEAT` is ignored.
+- `DELETE_SERVICE` removes the service from the client's set. The official Java client adds it back
+  instead, which leaves its set wrong after a delete; this client follows the configuration watch.
+- The same limits apply (`50310` patterns per connection, `50311` matches per pattern), surfaced as
+  `NacosServerException` carrying the code.
+
 ## Distributed lock specifics
 
 > **Which server this describes.** The lock service belongs to the **3.3** line; this section and the

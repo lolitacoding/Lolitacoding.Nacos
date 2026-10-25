@@ -171,9 +171,17 @@ configuration that already matches is not pushed through a fuzzy watch. Use `Lis
 value matters, and `WatchAsync` when you need to know *which* configurations exist — for example to
 watch every `feature.*` flag without knowing their names.
 
-The server limits how many patterns a connection may watch (`50310`) and how many configurations one
-pattern may match (`50311`); both arrive as `NacosServerException` with that code. A watch is
-re-sent every `Config.FuzzyWatchResyncInterval` (3 minutes by default) so a lost push is repaired.
+Naming has the same split: `SubscribeAsync` follows one service's instance list, while
+`INacosNamingClient.WatchAsync` follows the set of services whose name and group match a pattern. Its
+events are `Added`, `Removed` and `InitialSyncCompleted` (plus a defensive `InstancesChanged`), and
+they name a service rather than carrying its instances; subscribe to a service it reports when you
+need the instances. Like the configuration watch, a naming watch tracks membership only: the server
+does not push an instance change for a service that stays matched.
+
+The server limits how many patterns a connection may watch (`50310`) and how many resources one
+pattern may match (`50311`); both arrive as `NacosServerException` with that code. A watch is re-sent
+every `Config.FuzzyWatchResyncInterval` / `Naming.FuzzyWatchResyncInterval` (3 minutes by default) so
+a lost push is repaired.
 
 ## Can a change to a subscribed service slip through?
 

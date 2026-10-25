@@ -54,6 +54,11 @@ internal static class PayloadTypeRegistry
         ["SubscribeServiceResponse"] = NacosJsonContext.Default.SubscribeServiceResponse,
         ["NotifySubscriberRequest"] = NacosJsonContext.Default.NotifySubscriberRequest,
         ["NotifySubscriberResponse"] = NacosJsonContext.Default.NotifySubscriberResponse,
+        ["NamingFuzzyWatchRequest"] = NacosJsonContext.Default.NamingFuzzyWatchRequest,
+        ["NamingFuzzyWatchResponse"] = NacosJsonContext.Default.NamingFuzzyWatchResponse,
+        ["NamingFuzzyWatchSyncRequest"] = NacosJsonContext.Default.NamingFuzzyWatchSyncRequest,
+        ["NamingFuzzyWatchChangeNotifyRequest"] = NacosJsonContext.Default.NamingFuzzyWatchChangeNotifyRequest,
+        ["NamingFuzzyWatchChangeNotifyResponse"] = NacosJsonContext.Default.NamingFuzzyWatchChangeNotifyResponse,
 
         // Distributed lock.
         ["LockOperationRequest"] = NacosJsonContext.Default.LockOperationRequest,

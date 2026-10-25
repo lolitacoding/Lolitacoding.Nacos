@@ -482,6 +482,18 @@ public sealed class NacosNamingOptions
     public bool EnableLocalCache { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets how often a naming fuzzy watch re-sends its known set to the server.
+    /// </summary>
+    /// <remarks>
+    /// The server pushes every change to the matched set, but a push that was lost while the
+    /// connection looked healthy would otherwise leave the client's view wrong until the next
+    /// reconnect. The periodic full synchronisation is what bounds that window. The official Java
+    /// client uses three minutes (<c>FUZZY_LISTEN_ALL_SYNC_INTERNAL</c>), the same value as the
+    /// configuration watch.
+    /// </remarks>
+    public TimeSpan FuzzyWatchResyncInterval { get; set; } = TimeSpan.FromMinutes(3);
+
+    /// <summary>
     /// Validates the naming options.
     /// </summary>
     /// <exception cref="NacosConfigurationException">A value is invalid.</exception>
@@ -497,6 +509,12 @@ public sealed class NacosNamingOptions
         {
             throw new NacosConfigurationException(
                 "NacosNamingOptions.DefaultCluster cannot be empty.");
+        }
+
+        if (FuzzyWatchResyncInterval <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosNamingOptions.FuzzyWatchResyncInterval must be greater than zero.");
         }
     }
 }
