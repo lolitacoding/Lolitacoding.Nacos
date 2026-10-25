@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading.Channels;
 using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
@@ -23,6 +24,15 @@ namespace Lolitacoding.Nacos.Config;
 /// </remarks>
 internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
 {
+    /// <summary>The code reported when the server cannot answer a request at all.</summary>
+    private const int NotImplementedErrorCode = 501;
+
+    /// <summary>The code the server reports when its pattern limit is reached.</summary>
+    private const int PatternOverLimitErrorCode = 50310;
+
+    /// <summary>The code the server reports when a pattern matches too many configurations.</summary>
+    private const int MatchCountOverLimitErrorCode = 50311;
+
     private readonly NacosOptions _options;
     private readonly NacosGrpcConnection _connection;
     private readonly NacosConfigSnapshotStore? _snapshots;
@@ -34,6 +44,28 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     /// shares one server-side registration rather than adding a duplicate.
     /// </summary>
     private readonly ConcurrentDictionary<string, ListenerRegistration> _listeners = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Fuzzy watch registrations keyed by pattern, so every subscription to the same pattern shares
+    /// one server-side watch and therefore one diff stream.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, FuzzyWatchRegistration> _fuzzyWatches =
+        new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Serialises fuzzy watch creation, subscription changes and cancellation.
+    /// </summary>
+    /// <remarks>
+    /// These three mutate the same registration set, and a cancellation that raced an addition
+    /// could leave a server-side watch with no client-side owner — a registration the server keeps
+    /// pushing to and nobody can cancel. It is a semaphore rather than a lock because registering
+    /// a watch is an awaited round trip and must happen inside the critical section to close that
+    /// race.
+    /// </remarks>
+    private readonly SemaphoreSlim _fuzzyWatchSync = new(1, 1);
+
+    /// <summary>The timer that periodically re-sends every watch, or <see langword="null"/>.</summary>
+    private ITimer? _fuzzyWatchResyncTimer;
 
     private bool _disposed;
 
@@ -228,11 +260,46 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     }
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync()
+    public async IAsyncEnumerable<NacosConfigWatchEvent> WatchAsync(
+        string dataIdPattern,
+        string groupPattern,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // Building the pattern validates both arguments; the namespace is what the client is
+        // configured for, because one fuzzy watch cannot span namespaces.
+        string pattern = NacosFuzzyPattern.Generate(_options.Namespace, groupPattern, dataIdPattern);
+
+        FuzzyWatchSubscription subscription =
+            await SubscribeFuzzyWatchAsync(pattern, ct).ConfigureAwait(false);
+
+        try
+        {
+            await foreach (NacosConfigWatchEvent item in
+                subscription.Queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
+            {
+                yield return item;
+            }
+        }
+        finally
+        {
+            await UnsubscribeFuzzyWatchAsync(pattern, subscription).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<NacosConfigWatchEvent> WatchAsync(
+        string groupPattern,
+        CancellationToken ct) =>
+        WatchAsync("*", groupPattern, ct);
+
+    /// <inheritdoc />
+    public async ValueTask DisposeAsync()
     {
         if (_disposed)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _disposed = true;
@@ -243,7 +310,34 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         // the collection releases them.
         _listeners.Clear();
 
-        return ValueTask.CompletedTask;
+        // A subscription is ended by completing its channel rather than by dropping it: a consumer
+        // awaiting the next event would otherwise stay parked until its own token was cancelled.
+        // Taking the gate first keeps a registration from being created behind the sweep.
+        await _fuzzyWatchSync.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            _fuzzyWatchResyncTimer?.Dispose();
+            _fuzzyWatchResyncTimer = null;
+
+            foreach (FuzzyWatchRegistration registration in _fuzzyWatches.Values)
+            {
+                lock (registration.Sync)
+                {
+                    foreach (FuzzyWatchSubscription subscription in registration.Subscriptions)
+                    {
+                        subscription.Queue.Writer.TryComplete();
+                    }
+
+                    registration.Subscriptions.Clear();
+                }
+            }
+
+            _fuzzyWatches.Clear();
+        }
+        finally
+        {
+            _fuzzyWatchSync.Release();
+        }
     }
 
     /// <summary>
@@ -516,7 +610,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     }
 
     /// <summary>
-    /// Re-registers every listener after the transport reconnected.
+    /// Re-registers every listener and fuzzy watch after the transport reconnected.
     /// </summary>
     /// <param name="state">The state the transport reached.</param>
     /// <param name="ct">A token that cancels the work.</param>
@@ -528,6 +622,17 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             return;
         }
 
+        await RestoreListenersAsync(ct).ConfigureAwait(false);
+        await RestoreFuzzyWatchesAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Re-registers every exact listener after the transport reconnected.
+    /// </summary>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>A task that completes once registrations are replayed.</returns>
+    private async Task RestoreListenersAsync(CancellationToken ct)
+    {
         List<NacosConfigKey> keys = [.. _listeners.Values.Select(registration => registration.Key)];
         if (keys.Count == 0)
         {
@@ -605,6 +710,598 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
                 NacosConfigLog.ListenerFailed(_logger, key.ToString(), ex.Message);
             }
         }
+    }
+
+    /// <summary>
+    /// Registers a subscription to a fuzzy watch, creating the shared server-side watch when it is
+    /// the first one for the pattern.
+    /// </summary>
+    /// <param name="pattern">The resolved pattern.</param>
+    /// <param name="ct">A token that cancels registration.</param>
+    /// <returns>The subscription, whose channel starts receiving events immediately.</returns>
+    /// <exception cref="NacosServerException">
+    /// The server states that it does not implement fuzzy watch, or refused the pattern.
+    /// </exception>
+    private async Task<FuzzyWatchSubscription> SubscribeFuzzyWatchAsync(
+        string pattern,
+        CancellationToken ct)
+    {
+        // The ability table only exists once the handshake has happened, so a client that has not
+        // connected yet would otherwise skip the refusal below and send the watch anyway. The watch
+        // request would establish the connection a moment later, so this costs no extra round trip.
+        await _connection.ConnectAsync(ct).ConfigureAwait(false);
+
+        EnsureFuzzyWatchSupported();
+
+        var subscription = new FuzzyWatchSubscription();
+
+        await _fuzzyWatchSync.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            FuzzyWatchRegistration registration =
+                _fuzzyWatches.GetOrAdd(pattern, static value => new FuzzyWatchRegistration(value));
+
+            bool isFirst;
+            lock (registration.Sync)
+            {
+                isFirst = registration.Subscriptions.Count == 0;
+                registration.Subscriptions.Add(subscription);
+                ReplayKnownKeysLocked(registration, subscription);
+            }
+
+            if (!isFirst)
+            {
+                // The watch is already installed and synchronised, so the replay above is all this
+                // subscriber needs; a second registration would only duplicate the diff stream.
+                return subscription;
+            }
+
+            StartFuzzyWatchResyncTimer();
+
+            try
+            {
+                await SendFuzzyWatchRequestAsync(registration, watch: true, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // The watch was never installed, so it must not stay behind claiming one.
+                lock (registration.Sync)
+                {
+                    registration.Subscriptions.Remove(subscription);
+                }
+
+                _fuzzyWatches.TryRemove(pattern, out _);
+                StopFuzzyWatchResyncTimerIfIdle();
+                throw;
+            }
+
+            return subscription;
+        }
+        finally
+        {
+            _fuzzyWatchSync.Release();
+        }
+    }
+
+    /// <summary>
+    /// Removes a subscription, cancelling the server-side watch when it was the last one.
+    /// </summary>
+    /// <param name="pattern">The pattern the subscription belongs to.</param>
+    /// <param name="subscription">The subscription to remove.</param>
+    /// <returns>A task that completes once the watch is cancelled.</returns>
+    private async Task UnsubscribeFuzzyWatchAsync(string pattern, FuzzyWatchSubscription subscription)
+    {
+        await _fuzzyWatchSync.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            if (!_fuzzyWatches.TryGetValue(pattern, out FuzzyWatchRegistration? registration))
+            {
+                return;
+            }
+
+            bool isLast;
+            lock (registration.Sync)
+            {
+                registration.Subscriptions.Remove(subscription);
+                isLast = registration.Subscriptions.Count == 0;
+            }
+
+            if (!isLast)
+            {
+                return;
+            }
+
+            _fuzzyWatches.TryRemove(pattern, out _);
+            StopFuzzyWatchResyncTimerIfIdle();
+
+            if (_disposed || _connection.State != NacosTransportState.Connected)
+            {
+                // Nothing to tell the server: either the client is gone, or the watch already died
+                // with the connection.
+                return;
+            }
+
+            try
+            {
+                await SendFuzzyWatchRequestAsync(registration, watch: false, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (NacosException)
+            {
+                // The watch is gone locally, which is what matters; the server drops the
+                // registration when the connection closes.
+            }
+        }
+        finally
+        {
+            _fuzzyWatchSync.Release();
+        }
+    }
+
+    /// <summary>
+    /// Fails a fuzzy watch when the server explicitly says it has none.
+    /// </summary>
+    /// <exception cref="NacosServerException">
+    /// The connected server advertises <c>fuzzyWatch = false</c>.
+    /// </exception>
+    /// <remarks>
+    /// An absent key is not a refusal: it means the server did not state the ability, which is what
+    /// a handshake without an acknowledgement looks like. Only a stated <see langword="false"/> is
+    /// treated as "this server cannot do it".
+    /// </remarks>
+    private void EnsureFuzzyWatchSupported()
+    {
+        if (_connection.ServerAbilities.TryGetValue(NacosServerAbility.FuzzyWatch, out bool supported)
+            && !supported)
+        {
+            throw new NacosServerException(
+                NotImplementedErrorCode,
+                "The connected Nacos server states that it does not implement fuzzy watch, so a "
+                + "pattern subscription cannot be installed.");
+        }
+    }
+
+    /// <summary>
+    /// Starts the periodic resynchronisation of every watch.
+    /// </summary>
+    private void StartFuzzyWatchResyncTimer()
+    {
+        TimeSpan interval = _options.Config.FuzzyWatchResyncInterval;
+
+        _fuzzyWatchResyncTimer ??= _timeProvider.CreateTimer(
+            static state => ((NacosConfigClient)state!).OnFuzzyWatchResyncTimer(),
+            this,
+            Timeout.InfiniteTimeSpan,
+            Timeout.InfiniteTimeSpan);
+
+        _fuzzyWatchResyncTimer.Change(interval, interval);
+    }
+
+    /// <summary>
+    /// Stops the periodic resynchronisation when no watch is left.
+    /// </summary>
+    private void StopFuzzyWatchResyncTimerIfIdle()
+    {
+        if (_fuzzyWatches.IsEmpty)
+        {
+            _fuzzyWatchResyncTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    /// <summary>
+    /// Runs one periodic resynchronisation.
+    /// </summary>
+    private void OnFuzzyWatchResyncTimer() => _ = ResyncFuzzyWatchesAsync();
+
+    /// <summary>
+    /// Re-sends every watch so a push lost while the connection looked healthy is repaired.
+    /// </summary>
+    /// <returns>A task that completes once every watch was re-sent.</returns>
+    /// <remarks>
+    /// The server only pushes a change once. A push dropped between the server and this client
+    /// would otherwise leave the matched set wrong until the next reconnect, so the full diff is
+    /// requested on a timer as well.
+    /// </remarks>
+    private async Task ResyncFuzzyWatchesAsync()
+    {
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            await _fuzzyWatchSync.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                foreach (FuzzyWatchRegistration registration in _fuzzyWatches.Values)
+                {
+                    try
+                    {
+                        await SendFuzzyWatchRequestAsync(registration, watch: true, CancellationToken.None)
+                            .ConfigureAwait(false);
+                    }
+                    catch (NacosException ex)
+                    {
+                        // One pattern that cannot be resynchronised must not stop the others; the
+                        // next tick tries again.
+                        NacosConfigLog.FuzzyWatchSyncFailed(_logger, registration.Pattern, ex.Message);
+                    }
+                }
+            }
+            finally
+            {
+                _fuzzyWatchSync.Release();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A timer callback has no caller to report to; an escaping exception would be
+            // unobserved and could take the process down on finalisation.
+            NacosConfigLog.FuzzyWatchSyncFailed(_logger, "<all>", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Re-registers every fuzzy watch after the transport reconnected.
+    /// </summary>
+    /// <param name="ct">A token that cancels the replay.</param>
+    /// <returns>A task that completes once every watch was re-sent.</returns>
+    private async Task RestoreFuzzyWatchesAsync(CancellationToken ct)
+    {
+        if (_fuzzyWatches.IsEmpty)
+        {
+            return;
+        }
+
+        await _fuzzyWatchSync.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            int count = 0;
+            foreach (FuzzyWatchRegistration registration in _fuzzyWatches.Values)
+            {
+                await SendFuzzyWatchRequestAsync(registration, watch: true, ct).ConfigureAwait(false);
+                count++;
+            }
+
+            NacosConfigLog.FuzzyWatchesRestored(_logger, count);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The connection itself is healthy; the next reconnect or the periodic resync repairs
+            // whatever did not get re-registered here.
+            NacosConfigLog.FuzzyWatchSyncFailed(_logger, "<all>", ex.Message);
+        }
+        finally
+        {
+            _fuzzyWatchSync.Release();
+        }
+    }
+
+    /// <summary>
+    /// Sends a watch registration or cancellation.
+    /// </summary>
+    /// <param name="registration">The watch to send.</param>
+    /// <param name="watch">Whether to register or cancel.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server acknowledged the request.</returns>
+    /// <exception cref="NacosServerException">
+    /// The server refused the pattern because a limit was reached.
+    /// </exception>
+    private async Task SendFuzzyWatchRequestAsync(
+        FuzzyWatchRegistration registration,
+        bool watch,
+        CancellationToken ct)
+    {
+        List<string> knownKeys;
+        bool initializing;
+
+        lock (registration.Sync)
+        {
+            knownKeys = [.. registration.KnownKeys];
+            initializing = !registration.Initialized;
+        }
+
+        var request = new ConfigFuzzyWatchRequest
+        {
+            GroupKeyPattern = registration.Pattern,
+
+            // The set the client already holds is what makes the answer a diff. It is sent on
+            // every request, including a cancellation, exactly as the official client does.
+            ReceivedGroupKeys = knownKeys,
+            WatchType = watch ? FuzzyWatchProtocol.Watch : FuzzyWatchProtocol.CancelWatch,
+            Initializing = initializing,
+        };
+
+        try
+        {
+            await _connection.RequestAsync<ConfigFuzzyWatchResponse>(request, ct).ConfigureAwait(false);
+        }
+        catch (NacosServerException ex)
+            when (ex.ErrorCode is PatternOverLimitErrorCode or MatchCountOverLimitErrorCode)
+        {
+            NacosConfigLog.FuzzyWatchRefused(_logger, registration.Pattern, ex.ErrorCode);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Applies a diff pushed by the server.
+    /// </summary>
+    /// <param name="request">The pushed diff.</param>
+    /// <remarks>
+    /// Runs on the read loop, so it must not block: every event is written to an unbounded channel
+    /// and delivered by the consumer's own enumeration.
+    /// </remarks>
+    internal void OnFuzzyWatchSync(ConfigFuzzyWatchSyncRequest request)
+    {
+        if (request.GroupKeyPattern is not { Length: > 0 } pattern
+            || !_fuzzyWatches.TryGetValue(pattern, out FuzzyWatchRegistration? registration))
+        {
+            // A diff for a watch this client does not hold: the server may still have it registered
+            // until the cancellation reaches it, so it is ignored rather than treated as an error.
+            return;
+        }
+
+        lock (registration.Sync)
+        {
+            if (string.Equals(
+                request.SyncType,
+                FuzzyWatchProtocol.FinishInitNotify,
+                StringComparison.Ordinal))
+            {
+                MarkInitializedLocked(registration);
+                return;
+            }
+
+            if (request.Contexts is { Count: > 0 } contexts)
+            {
+                foreach (ConfigFuzzyWatchContext context in contexts)
+                {
+                    if (context.GroupKey is not { Length: > 0 } groupKey
+                        || !NacosFuzzyPattern.TryParseGroupKey(
+                            groupKey,
+                            out string dataId,
+                            out string group,
+                            out string? tenant))
+                    {
+                        NacosConfigLog.FuzzyWatchMalformedGroupKey(_logger, pattern, context.GroupKey);
+                        continue;
+                    }
+
+                    var key = new NacosConfigKey(dataId, group, tenant);
+
+                    if (string.Equals(
+                        context.ChangedType,
+                        ConfigFuzzyWatchChangeType.AddConfig,
+                        StringComparison.Ordinal))
+                    {
+                        if (registration.KnownKeys.Add(groupKey))
+                        {
+                            DeliverLocked(registration, NacosConfigWatchKind.Added, key, groupKey);
+                        }
+                    }
+                    else if (string.Equals(
+                        context.ChangedType,
+                        ConfigFuzzyWatchChangeType.DeleteConfig,
+                        StringComparison.Ordinal))
+                    {
+                        if (registration.KnownKeys.Remove(groupKey))
+                        {
+                            DeliverLocked(registration, NacosConfigWatchKind.Removed, key, groupKey);
+                        }
+                    }
+                    else
+                    {
+                        NacosConfigLog.FuzzyWatchUnknownChangeType(_logger, pattern, context.ChangedType);
+                    }
+                }
+            }
+
+            // The server ends the initial phase with FINISH_FUZZY_WATCH_INIT_NOTIFY: immediately
+            // when the diff is empty, and after the last batch has been acknowledged otherwise. The
+            // phase is also ended here at the last batch, so a consumer does not wait for that extra
+            // round trip and a lost marker cannot leave it hanging. A marker that arrives afterwards
+            // finds every subscription initialised and changes nothing. The one thing this must not
+            // do is end before the last batch: a batch is only pushed after the previous one, so
+            // receiving the last one means the whole diff has been applied.
+            if (string.Equals(request.SyncType, FuzzyWatchProtocol.InitNotify, StringComparison.Ordinal)
+                && request.TotalBatch > 0
+                && request.CurrentBatch >= request.TotalBatch)
+            {
+                MarkInitializedLocked(registration);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies a single-configuration change pushed by the server.
+    /// </summary>
+    /// <param name="notification">The pushed change.</param>
+    internal void OnFuzzyWatchChange(ConfigFuzzyWatchChangeNotifyRequest notification)
+    {
+        if (notification.GroupKey is not { Length: > 0 } groupKey
+            || !NacosFuzzyPattern.TryParseGroupKey(
+                groupKey,
+                out string dataId,
+                out string group,
+                out string? tenant))
+        {
+            NacosConfigLog.FuzzyWatchMalformedGroupKey(_logger, "<push>", notification.GroupKey);
+            return;
+        }
+
+        var key = new NacosConfigKey(dataId, group, tenant);
+
+        foreach (FuzzyWatchRegistration registration in _fuzzyWatches.Values)
+        {
+            // The server pushes to every pattern it matched, but routing by the local registrations
+            // keeps a push for an unrelated watch from being delivered.
+            if (!NacosFuzzyPattern.Matches(registration.Pattern, key.Namespace, key.Group, key.DataId))
+            {
+                continue;
+            }
+
+            lock (registration.Sync)
+            {
+                if (string.Equals(
+                    notification.ChangeType,
+                    ConfigFuzzyWatchChangeType.AddConfig,
+                    StringComparison.Ordinal))
+                {
+                    if (registration.KnownKeys.Add(groupKey))
+                    {
+                        DeliverLocked(registration, NacosConfigWatchKind.Added, key, groupKey);
+                    }
+                }
+                else if (string.Equals(
+                    notification.ChangeType,
+                    ConfigFuzzyWatchChangeType.DeleteConfig,
+                    StringComparison.Ordinal))
+                {
+                    if (registration.KnownKeys.Remove(groupKey))
+                    {
+                        DeliverLocked(registration, NacosConfigWatchKind.Removed, key, groupKey);
+                    }
+                }
+                else if (string.Equals(
+                    notification.ChangeType,
+                    ConfigFuzzyWatchChangeType.ConfigChanged,
+                    StringComparison.Ordinal))
+                {
+                    // The server cannot tell a creation from an update — it reports CONFIG_CHANGED
+                    // for both — so the distinction is derived from the set this watch holds. Without
+                    // that, a configuration created after the initial sync would never be reported as
+                    // added, and its later deletion would be suppressed as a removal of a key the
+                    // client never learned about.
+                    NacosConfigWatchKind kind = registration.KnownKeys.Add(groupKey)
+                        ? NacosConfigWatchKind.Added
+                        : NacosConfigWatchKind.Modified;
+
+                    DeliverLocked(registration, kind, key, groupKey);
+                }
+                else
+                {
+                    NacosConfigLog.FuzzyWatchUnknownChangeType(
+                        _logger, registration.Pattern, notification.ChangeType);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Delivers one event to every subscription, suppressing what a subscription already knows.
+    /// </summary>
+    /// <param name="registration">The watch that produced the event.</param>
+    /// <param name="kind">The kind of change.</param>
+    /// <param name="key">The configuration.</param>
+    /// <param name="groupKey">The wire group key, which is the deduplication identity.</param>
+    private void DeliverLocked(
+        FuzzyWatchRegistration registration,
+        NacosConfigWatchKind kind,
+        NacosConfigKey key,
+        string groupKey)
+    {
+        NacosConfigLog.FuzzyWatchEvent(_logger, registration.Pattern, kind, key.ToString());
+
+        foreach (FuzzyWatchSubscription subscription in registration.Subscriptions)
+        {
+            bool deliver = kind switch
+            {
+                NacosConfigWatchKind.Added => subscription.KnownKeys.Add(groupKey),
+                NacosConfigWatchKind.Removed => subscription.KnownKeys.Remove(groupKey),
+                _ => true,
+            };
+
+            if (deliver)
+            {
+                // Unbounded on purpose: dropping an add or a remove would silently corrupt the
+                // consumer's view of the matched set, and no later event repairs it.
+                subscription.Queue.Writer.TryWrite(
+                    new NacosConfigWatchEvent(kind, registration.Pattern, key));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Ends the initial phase and reports it to every subscription that has not seen it.
+    /// </summary>
+    /// <param name="registration">The watch that finished its initial catch-up.</param>
+    private void MarkInitializedLocked(FuzzyWatchRegistration registration)
+    {
+        bool first = !registration.Initialized;
+        registration.Initialized = true;
+
+        foreach (FuzzyWatchSubscription subscription in registration.Subscriptions)
+        {
+            if (subscription.Initialized)
+            {
+                continue;
+            }
+
+            subscription.Initialized = true;
+            subscription.Queue.Writer.TryWrite(new NacosConfigWatchEvent(
+                NacosConfigWatchKind.InitialSyncCompleted,
+                registration.Pattern,
+                key: null));
+        }
+
+        if (first)
+        {
+            NacosConfigLog.FuzzyWatchInitialized(
+                _logger, registration.Pattern, registration.KnownKeys.Count);
+        }
+    }
+
+    /// <summary>
+    /// Seeds a new subscription with the keys the watch already holds.
+    /// </summary>
+    /// <param name="registration">The watch being joined.</param>
+    /// <param name="subscription">The subscription to seed.</param>
+    private static void ReplayKnownKeysLocked(
+        FuzzyWatchRegistration registration,
+        FuzzyWatchSubscription subscription)
+    {
+        foreach (string groupKey in registration.KnownKeys)
+        {
+            if (!NacosFuzzyPattern.TryParseGroupKey(
+                groupKey,
+                out string dataId,
+                out string group,
+                out string? tenant))
+            {
+                continue;
+            }
+
+            subscription.KnownKeys.Add(groupKey);
+            subscription.Queue.Writer.TryWrite(new NacosConfigWatchEvent(
+                NacosConfigWatchKind.Added,
+                registration.Pattern,
+                new NacosConfigKey(dataId, group, tenant)));
+        }
+
+        if (!registration.Initialized)
+        {
+            return;
+        }
+
+        subscription.Initialized = true;
+        subscription.Queue.Writer.TryWrite(new NacosConfigWatchEvent(
+            NacosConfigWatchKind.InitialSyncCompleted,
+            registration.Pattern,
+            key: null));
     }
 
     /// <summary>
@@ -822,5 +1519,61 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             _disposed = true;
             await _owner.UnregisterAsync(_id, _registration, _onChange).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// The shared state of one fuzzy watch pattern.
+    /// </summary>
+    private sealed class FuzzyWatchRegistration
+    {
+        public FuzzyWatchRegistration(string pattern) => Pattern = pattern;
+
+        /// <summary>Gets the pattern the server watches.</summary>
+        public string Pattern { get; }
+
+        /// <summary>
+        /// Gets an object that guards <see cref="KnownKeys"/>, <see cref="Initialized"/> and
+        /// <see cref="Subscriptions"/>.
+        /// </summary>
+        public object Sync { get; } = new();
+
+        /// <summary>
+        /// Gets the group keys the server last reported as matching, which is the set a new
+        /// subscriber is seeded from and what the next diff is computed against.
+        /// </summary>
+        public HashSet<string> KnownKeys { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the initial diff has been applied, so a later
+        /// request asks for a diff rather than a fresh initialisation.
+        /// </summary>
+        public bool Initialized { get; set; }
+
+        /// <summary>Gets the subscriptions that receive this watch's events.</summary>
+        public List<FuzzyWatchSubscription> Subscriptions { get; } = [];
+    }
+
+    /// <summary>
+    /// One consumer's view of a fuzzy watch.
+    /// </summary>
+    private sealed class FuzzyWatchSubscription
+    {
+        /// <summary>
+        /// Gets the queue of events. It is unbounded because dropping an add or a remove would leave
+        /// the consumer's set wrong with no way to notice, unlike a value stream where only the
+        /// newest value matters.
+        /// </summary>
+        public Channel<NacosConfigWatchEvent> Queue { get; } =
+            Channel.CreateUnbounded<NacosConfigWatchEvent>(
+                new UnboundedChannelOptions { SingleReader = true });
+
+        /// <summary>Gets the group keys already delivered to this subscription.</summary>
+        public HashSet<string> KnownKeys { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Gets or sets a value indicating whether this subscription has received its one
+        /// <see cref="NacosConfigWatchKind.InitialSyncCompleted"/> marker.
+        /// </summary>
+        public bool Initialized { get; set; }
     }
 }

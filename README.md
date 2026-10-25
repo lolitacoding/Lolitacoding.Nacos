@@ -63,6 +63,15 @@ await foreach (NacosConfigChange change in client.Config.ListenAsync(key))
 {
     Console.WriteLine($"{change.Key} (previous md5 {change.PreviousMd5}): {change.Content}");
 }
+
+// Follow a pattern instead of one key: the server keeps the matching set in sync, so this
+// discovers configurations whose names the process does not know. It reports membership, not
+// content - ListenAsync above is what follows a value.
+await foreach (NacosConfigWatchEvent item in
+    client.Config.WatchAsync("feature.*", NacosConstants.DefaultGroup))
+{
+    Console.WriteLine($"{item.Kind}: {item.Key}");
+}
 ```
 
 ### Service registration and discovery
@@ -314,6 +323,7 @@ builder.Services.AddOpenTelemetry()
 - [Migration from `nacos-sdk-csharp`](docs/migration-from-nacos-sdk-csharp.md)
 - [FAQ](docs/faq.md)
 - [Protocol notes](docs/protocol-notes.md) — upstream references for every protocol detail.
+- [Java SDK parity](docs/java-parity.md) — what the official client has, what this one does, and why.
 
 ## Building
 

@@ -1180,11 +1180,13 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// ability names, not Java enum member names.
     /// </para>
     /// <para>
-    /// This transport does not implement fuzzy watch, so it is advertised as unsupported rather than
-    /// claiming a capability it cannot honour. The distributed lock and the MCP server registry are
-    /// implemented, so they are advertised: the server reads the flags to decide whether a lock
-    /// notification may be pushed to this connection, and whether an MCP release should be served by
-    /// the gRPC binding rather than the HTTP one.
+    /// This client implements fuzzy watch for configuration, so the server is told it may push
+    /// fuzzy watch events to this connection. The flag is a property of the SDK and cannot differ
+    /// per module, so it is set once any module implements the capability; a push only ever follows
+    /// a watch the client registered, and this client registers no naming watch yet. The distributed
+    /// lock and the MCP server registry are implemented as well: the server reads the flags to decide
+    /// whether a lock notification may be pushed to this connection, and whether an MCP release should
+    /// be served by the gRPC binding rather than the HTTP one.
     /// </para>
     /// <para>
     /// <c>radWatchV1</c> says this client can take a RAD Watch hint push, which the AI server reads
@@ -1195,7 +1197,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// </remarks>
     private static Dictionary<string, bool> BuildAbilityTable() => new(StringComparer.Ordinal)
     {
-        ["fuzzyWatch"] = false,
+        [NacosServerAbility.FuzzyWatch] = true,
         ["lock"] = true,
         ["mcp"] = true,
         ["radWatchV1"] = true,

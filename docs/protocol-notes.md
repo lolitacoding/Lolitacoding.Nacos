@@ -120,6 +120,10 @@ each incoming frame.
 A domain push is answered by the feature that owns it before the real work happens:
 
 - `ConfigChangeNotifyRequest` → `ConfigChangeNotifyResponse`, then the content is fetched.
+- `ConfigFuzzyWatchSyncRequest` → `ConfigFuzzyWatchSyncResponse`, and the diff is applied to the
+  matched set inline (it only writes to channels, so the acknowledgement is not delayed).
+- `ConfigFuzzyWatchChangeNotifyRequest` → `ConfigFuzzyWatchChangeNotifyResponse`, and the one key it
+  names is applied to every local watch whose pattern matches it.
 - `NotifySubscriberRequest` → `NotifySubscriberResponse`, and the payload already carries the
   instance list.
 - `LockNotificationRequest` → `LockNotificationResponse`, and the waiter the notification names is
@@ -147,6 +151,49 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
   the server can skip notifying about a change the client has already applied, and a change whose
   MD5 matches the last one delivered is suppressed. The response's `changedConfigs` list is what the
   reconnect replay acts on — see *Reconnection and state replay*.
+
+### Configuration fuzzy watch
+
+A fuzzy watch (`WatchAsync(dataIdPattern, groupPattern)`) follows a pattern rather than one
+configuration, and the protocol is a small state machine over three request types:
+
+| Message | Direction | Meaning |
+| --- | --- | --- |
+| `ConfigFuzzyWatchRequest` | client → server | `WATCH` or `CANCEL_WATCH` for `groupKeyPattern`, carrying the group keys the client already holds and an `initializing` flag. |
+| `ConfigFuzzyWatchSyncRequest` | server → client | A diff: `FUZZY_WATCH_INIT_NOTIFY` batches during the initial catch-up, `FUZZY_WATCH_DIFF_SYNC_NOTIFY` for a later resync, and `FINISH_FUZZY_WATCH_INIT_NOTIFY` to end the initial catch-up. |
+| `ConfigFuzzyWatchChangeNotifyRequest` | server → client | One key entering (`ADD_CONFIG`) or leaving (`DELETE_CONFIG`) the matched set, or reported as present (`CONFIG_CHANGED`, which the server also uses for a creation). |
+
+- The pattern is `namespace>>groupPattern>>dataIdPattern`; the namespace is the client's configured
+  one (blank → `public`), because one watch cannot span namespaces. A group key is
+  `dataId+group[+tenant]`, with only `+` and `%` percent-escaped; any other escape is malformed and
+  the key is logged and skipped rather than failing the batch.
+- The initial catch-up ends at `FINISH_FUZZY_WATCH_INIT_NOTIFY`, which the server sends immediately when
+  the diff is empty and after the last batch has been acknowledged otherwise. The client also ends it
+  at the last `FUZZY_WATCH_INIT_NOTIFY` batch, so a consumer does not wait for that extra round trip and
+  a lost marker cannot leave it hanging; batches are pushed in order, so the last one means the whole
+  diff has been applied. A marker arriving afterwards finds every subscription already initialised.
+- The matched set is the server's, keyed by group key. A push is applied only if the key is absent
+  or present as the push claims, so a duplicate add or remove is not reported twice, and a
+  subscriber that joins an initialised watch is seeded with the current set.
+- **The server tracks membership, not content.** `ConfigFuzzyWatchChangeNotifier` derives
+  `CONFIG_CHANGED` from "the configuration still exists" and `DELETE_CONFIG` from "it no longer
+  does", and `syncGroupKeyContext` only notifies when the key is not already in the pattern's set.
+  A content change to a configuration that already matches is therefore never pushed: `ListenAsync`
+  is the API for content. A `CONFIG_CHANGED` for a key the watch does not hold is reported as
+  `Added`, which is the only way a creation can be recognised at all — and is exactly what the
+  official client does, since it maps both `ADD_CONFIG` and `CONFIG_CHANGED` to an addition. This
+  client additionally reports `Modified` if a change push ever names a key the watch already holds;
+  Java drops that push instead, and no current server sends it.
+- The server limits patterns per connection (`50310`) and matched configurations per pattern
+  (`50311`); a refusal is surfaced as `NacosServerException` carrying that code.
+- A watch is re-sent after a reconnect with the keys the client still holds, and re-sent every
+  `NacosConfigOptions.FuzzyWatchResyncInterval` (3 minutes by default) so a push lost on a
+  connection that still looks healthy is repaired. The server answers a re-sent watch with a diff,
+  which is what makes the repetition harmless. A registration that never finished its first catch-up
+  is re-sent as an initialisation instead, because a diff sync carries no finish marker and the
+  subscription would otherwise wait for one forever.
+- `CANCEL_WATCH` is sent only for the last subscriber of a pattern, and only while connected: with
+  no connection there is nothing to cancel, because the server dropped the watch with it.
 
 ## Naming specifics
 

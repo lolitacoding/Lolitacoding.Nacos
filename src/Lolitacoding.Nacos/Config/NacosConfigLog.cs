@@ -119,4 +119,86 @@ internal static partial class NacosConfigLog
         Message = "{Count} listened configuration(s) changed while the Nacos connection was down; "
             + "the changes are being delivered now")]
     public static partial void ChangesMissedWhileAway(ILogger logger, int count);
+
+    /// <summary>Logs that a fuzzy watch finished its initial catch-up.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="count">The number of configurations that matched.</param>
+    [LoggerMessage(
+        EventId = 4012,
+        Level = LogLevel.Information,
+        Message = "Fuzzy watch {Pattern} completed its initial synchronisation with {Count} matching configuration(s).")]
+    public static partial void FuzzyWatchInitialized(ILogger logger, string pattern, int count);
+
+    /// <summary>Logs that re-registering or resynchronising a fuzzy watch failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 4013,
+        Level = LogLevel.Warning,
+        Message = "Fuzzy watch {Pattern} could not be synchronised with the server: {Reason}")]
+    public static partial void FuzzyWatchSyncFailed(ILogger logger, string pattern, string reason);
+
+    /// <summary>Logs that a group key pushed by the server could not be decoded.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="groupKey">The malformed key.</param>
+    [LoggerMessage(
+        EventId = 4014,
+        Level = LogLevel.Warning,
+        Message = "Ignoring a fuzzy watch event for {Pattern}: the group key {GroupKey} is malformed.")]
+    public static partial void FuzzyWatchMalformedGroupKey(
+        ILogger logger,
+        string pattern,
+        string? groupKey);
+
+    /// <summary>Logs that fuzzy watches were re-registered after a reconnect.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">The number of watches re-registered.</param>
+    [LoggerMessage(
+        EventId = 4015,
+        Level = LogLevel.Information,
+        Message = "Re-registered {Count} fuzzy watch(es) after reconnecting.")]
+    public static partial void FuzzyWatchesRestored(ILogger logger, int count);
+
+    /// <summary>Logs that a fuzzy watch delivered an event.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="kind">The kind of event.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="key">The configuration the event is about.</param>
+    [LoggerMessage(
+        EventId = 4016,
+        Level = LogLevel.Debug,
+        Message = "Fuzzy watch {Pattern} reported {Kind} for {Key}.")]
+    public static partial void FuzzyWatchEvent(
+        ILogger logger,
+        string pattern,
+        NacosConfigWatchKind kind,
+        string key);
+
+    /// <summary>Logs that the server suppressed a fuzzy watch because a limit was reached.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern.</param>
+    /// <param name="errorCode">The code the server reported.</param>
+    [LoggerMessage(
+        EventId = 4017,
+        Level = LogLevel.Warning,
+        Message = "Fuzzy watch {Pattern} was refused by the server with code {ErrorCode}; "
+            + "the server suppresses a pattern once its pattern or match limit is reached.")]
+    public static partial void FuzzyWatchRefused(ILogger logger, string pattern, int errorCode);
+
+    /// <summary>Logs that a pushed fuzzy watch event carried a change type this client does not know.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="pattern">The watched pattern, or the push when it is not tied to one.</param>
+    /// <param name="changeType">The unrecognised change type.</param>
+    [LoggerMessage(
+        EventId = 4018,
+        Level = LogLevel.Debug,
+        Message = "Ignoring a fuzzy watch event for {Pattern}: the change type {ChangeType} is not "
+            + "part of the protocol this client implements.")]
+    public static partial void FuzzyWatchUnknownChangeType(
+        ILogger logger,
+        string pattern,
+        string? changeType);
 }

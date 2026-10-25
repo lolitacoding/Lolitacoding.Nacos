@@ -55,6 +55,7 @@ drops.
 | `VerifyMd5` | `bool` | `true` | Verify the content MD5 against the value the server reported. A mismatch is an error, not a warning. |
 | `EnableLocalCache` | `bool` | `true` | Write successfully read configurations to the snapshot directory for failover. |
 | `DefaultContentType` | `string` | `"text"` | Content type applied when publishing and no explicit type is given. Cannot be empty. |
+| `FuzzyWatchResyncInterval` | `TimeSpan` | 3 min | How often every pattern watch is re-sent so a push lost on a healthy connection is repaired. The server answers a re-sent watch with a diff, so the repetition is idempotent. Must be positive. |
 
 ### `NacosNamingOptions`
 

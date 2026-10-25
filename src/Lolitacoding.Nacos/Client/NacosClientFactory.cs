@@ -237,17 +237,31 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// <returns>The response the server expects, or <see langword="null"/> when none is due.</returns>
     private Task<NacosResponse?> OnConfigServerRequestAsync(NacosRequest request, CancellationToken ct)
     {
-        if (request is not ConfigChangeNotifyRequest notification)
+        switch (request)
         {
-            return Task.FromResult<NacosResponse?>(null);
-        }
+            case ConfigChangeNotifyRequest notification:
+                // The push is answered before the content is fetched. The server only needs to
+                // know the client received the notification, and holding the acknowledgement until
+                // after a round trip would delay every other message on the stream.
+                _ = FetchChangedConfigAsync(notification, ct);
+                return Task.FromResult<NacosResponse?>(
+                    new ConfigChangeNotifyResponse { RequestId = notification.RequestId });
 
-        // The push is answered before the content is fetched. The server only needs to know the
-        // client received the notification, and holding the acknowledgement until after a round
-        // trip would delay every other message on the stream.
-        _ = FetchChangedConfigAsync(notification, ct);
-        return Task.FromResult<NacosResponse?>(
-            new ConfigChangeNotifyResponse { RequestId = notification.RequestId });
+            case ConfigFuzzyWatchSyncRequest sync:
+                // A diff only updates local state, so it is applied inline: it writes to channels
+                // and never blocks, which keeps the acknowledgement immediate.
+                _config.OnFuzzyWatchSync(sync);
+                return Task.FromResult<NacosResponse?>(
+                    new ConfigFuzzyWatchSyncResponse { RequestId = sync.RequestId });
+
+            case ConfigFuzzyWatchChangeNotifyRequest change:
+                _config.OnFuzzyWatchChange(change);
+                return Task.FromResult<NacosResponse?>(
+                    new ConfigFuzzyWatchChangeNotifyResponse { RequestId = change.RequestId });
+
+            default:
+                return Task.FromResult<NacosResponse?>(null);
+        }
     }
 
     /// <summary>

@@ -36,9 +36,6 @@ internal static class NacosAiServerAbility
     /// <summary>The server accepts a persistent instance registration over gRPC.</summary>
     public const string PersistentInstanceByGrpc = "supportPersistentInstanceByGrpc";
 
-    /// <summary>The server pushes fuzzy watch events for naming and configuration.</summary>
-    public const string FuzzyWatch = "fuzzyWatch";
-
     /// <summary>The server implements the distributed lock service.</summary>
     public const string Lock = "lock";
 

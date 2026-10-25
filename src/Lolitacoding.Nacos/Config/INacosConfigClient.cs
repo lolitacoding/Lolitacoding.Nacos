@@ -104,4 +104,64 @@ public interface INacosConfigClient : IAsyncDisposable
         NacosConfigKey key,
         Func<NacosConfigChange, CancellationToken, Task> onChange,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Observes every configuration whose group and data id match a pair of patterns.
+    /// </summary>
+    /// <param name="dataIdPattern">
+    /// The data id pattern. The supported forms are <c>*</c>, <c>prefix*</c>, <c>*suffix</c>,
+    /// <c>*text*</c> and a literal; a <c>*</c> in the middle of the value matches nothing, which is
+    /// the language the server itself implements.
+    /// </param>
+    /// <param name="groupPattern">The group pattern, in the same language.</param>
+    /// <param name="ct">A token that ends the enumeration.</param>
+    /// <returns>
+    /// A stream of events. Every configuration that matches when the watch starts is reported as
+    /// <see cref="NacosConfigWatchKind.Added"/>, followed by exactly one
+    /// <see cref="NacosConfigWatchKind.InitialSyncCompleted"/>; afterwards a configuration that
+    /// starts matching is reported as <see cref="NacosConfigWatchKind.Added"/> and one that stops
+    /// matching as <see cref="NacosConfigWatchKind.Removed"/>.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// The namespace is <see cref="NacosOptions.Namespace"/>, because a fuzzy watch is scoped to one
+    /// namespace. The stream never completes on its own: it is re-registered after a reconnect and
+    /// resynchronised periodically, so only cancellation or disposal ends it.
+    /// </para>
+    /// <para>
+    /// A fuzzy watch follows the matched set, not the content of its members. A Nacos server reports
+    /// a configuration that starts or stops matching and does not push a content change to one that
+    /// already matches, so <see cref="ListenAsync"/> remains the way to follow a value. The event
+    /// carries coordinates only; a consumer that needs the value reads it with
+    /// <see cref="GetConfigAsync"/>.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="NacosServerException">
+    /// The connected server states that it does not implement fuzzy watch, or refused the pattern
+    /// because too many patterns or matches are already registered.
+    /// </exception>
+    /// <exception cref="NacosConnectionException">
+    /// The server could not be reached and the watch could not be registered.
+    /// </exception>
+    IAsyncEnumerable<NacosConfigWatchEvent> WatchAsync(
+        string dataIdPattern,
+        string groupPattern,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Observes every configuration in a group, regardless of its data id.
+    /// </summary>
+    /// <param name="groupPattern">The group pattern.</param>
+    /// <param name="ct">A token that ends the enumeration.</param>
+    /// <returns>A stream of events, as described on the pattern overload.</returns>
+    /// <remarks>
+    /// This is the convenience form of <see cref="WatchAsync(string, string, CancellationToken)"/>
+    /// with a data id pattern of <c>*</c>, matching the single-pattern entry point the official Java
+    /// client exposes. The token is required rather than optional because the two overloads would
+    /// otherwise be indistinguishable to callers who pass a pattern only; pass
+    /// <see cref="CancellationToken.None"/> when no cancellation is needed.
+    /// </remarks>
+    IAsyncEnumerable<NacosConfigWatchEvent> WatchAsync(
+        string groupPattern,
+        CancellationToken ct);
 }

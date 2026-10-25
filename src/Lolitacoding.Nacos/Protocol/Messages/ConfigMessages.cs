@@ -248,3 +248,138 @@ internal sealed class ConfigChangeNotifyRequest : NacosRequest
 internal sealed class ConfigChangeNotifyResponse : NacosResponse
 {
 }
+
+/// <summary>
+/// Subscribes to, or cancels, a pattern-based watch.
+/// <c>metadata.type = "ConfigFuzzyWatchRequest"</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Unlike an exact listener this names no configuration: it names a pattern over the namespace,
+/// group and data id, and the server keeps the matching set of group keys in sync with the client.
+/// </para>
+/// <para>
+/// <see cref="ReceivedGroupKeys"/> is what makes the answer a diff rather than the whole match. It
+/// is the set the client already holds, so a reconnect or the periodic resync only transfers what
+/// actually differs.
+/// </para>
+/// </remarks>
+internal sealed class ConfigFuzzyWatchRequest : NacosRequest
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ConfigFuzzyWatchRequest"/> class.
+    /// </summary>
+    public ConfigFuzzyWatchRequest() => Module = NacosModule.Config;
+
+    /// <summary>
+    /// Gets or sets the pattern, as <c>namespace&gt;&gt;groupPattern&gt;&gt;dataIdPattern</c>.
+    /// </summary>
+    public string? GroupKeyPattern { get; set; }
+
+    /// <summary>Gets or sets the group keys the client already holds.</summary>
+    public List<string>? ReceivedGroupKeys { get; set; }
+
+    /// <summary>
+    /// Gets or sets the watch type: <c>WATCH</c> to register, <c>CANCEL_WATCH</c> to remove.
+    /// </summary>
+    public string? WatchType { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the client is still in its initial synchronisation.
+    /// </summary>
+    /// <remarks>
+    /// Nacos' Java bean getter is <c>isInitializing()</c>, which Jackson maps to
+    /// <c>initializing</c>; the property name is what produces that wire name.
+    /// </remarks>
+    public bool Initializing { get; set; }
+}
+
+/// <summary>
+/// Confirms a fuzzy watch registration or cancellation. Carries no fields.
+/// <c>metadata.type = "ConfigFuzzyWatchResponse"</c>.
+/// </summary>
+internal sealed class ConfigFuzzyWatchResponse : NacosResponse
+{
+}
+
+/// <summary>
+/// One configuration in a fuzzy watch diff.
+/// </summary>
+internal sealed class ConfigFuzzyWatchContext
+{
+    /// <summary>Gets or sets the group key, as <c>dataId+group[+tenant]</c>.</summary>
+    public string? GroupKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the change type: <c>ADD_CONFIG</c> or <c>DELETE_CONFIG</c>.
+    /// </summary>
+    public string? ChangedType { get; set; }
+}
+
+/// <summary>
+/// Server push carrying the difference between the client's set and the server's match.
+/// <c>metadata.type = "ConfigFuzzyWatchSyncRequest"</c>.
+/// </summary>
+/// <remarks>
+/// Arrives in batches during initialisation (<see cref="FuzzyWatchProtocol.InitNotify"/>), on a
+/// later diff (<see cref="FuzzyWatchProtocol.DiffSyncNotify"/>), and once more with
+/// <see cref="FuzzyWatchProtocol.FinishInitNotify"/> to end the initial phase. The last one has no
+/// contexts.
+/// </remarks>
+internal sealed class ConfigFuzzyWatchSyncRequest : NacosRequest
+{
+    /// <summary>Gets or sets the pattern this diff belongs to.</summary>
+    public string? GroupKeyPattern { get; set; }
+
+    /// <summary>Gets or sets the configurations that differ.</summary>
+    public List<ConfigFuzzyWatchContext>? Contexts { get; set; }
+
+    /// <summary>Gets or sets the sync type.</summary>
+    public string? SyncType { get; set; }
+
+    /// <summary>Gets or sets the total number of batches in this sync.</summary>
+    public int TotalBatch { get; set; }
+
+    /// <summary>Gets or sets the index of this batch.</summary>
+    public int CurrentBatch { get; set; }
+}
+
+/// <summary>
+/// Acknowledges a fuzzy watch diff. Carries no fields.
+/// <c>metadata.type = "ConfigFuzzyWatchSyncResponse"</c>.
+/// </summary>
+internal sealed class ConfigFuzzyWatchSyncResponse : NacosResponse
+{
+}
+
+/// <summary>
+/// Server push announcing that one configuration in a fuzzy watched pattern changed.
+/// <c>metadata.type = "ConfigFuzzyWatchChangeNotifyRequest"</c>.
+/// </summary>
+/// <remarks>
+/// The push carries only the group key, so a consumer that needs the content reads it afterwards.
+/// The server derives the type from whether the configuration still exists, not from what the
+/// operation was: a newly created configuration and an update to an existing one both arrive as
+/// <c>CONFIG_CHANGED</c>, and it only sends one for a key the pattern does not already hold. The
+/// client therefore treats <c>CONFIG_CHANGED</c> for an unknown key as an addition, which is what
+/// the official Java client does as well.
+/// </remarks>
+internal sealed class ConfigFuzzyWatchChangeNotifyRequest : NacosRequest
+{
+    /// <summary>Gets or sets the group key, as <c>dataId+group[+tenant]</c>.</summary>
+    public string? GroupKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the change type: <c>ADD_CONFIG</c>, <c>DELETE_CONFIG</c> or
+    /// <c>CONFIG_CHANGED</c>.
+    /// </summary>
+    public string? ChangeType { get; set; }
+}
+
+/// <summary>
+/// Acknowledges a fuzzy watch change notification. Carries no fields.
+/// <c>metadata.type = "ConfigFuzzyWatchChangeNotifyResponse"</c>.
+/// </summary>
+internal sealed class ConfigFuzzyWatchChangeNotifyResponse : NacosResponse
+{
+}

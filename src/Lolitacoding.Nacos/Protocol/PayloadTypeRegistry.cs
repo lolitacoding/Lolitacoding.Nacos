@@ -33,6 +33,12 @@ internal static class PayloadTypeRegistry
         ["ConfigChangeBatchListenResponse"] = NacosJsonContext.Default.ConfigChangeBatchListenResponse,
         ["ConfigChangeNotifyRequest"] = NacosJsonContext.Default.ConfigChangeNotifyRequest,
         ["ConfigChangeNotifyResponse"] = NacosJsonContext.Default.ConfigChangeNotifyResponse,
+        ["ConfigFuzzyWatchRequest"] = NacosJsonContext.Default.ConfigFuzzyWatchRequest,
+        ["ConfigFuzzyWatchResponse"] = NacosJsonContext.Default.ConfigFuzzyWatchResponse,
+        ["ConfigFuzzyWatchSyncRequest"] = NacosJsonContext.Default.ConfigFuzzyWatchSyncRequest,
+        ["ConfigFuzzyWatchSyncResponse"] = NacosJsonContext.Default.ConfigFuzzyWatchSyncResponse,
+        ["ConfigFuzzyWatchChangeNotifyRequest"] = NacosJsonContext.Default.ConfigFuzzyWatchChangeNotifyRequest,
+        ["ConfigFuzzyWatchChangeNotifyResponse"] = NacosJsonContext.Default.ConfigFuzzyWatchChangeNotifyResponse,
 
         // Naming (service discovery).
         ["InstanceRequest"] = NacosJsonContext.Default.InstanceRequest,

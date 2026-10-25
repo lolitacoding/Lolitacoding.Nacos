@@ -160,6 +160,21 @@ attempt took. Two cases do not wait at all: a client that has **never** connecte
 no connection to wait for (that is `Optional`'s fail-fast startup), and a request that arrives after
 a reconnect attempt was already refused, because the outage is then not a blip to sit out.
 
+## What is the difference between `WatchAsync` and `ListenAsync`?
+
+`ListenAsync` follows **one** configuration and reports its content. `WatchAsync` (the fuzzy watch)
+follows a **pattern** — every configuration whose data id matches — and reports which configurations
+match it: `Added`, `Removed`, and `InitialSyncCompleted` once the initial catch-up is done, so a
+consumer can build the set from the stream alone. `Modified` exists as a defensive mapping but a
+Nacos server does not currently send it: the server tracks membership, not content, and a change to a
+configuration that already matches is not pushed through a fuzzy watch. Use `ListenAsync` when the
+value matters, and `WatchAsync` when you need to know *which* configurations exist — for example to
+watch every `feature.*` flag without knowing their names.
+
+The server limits how many patterns a connection may watch (`50310`) and how many configurations one
+pattern may match (`50311`); both arrive as `NacosServerException` with that code. A watch is
+re-sent every `Config.FuzzyWatchResyncInterval` (3 minutes by default) so a lost push is repaired.
+
 ## Can a change to a subscribed service slip through?
 
 No. `ListenAsync` / `SubscribeAsync` first hand you the state as it was read, and only then register

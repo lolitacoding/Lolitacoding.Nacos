@@ -208,6 +208,15 @@ public sealed class AgentCardIntegrationTests
             setAsLatest: true,
             ct: ct);
 
+        // A subscription whose first read reports the card as missing starts from null by design, so
+        // the release has to be visible before the subscription is opened; otherwise the test races
+        // the server's read-back and asserts against a null it asked for.
+        await NacosEventually.BecomesAsync(
+            () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            card => card.Version == "1.0.0",
+            ct,
+            tolerateFailures: true);
+
         await using IAsyncEnumerator<NacosAgentCardDetail?> changes =
             client.Ai.AgentCard.SubscribeAgentCardAsync(agentName, ct: ct).GetAsyncEnumerator(ct);
 

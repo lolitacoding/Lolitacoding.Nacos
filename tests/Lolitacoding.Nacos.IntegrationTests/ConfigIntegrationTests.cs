@@ -95,6 +95,60 @@ public sealed class ConfigIntegrationTests
     }
 
     [Fact]
+    public async Task Watch_ReportsTheMatchedSetAsConfigurationsAppearAndDisappear()
+    {
+        // A fuzzy watch tracks which configurations match a pattern, not their contents: the server
+        // only pushes a change when a key enters or leaves the matched set. Content changes are the
+        // exact listener's job, which is why the cycle here is create, remove and create again.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        string prefix = NacosHttp.UniqueId("config-fuzzy-it");
+        var key = new NacosConfigKey(prefix + ".json", "DEFAULT_GROUP");
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromMinutes(2));
+
+        await using IAsyncEnumerator<NacosConfigWatchEvent> events =
+            client.Config.WatchAsync($"{prefix}*", "DEFAULT_GROUP", cts.Token)
+                .GetAsyncEnumerator(cts.Token);
+
+        // Nothing matches the pattern yet, so the initial sync is the finish marker alone.
+        await NacosEventually.ReportsAsync(
+            events,
+            item => item.Kind == NacosConfigWatchKind.InitialSyncCompleted,
+            cts.Token);
+
+        // Each write is repeated until the push arrives. The content differs on every attempt, and
+        // the server reports a creation with the same change type as an update, so the client is
+        // what turns an unknown key into an addition.
+        await NacosEventually.PushedAsync(
+            ct => client.Config.PublishConfigAsync(
+                key, NacosHttp.ConfigContent("created"), "text", ct: ct),
+            events,
+            item => item.Kind == NacosConfigWatchKind.Added && item.Key?.DataId == key.DataId,
+            cts.Token);
+
+        await NacosEventually.PushedAsync(
+            ct => client.Config.RemoveConfigAsync(key, ct),
+            events,
+            item => item.Kind == NacosConfigWatchKind.Removed && item.Key?.DataId == key.DataId,
+            cts.Token);
+
+        // The key is gone from the set, so recreating it is an addition again rather than an
+        // update to something the subscription never learned about.
+        await NacosEventually.PushedAsync(
+            ct => client.Config.PublishConfigAsync(
+                key, NacosHttp.ConfigContent("recreated"), "text", ct: ct),
+            events,
+            item => item.Kind == NacosConfigWatchKind.Added && item.Key?.DataId == key.DataId,
+            cts.Token);
+
+        events.Current.Kind.ShouldBe(NacosConfigWatchKind.Added);
+    }
+
+    [Fact]
     public async Task Listen_SurvivesAServerRestart()
     {
         // The acceptance criterion for M2: after a reconnect the listener is still effective. The
