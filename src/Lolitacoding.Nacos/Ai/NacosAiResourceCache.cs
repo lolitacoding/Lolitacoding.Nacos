@@ -492,31 +492,62 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     /// </remarks>
     private async Task ProcessAsync(string key, T? resource, CancellationToken ct)
     {
-        T? previous = Lookup(key);
-        bool changed = !_options.IsSame(previous, resource);
+        bool changed = Store(key, resource);
 
         if (resource is null)
         {
-            _resources.TryRemove(key, out _);
-
             // Removed whether or not the absence is news: a snapshot left behind by an earlier
             // process would otherwise be served during the next outage for a resource the server
             // says is gone.
             RemoveSnapshot(key);
         }
-        else
+        else if (changed)
         {
-            _resources[key] = resource;
-
-            if (changed)
-            {
-                await SaveSnapshotAsync(key, resource, ct).ConfigureAwait(false);
-            }
+            await SaveSnapshotAsync(key, resource, ct).ConfigureAwait(false);
         }
 
         if (changed)
         {
             Publish(key, resource);
+        }
+    }
+
+    /// <summary>
+    /// Stores a read result, reporting whether it differs from what the cache held.
+    /// </summary>
+    /// <param name="key">The cache key the answer belongs to.</param>
+    /// <param name="resource">The resource, or <see langword="null"/> when the server serves none.</param>
+    /// <returns>
+    /// <see langword="true"/> when the cache changed, so the state is news to a subscriber.
+    /// </returns>
+    /// <remarks>
+    /// The comparison and the store are one step. The read a subscription makes when it opens and the
+    /// first read of its refresh loop can be in flight at the same time; comparing against a value
+    /// another read is about to store would make both report the same resource as a change, which
+    /// hands the subscriber a duplicate. The loser of the race retries against what the winner
+    /// stored, so exactly one of them reports the resource.
+    /// </remarks>
+    private bool Store(string key, T? resource)
+    {
+        while (true)
+        {
+            T? previous = Lookup(key);
+
+            if (_options.IsSame(previous, resource))
+            {
+                return false;
+            }
+
+            bool stored = resource is null
+                ? _resources.TryRemove(new KeyValuePair<string, T>(key, previous!))
+                : previous is null
+                    ? _resources.TryAdd(key, resource)
+                    : _resources.TryUpdate(key, resource, previous);
+
+            if (stored)
+            {
+                return true;
+            }
         }
     }
 

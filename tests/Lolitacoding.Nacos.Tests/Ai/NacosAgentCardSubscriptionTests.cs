@@ -88,12 +88,16 @@ public sealed class NacosAgentCardSubscriptionTests
     {
         var server = new AiTestServer();
 
-        // The first two reads are the same document; the third is a different one. The subscription
-        // must report the third and not the second.
+        // The server serves one document until the test has seen it, then a different one. The
+        // switch is a flag rather than a read count: the read a subscription makes when it opens and
+        // the first read of its refresh loop can be served in either order, and counting reads would
+        // turn that ordering into a failure about which document arrived first.
+        bool changed = false;
+
         server.OnCard = _ => AiTest.Card(
-            server.Cards.Count <= 2
-                ? AiTest.CreateCard("planner", "1.0.0", "before")
-                : AiTest.CreateCard("planner", "2.0.0", "after"));
+            Volatile.Read(ref changed)
+                ? AiTest.CreateCard("planner", "2.0.0", "after")
+                : AiTest.CreateCard("planner", "1.0.0", "before"));
 
         await using NacosAiClient client = server.CreateClient(FastOptions());
 
@@ -101,9 +105,16 @@ public sealed class NacosAgentCardSubscriptionTests
             new CardSubscription(Subscribe(client.AgentCard, "planner"));
 
         NacosAgentCardDetail? first = await subscription.NextAsync(Timeout);
-        NacosAgentCardDetail? second = await subscription.NextAsync(Timeout);
 
         first!.Version.ShouldBe("1.0.0");
+        first.Description.ShouldBe("before");
+
+        Volatile.Write(ref changed, true);
+
+        NacosAgentCardDetail? second = await subscription.NextAsync(Timeout);
+
+        // The next element is the new document, never a repeat of the first: the opening read and
+        // the refresh loop compare against the same cache, so only one of them can announce a state.
         second!.Version.ShouldBe("2.0.0");
         second.Description.ShouldBe("after");
     }
