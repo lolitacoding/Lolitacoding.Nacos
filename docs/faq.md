@@ -183,6 +183,34 @@ pattern may match (`50311`); both arrive as `NacosServerException` with that cod
 every `Config.FuzzyWatchResyncInterval` / `Naming.FuzzyWatchResyncInterval` (3 minutes by default) so
 a lost push is repaired.
 
+## How do I follow only some instances of a service?
+
+Use the selector overload of `SubscribeAsync`. It keeps a subset of what the server reports, so a
+consumer can follow one zone or one label without asking the server for a narrower list:
+
+```csharp
+var selector = NacosInstanceSelectors.Metadata(
+    new Dictionary<string, string> { ["tier"] = "gold" });
+
+await foreach (NacosServiceChange change in client.Naming
+    .SubscribeAsync(service, selector)
+    .WithCancellation(ct))
+{
+    // change.Instances holds only the instances labelled tier=gold.
+}
+```
+
+`NacosInstanceSelectors` mirrors the Java 3.x factory: `All`, `Healthy`, `Clusters`, `IpAddress` and
+`Metadata`, plus `From` for a custom filter. The filter runs on the client, against the list the
+server pushed, so the subscription asks for every cluster. A push that only changes instances the
+selector excludes does not wake the consumer, and the first element is filtered too. Two consumers of
+the same service may use different selectors: the server subscription is shared, the narrowing is
+per consumer.
+
+The selector overload has no token parameter; pass one with `WithCancellation` as above, or leave the
+enumeration to unsubscribe. Use the plain `SubscribeAsync(service, clusters)` overload when the
+cluster is the only criterion, because the server then does the narrowing.
+
 ## Can a change to a subscribed service slip through?
 
 No. `ListenAsync` / `SubscribeAsync` first hand you the state as it was read, and only then register

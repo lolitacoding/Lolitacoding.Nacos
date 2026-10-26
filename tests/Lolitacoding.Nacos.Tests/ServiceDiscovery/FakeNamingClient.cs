@@ -93,6 +93,14 @@ internal sealed class FakeNamingClient : INacosNamingClient
     }
 
     /// <inheritdoc />
+    public IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
+        NacosServiceKey service,
+        INacosInstanceSelector selector) =>
+        // The provider under test never narrows a subscription, so the fake delivers the same stream
+        // it would without a selector rather than duplicating the filter it does not exercise.
+        SubscribeAsync(service, clusters: null, ct: CancellationToken.None);
+
+    /// <inheritdoc />
     public async IAsyncEnumerable<NacosServiceWatchEvent> WatchAsync(
         string serviceNamePattern,
         string groupPattern,

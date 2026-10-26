@@ -80,6 +80,49 @@ public interface INacosNamingClient : IAsyncDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Observes the part of a service's instance list a selector keeps.
+    /// </summary>
+    /// <param name="service">The service to observe.</param>
+    /// <param name="selector">The client-side filter to apply to every reported instance list.</param>
+    /// <returns>
+    /// A stream of changes in which every instance list is the selected subset of the state the
+    /// server reported.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// This is the selector overload of the official Java SDK's
+    /// <c>NamingService.subscribe(serviceName, groupName, selector, listener)</c>. The server is
+    /// asked for every cluster and the narrowing happens on the client, which is what the Java
+    /// implementation does: its selector overload subscribes with an empty cluster filter. Use
+    /// <see cref="NacosInstanceSelectors.Clusters"/> when the cluster is all you want to narrow by,
+    /// and the clusters overload of the plain <c>SubscribeAsync</c> when the server should do the
+    /// narrowing.
+    /// </para>
+    /// <para>
+    /// A push whose selected subset is unchanged is not delivered, so a subscriber is not woken by
+    /// an instance it filtered out. The first element is the selected subset of the state known when
+    /// the stream opened, and later elements follow the same shape.
+    /// </para>
+    /// <para>
+    /// The selector runs on the client's push path. A selector that throws is reported and the
+    /// subscription keeps the view it last delivered, rather than the failure escaping into the
+    /// shared read loop.
+    /// </para>
+    /// <para>
+    /// This overload takes no token of its own: the token is supplied when the stream is enumerated,
+    /// with the <c>WithCancellation</c> extension, as in
+    /// <c>await foreach (NacosServiceChange change in
+    /// client.SubscribeAsync(service, selector).WithCancellation(ct))</c>. Leaving the enumeration,
+    /// which a <c>break</c> does, unsubscribes as well. Two subscription overloads that both ended in
+    /// an optional token would be indistinguishable at a call site that names only the service, so
+    /// the overloads differ by their second argument instead.
+    /// </para>
+    /// </remarks>
+    IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
+        NacosServiceKey service,
+        INacosInstanceSelector selector);
+
+    /// <summary>
     /// Observes which services match a pattern until the caller stops enumerating or cancels.
     /// </summary>
     /// <param name="serviceNamePattern">
@@ -97,7 +140,8 @@ public interface INacosNamingClient : IAsyncDisposable
     /// This is the naming counterpart of the configuration fuzzy watch: it follows the <em>set</em>
     /// of services that match, not the instances of any one service. An event names a service, and a
     /// consumer that needs its instances opens a subscription for it with
-    /// <see cref="SubscribeAsync"/> or reads them with <see cref="GetInstancesAsync"/>.
+    /// <see cref="SubscribeAsync(NacosServiceKey, string?, CancellationToken)"/> or reads them with
+    /// <see cref="GetInstancesAsync"/>.
     /// </para>
     /// <para>
     /// The watch is scoped to the namespace the client is configured for, because one pattern cannot

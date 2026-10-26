@@ -95,6 +95,17 @@ await foreach (NacosServiceWatchEvent item in
 {
     Console.WriteLine($"{item.Kind}: {item.Service}");
 }
+
+// Follow one service's instances, keeping only those that carry a label. The filter runs on the
+// client, so the server sends every cluster and the subscription is still one per service.
+var goldOnly = NacosInstanceSelectors.Metadata(
+    new Dictionary<string, string> { ["tier"] = "gold" });
+
+await foreach (NacosServiceChange change in
+    client.Naming.SubscribeAsync(service, goldOnly).WithCancellation(ct))
+{
+    Console.WriteLine($"{change.Instances.Count} gold instances");
+}
 ```
 
 ### Dependency injection

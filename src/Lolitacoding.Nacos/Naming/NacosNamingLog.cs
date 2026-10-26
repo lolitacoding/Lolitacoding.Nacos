@@ -211,4 +211,20 @@ internal static partial class NacosNamingLog
         ILogger logger,
         string pattern,
         string? changeType);
+
+    /// <summary>Logs that a client-side selector failed while a push was being applied.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service the subscription observes.</param>
+    /// <param name="reason">The failure.</param>
+    /// <remarks>
+    /// The subscription keeps the view it last delivered. The failure is not rethrown because the
+    /// selector runs on the shared push path: throwing there would abandon the other consumers of
+    /// the same service and would surface as an unobserved task failure rather than at a call site.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 5020,
+        Level = LogLevel.Error,
+        Message = "A naming instance selector for {Service} failed and was skipped; the subscription "
+            + "keeps the view it last delivered: {Reason}")]
+    public static partial void SelectorFailed(ILogger logger, string service, string reason);
 }

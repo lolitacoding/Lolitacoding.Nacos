@@ -214,6 +214,12 @@ configuration, and the protocol is a small state machine over three request type
   `ServiceInfoHolder.processServiceInfo` → `InstancesDiffer.doDiff` keys both lists by `ip:port`,
   compares the descriptions, and drops a push whose `lastRefTime` predates the applied state.
 - `ServiceInfo.allIps` serialises as `allIPs` (capital `IP`) on the wire.
+- **Selectors are client-side only.** `SubscribeServiceRequest` carries nothing but `subscribe` and
+  `clusters`; there is no selector field on any message. The selector overload subscribes with an
+  empty cluster filter — Java's `Constants.NULL` — and narrows each pushed list on the client, while
+  the plain overload's `clusters` argument is the server-side narrowing. A consumer is notified only
+  when its selected view changes, and the first element is filtered the same way, so a subscription
+  never starts from a list it would not deliver later.
 
 ### Naming fuzzy watch
 

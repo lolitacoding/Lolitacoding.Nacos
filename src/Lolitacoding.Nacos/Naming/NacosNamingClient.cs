@@ -212,10 +212,41 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <inheritdoc />
-    public async IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
+    public IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
         NacosServiceKey service,
         string? clusters = null,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        SubscribeCoreAsync(service, clusters, selector: null, ct);
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
+        NacosServiceKey service,
+        INacosInstanceSelector selector)
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+
+        // The server is asked for every cluster: the narrowing is the selector's job, exactly as in
+        // the Java SDK, where the selector overload subscribes with an empty cluster filter.
+        //
+        // The token is not a parameter of this overload; it reaches the iterator through
+        // WithCancellation, which is why None is passed here: the compiler-generated
+        // GetAsyncEnumerator combines the token given at enumeration time with this one.
+        return SubscribeCoreAsync(service, clusters: null, selector, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Implements both subscription overloads.
+    /// </summary>
+    /// <param name="service">The service to observe.</param>
+    /// <param name="clusters">The cluster filter, or <see langword="null"/> for every cluster.</param>
+    /// <param name="selector">The filter to apply, or <see langword="null"/> to deliver everything.</param>
+    /// <param name="ct">A token that ends the enumeration.</param>
+    /// <returns>The stream of changes.</returns>
+    private async IAsyncEnumerable<NacosServiceChange> SubscribeCoreAsync(
+        NacosServiceKey service,
+        string? clusters,
+        INacosInstanceSelector? selector,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(service);
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -223,10 +254,16 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         NacosServiceKey resolved = service.WithDefaultNamespace(_options.Namespace);
 
         // The current state is published first so a consumer can initialise from the same path
-        // that handles later changes.
+        // that handles later changes. The selector is applied here too, so the first element has
+        // exactly the shape every later one will have.
         NacosServiceInfo current = await GetInstancesAsync(resolved, clusters, healthyOnly: false, ct)
             .ConfigureAwait(false);
-        yield return new NacosServiceChange(current, null);
+
+        // A selector that throws here fails the caller's own call, which is where its bug belongs;
+        // on the push path the same failure is caught and logged instead.
+        NacosServiceInfo initial = Select(selector, resolved, clusters, current);
+
+        yield return new NacosServiceChange(initial, null);
 
         var queue = Channel.CreateBounded<NacosServiceChange>(
             new BoundedChannelOptions(16)
@@ -237,13 +274,14 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
                 SingleReader = true,
             });
 
+        var consumer = new SubscriptionConsumer(queue.Writer, selector) { Delivered = initial };
+
         string id = SubscriptionId(resolved, clusters);
 
         Subscription subscription = _subscriptions.GetOrAdd(
-            id, _ => new Subscription(resolved, clusters));
+            id, _ => new Subscription(resolved, clusters, _logger));
 
-        subscription.Attach(queue.Writer);
-        subscription.Delivered = current;
+        subscription.Attach(consumer);
 
         try
         {
@@ -267,7 +305,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         }
         finally
         {
-            subscription.Detach(queue.Writer);
+            subscription.Detach(consumer);
 
             if (subscription.IsEmpty)
             {
@@ -458,22 +496,44 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             // Duplicate notifications are normal, and the server leaves the checksum out of the
             // pushes it sends, so an unchanged state is detected by comparing the instance lists.
             // That is the comparison the Java client makes: InstancesDiffer.doDiff keys the old and
-            // new lists by address and compares the instance descriptions.
-            if (SameInstances(subscription.Delivered, info))
+            // new lists by address and compares the instance descriptions. The comparison is made
+            // per consumer, against the selected view it was last given, so a push that only
+            // touches instances a selector filtered out reaches nobody.
+            if (!subscription.Publish(info))
             {
                 NacosNamingLog.ChangeIgnored(_logger, key.ToString());
                 continue;
             }
 
-            NacosServiceInfo? previous = subscription.Delivered;
-            subscription.Delivered = info;
             subscription.LastRefTime = pushed.LastRefTime;
-
-            NacosNamingLog.ServiceChanged(
-                _logger, key.ToString(), info.Instances.Count, previous?.Instances.Count ?? 0);
-
-            subscription.Publish(new NacosServiceChange(info, previous?.Checksum));
         }
+    }
+
+    /// <summary>
+    /// Applies a selector to a service state, producing the view a subscription should see.
+    /// </summary>
+    /// <param name="selector">The selector, or <see langword="null"/> to keep everything.</param>
+    /// <param name="service">The service the state belongs to.</param>
+    /// <param name="clusters">The cluster filter the subscription was opened with.</param>
+    /// <param name="info">The state to narrow.</param>
+    /// <returns>
+    /// The narrowed state, or <paramref name="info"/> itself when there is no selector, so the
+    /// common case allocates nothing.
+    /// </returns>
+    private static NacosServiceInfo Select(
+        INacosInstanceSelector? selector,
+        NacosServiceKey service,
+        string? clusters,
+        NacosServiceInfo info)
+    {
+        if (selector is null)
+        {
+            return info;
+        }
+
+        var context = new NacosInstanceSelectorContext(service, clusters, info.Instances);
+
+        return info with { Instances = selector.Select(context) };
     }
 
     /// <summary>
@@ -1518,26 +1578,27 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <summary>A subscription this client owns and must replay after a reconnect.</summary>
+    /// <remarks>
+    /// One subscription is shared by every consumer that observes the same service and cluster
+    /// filter, including consumers that narrow the list differently: the server-side subscription
+    /// and its replay are per service, while the view each consumer sees is per consumer.
+    /// </remarks>
     private sealed class Subscription
     {
-        private readonly List<ChannelWriter<NacosServiceChange>> _writers = [];
+        private readonly List<SubscriptionConsumer> _consumers = [];
         private readonly Lock _sync = new();
+        private readonly ILogger _logger;
 
-        public Subscription(NacosServiceKey service, string? clusters)
+        public Subscription(NacosServiceKey service, string? clusters, ILogger logger)
         {
             Service = service;
             Clusters = clusters;
+            _logger = logger;
         }
 
         public NacosServiceKey Service { get; }
 
         public string? Clusters { get; }
-
-        /// <summary>
-        /// Gets or sets the state most recently delivered, used to suppress duplicate
-        /// notifications.
-        /// </summary>
-        public NacosServiceInfo? Delivered { get; set; }
 
         /// <summary>
         /// Gets or sets the time the delivered state was built at, used to drop a push that
@@ -1552,7 +1613,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             {
                 lock (_sync)
                 {
-                    return _writers.Count == 0;
+                    return _consumers.Count == 0;
                 }
             }
         }
@@ -1564,58 +1625,127 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             string.Equals(Service.ToString(), key.ToString(), StringComparison.Ordinal);
 
         /// <summary>Adds a consumer.</summary>
-        /// <param name="writer">The channel to publish to.</param>
-        public void Attach(ChannelWriter<NacosServiceChange> writer)
+        /// <param name="consumer">The consumer to add.</param>
+        public void Attach(SubscriptionConsumer consumer)
         {
             lock (_sync)
             {
-                _writers.Add(writer);
+                _consumers.Add(consumer);
             }
         }
 
         /// <summary>Removes a consumer.</summary>
-        /// <param name="writer">The channel to stop publishing to.</param>
-        public void Detach(ChannelWriter<NacosServiceChange> writer)
+        /// <param name="consumer">The consumer to remove.</param>
+        public void Detach(SubscriptionConsumer consumer)
         {
             lock (_sync)
             {
-                _writers.Remove(writer);
+                _consumers.Remove(consumer);
             }
         }
 
-        /// <summary>Publishes a change to every consumer.</summary>
-        /// <param name="change">The change.</param>
-        public void Publish(NacosServiceChange change)
+        /// <summary>
+        /// Applies a state to every consumer, delivering it only where the selected view changed.
+        /// </summary>
+        /// <param name="info">The full state the server reported.</param>
+        /// <returns><see langword="true"/> when at least one consumer was notified.</returns>
+        /// <remarks>
+        /// The comparison is per consumer because two consumers of one service may narrow it
+        /// differently: a change that matters to one is invisible to the other, and the second must
+        /// not be woken by it. A selector that throws is contained to its own consumer, because
+        /// this runs on the push path and an escaping exception would abandon the other consumers
+        /// and surface as an unobserved task failure.
+        /// </remarks>
+        public bool Publish(NacosServiceInfo info)
         {
-            ChannelWriter<NacosServiceChange>[] writers;
+            SubscriptionConsumer[] consumers;
             lock (_sync)
             {
-                writers = [.. _writers];
+                consumers = [.. _consumers];
             }
 
-            foreach (ChannelWriter<NacosServiceChange> writer in writers)
+            bool delivered = false;
+
+            foreach (SubscriptionConsumer consumer in consumers)
             {
+                NacosServiceInfo selected;
+                try
+                {
+                    selected = Select(consumer.Selector, Service, Clusters, info);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    NacosNamingLog.SelectorFailed(_logger, Service.ToString(), ex.Message);
+                    continue;
+                }
+
+                if (SameInstances(consumer.Delivered, selected))
+                {
+                    continue;
+                }
+
+                NacosServiceInfo? previous = consumer.Delivered;
+                consumer.Delivered = selected;
+                delivered = true;
+
+                NacosNamingLog.ServiceChanged(
+                    _logger,
+                    Service.ToString(),
+                    selected.Instances.Count,
+                    previous?.Instances.Count ?? 0);
+
                 // A bounded channel that drops the oldest entry can still refuse a write if it is
                 // momentarily full, which is acceptable: the next push carries the full state.
-                writer.TryWrite(change);
+                consumer.Writer.TryWrite(new NacosServiceChange(selected, previous?.Checksum));
             }
+
+            return delivered;
         }
 
         /// <summary>Ends every consumer's enumeration.</summary>
         public void Complete()
         {
-            ChannelWriter<NacosServiceChange>[] writers;
+            SubscriptionConsumer[] consumers;
             lock (_sync)
             {
-                writers = [.. _writers];
-                _writers.Clear();
+                consumers = [.. _consumers];
+                _consumers.Clear();
             }
 
-            foreach (ChannelWriter<NacosServiceChange> writer in writers)
+            foreach (SubscriptionConsumer consumer in consumers)
             {
-                writer.TryComplete();
+                consumer.Writer.TryComplete();
             }
         }
+    }
+
+    /// <summary>
+    /// One consumer's view of a subscription: its queue, its filter and what it was last told.
+    /// </summary>
+    private sealed class SubscriptionConsumer
+    {
+        public SubscriptionConsumer(
+            ChannelWriter<NacosServiceChange> writer,
+            INacosInstanceSelector? selector)
+        {
+            Writer = writer;
+            Selector = selector;
+        }
+
+        /// <summary>Gets the queue this consumer reads from.</summary>
+        public ChannelWriter<NacosServiceChange> Writer { get; }
+
+        /// <summary>
+        /// Gets the filter applied to every state, or <see langword="null"/> when the consumer sees
+        /// the whole list.
+        /// </summary>
+        public INacosInstanceSelector? Selector { get; }
+
+        /// <summary>
+        /// Gets or sets the view most recently delivered to this consumer, which is the selected
+        /// subset rather than the server's full list, and is what the next push is compared with.
+        /// </summary>
+        public NacosServiceInfo? Delivered { get; set; }
     }
 
     /// <summary>

@@ -26,7 +26,7 @@ the bottom with the reason it is not implemented here.
 | --- | --- | --- | --- | --- |
 | P0-1 | Configuration fuzzy watch | `ConfigService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | **Done** — `INacosConfigClient.WatchAsync`, `NacosConfigWatchEvent`, `Config.FuzzyWatchResyncInterval` | The only protocol capability this client explicitly told the server it could not do. It is how a process discovers configuration keys it does not know by name. |
 | P0-2 | Naming fuzzy watch | `NamingService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | **Done** — `INacosNamingClient.WatchAsync`, `NacosServiceWatchEvent`, `Naming.FuzzyWatchResyncInterval` | Discovers services by pattern and keeps that set current, without polling a service list. |
-| P1-3 | Client-side naming selectors | `NamingService.subscribe(..., NamingSelector, ...)`, `getAllInstances(..., Selector)`, `selectOneHealthyInstance(..., Selector)`; `client.naming.selector` | Missing | Zone and label routing is the normal way to keep traffic local; without it every consumer sees every instance. |
+| P1-3 | Client-side naming selectors | `NamingService.subscribe(serviceName, groupName, NamingSelector, listener)` and the matching `unsubscribe` | **Done** — `INacosNamingClient.SubscribeAsync(NacosServiceKey, INacosInstanceSelector)`, `NacosInstanceSelectors`, `NacosInstanceSelectorContext` | Zone and label routing is the normal way to keep traffic local; without it every consumer sees every instance. |
 | P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | Missing; the key is on the wire but dropped | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
 | P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | Missing; `ServiceListRequest`/`ServiceListResponse` already exist on the wire | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
 | P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | Missing; `BatchInstanceRequest` already exists on the wire | Registers many instances of one service in one round trip. `batchDeregisterInstance` is a client-side loop in Java, so only registration is a real gap. |
@@ -123,11 +123,43 @@ requires the token, for the same ambiguity reason as configuration.
 
 ## P1-3: naming selectors
 
-Java filters on the client, in `client.naming.selector`: a CMDB label selector and an expression
-selector, applied to the instance list before the listener sees it and before a load balancer
-picks an instance. Nothing about it is server state, so it is a pure SDK feature. This library
-already has `NacosLoadBalancer`; the gap is the filter in front of it and in front of
-subscriptions.
+In Nacos 3.x a selector exists on `subscribe`/`unsubscribe` only. The `getAllInstances(..., Selector)`
+and `selectOneHealthyInstance(..., Selector)` overloads, and the `client.naming.selector` package
+with its CMDB-label and expression selectors, were removed upstream; they are not reproduced here.
+What remains is `com.alibaba.nacos.client.naming.selector.NamingSelectorFactory`, and this library
+mirrors it in `NacosInstanceSelectors`:
+
+| Java | Here | Keeps |
+| --- | --- | --- |
+| `EMPTY_SELECTOR` | `NacosInstanceSelectors.All` | everything, returning the list it was given |
+| `HEALTHY_SELECTOR` | `NacosInstanceSelectors.Healthy` | `Instance::isHealthy` — the flag alone, not `IsSelectable` |
+| `newClusterSelector(clusters)` | `Clusters(params string[])` | the named clusters; an empty set keeps everything |
+| `newIpSelector(regex)` | `IpAddress(string)` | addresses matching the whole string, as `Pattern.matches` does |
+| `newMetadataSelector(map, isAny)` | `Metadata(map, matchAny)` | all (default) or any of the entries; an empty map keeps everything |
+
+`NacosInstanceSelectors.From(Func<NacosInstanceSelectorContext, IReadOnlyList<NacosInstance>>)` is the
+counterpart of implementing the Java interface, and the context carries the service and the cluster
+filter as well as the instances.
+
+- **The narrowing is client-side.** The selector overload subscribes with an empty cluster filter —
+  `Constants.NULL` in Java — so the server sends every instance and the filter decides. The plain
+  clusters overload still asks the server to narrow, which is the cheaper option when the cluster is
+  the only criterion.
+- **Filtering and de-duplication are per consumer.** One server subscription and its replay are
+  shared by every consumer of a service, including consumers that narrow it differently. Each
+  consumer keeps the selected view it was last given and is notified only when that view changes, so
+  a change to a filtered-out instance does not wake it. `Subscription.LastRefTime` advances only
+  when at least one consumer was notified.
+- **The first element is filtered too.** A consumer initialises from it, so it has the same shape as
+  every later element. A selector that throws there fails the caller's own call, which is where its
+  bug belongs.
+- **A throwing selector is contained on the push path.** It is reported as event `5020` and the
+  consumer keeps the view it last delivered; the failure is not rethrown, because that path is
+  shared with the other consumers of the service.
+- **The overload takes no token.** `SubscribeAsync(service, selector)` supplies the token through
+  `WithCancellation` when the stream is enumerated. A second subscription overload ending in an
+  optional token would not be distinguishable from the clusters overload, so the two differ by their
+  second argument instead.
 
 ## P1-4: configuration filters and encrypted content
 

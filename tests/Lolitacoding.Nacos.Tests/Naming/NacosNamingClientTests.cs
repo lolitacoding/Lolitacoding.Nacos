@@ -339,6 +339,206 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
+    public async Task Subscribe_WithSelector_DeliversTheSelectedSubsetOfTheInitialState()
+    {
+        // The first element has to have the same shape as every later one: a consumer initialises
+        // from it, so handing it the unfiltered list would leave it routing to instances the
+        // selector excluded until the first push arrived.
+        using NamingHarness harness = new();
+
+        await using Subscription subscription = await harness.SubscribeAsync(
+            Service, KeepPort(8081));
+
+        NacosServiceChange initial = await subscription.RequireNextAsync();
+        initial.PreviousChecksum.ShouldBeNull();
+        initial.Service.Checksum.ShouldBe("sum-1");
+        initial.Instances.ShouldHaveSingleItem().Port.ShouldBe(8081);
+    }
+
+    [Fact]
+    public async Task Subscribe_WithSelector_AsksTheServerForEveryCluster()
+    {
+        // Java's selector overload subscribes with an empty cluster filter and narrows on the
+        // client, so the server must not be asked for a subset: a selector can only keep what it is
+        // given, and a cluster filter would hide instances it was meant to choose between.
+        using NamingHarness harness = new();
+
+        await using Subscription subscription = await harness.SubscribeAsync(
+            Service, NacosInstanceSelectors.Clusters("zone-a"));
+
+        await subscription.RequireNextAsync();
+
+        harness.LastRequest<SubscribeServiceRequest>().Clusters.ShouldBeNullOrEmpty();
+    }
+
+    [Fact]
+    public async Task Subscribe_WithSelector_IgnoresAPushThatOnlyTouchesAFilteredOutInstance()
+    {
+        // A narrowed subscription must not be woken by a change to an instance it never sees. The
+        // comparison is against the selected view, not the server's list, which is what the Java
+        // selector wrapper does.
+        using NamingHarness harness = new();
+
+        await using Subscription subscription = await harness.SubscribeAsync(
+            Service, KeepPort(8081));
+
+        await subscription.RequireNextAsync();
+
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-2", ports: [8082, 8081]),
+            TestContext.Current.CancellationToken);
+
+        (await subscription.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Subscribe_WithSelector_DeliversWhenTheSelectedViewChanges()
+    {
+        using NamingHarness harness = new();
+
+        await using Subscription subscription = await harness.SubscribeAsync(
+            Service, KeepPort(8081));
+
+        await subscription.RequireNextAsync();
+
+        // The kept instance is gone, so the selected view becomes empty even though the server's
+        // list is still non-empty: the consumer has to be told, or it keeps routing to an instance
+        // the server no longer reports.
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-3", ports: [8082, 8083]),
+            TestContext.Current.CancellationToken);
+
+        NacosServiceChange change = await subscription.RequireNextAsync();
+        change.Instances.ShouldBeEmpty();
+        change.PreviousChecksum.ShouldBe("sum-1");
+    }
+
+    [Fact]
+    public async Task Subscribe_WithSelector_DeliversAnInstanceThatEntersTheSelection()
+    {
+        using NamingHarness harness = new(handler: request => PayloadCodec.ReadTypeName(request) switch
+        {
+            "ServiceQueryRequest" => QueryResponse([Host(8080)]),
+            "SubscribeServiceRequest" => SubscribeResponse(checksum: "sum-1", ports: [8080]),
+            _ => NamingHarness.Fallback(request),
+        });
+
+        await using Subscription subscription = await harness.SubscribeAsync(
+            Service, KeepPort(8081));
+
+        (await subscription.RequireNextAsync()).Instances.ShouldBeEmpty();
+
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-2", ports: [8080, 8081]),
+            TestContext.Current.CancellationToken);
+
+        (await subscription.RequireNextAsync()).Instances.ShouldHaveSingleItem().Port.ShouldBe(8081);
+    }
+
+    [Fact]
+    public async Task Subscribe_WithSelector_FiltersOnlyItsOwnConsumer()
+    {
+        // The server subscription and its replay are per service, while the view is per consumer.
+        // Sharing the subscription must not make a plain subscriber inherit someone else's filter.
+        using NamingHarness harness = new();
+
+        await using Subscription plain = await harness.SubscribeAsync(Service);
+        await using Subscription narrowed = await harness.SubscribeAsync(Service, KeepPort(8081));
+
+        await plain.RequireNextAsync();
+        await narrowed.RequireNextAsync();
+
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-2", ports: [8082, 8081]),
+            TestContext.Current.CancellationToken);
+
+        (await plain.RequireNextAsync()).Instances.Count.ShouldBe(2);
+        (await narrowed.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
+
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-3", ports: [8082, 8083]),
+            TestContext.Current.CancellationToken);
+
+        (await narrowed.RequireNextAsync()).Instances.ShouldBeEmpty();
+        (await plain.RequireNextAsync()).Instances.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task Subscribe_WithSelector_ThatThrows_KeepsTheViewItLastDelivered()
+    {
+        // The selector runs on the shared push path, so its failure is caught and logged rather than
+        // escaping: throwing there would abandon the other consumers of the service and surface as
+        // an unobserved task failure. The subscription keeps the view it last delivered, which the
+        // suppressed push below proves: had the failure reset it, the instance would look new.
+        using NamingHarness harness = new();
+
+        // Port 8082 is the marker that makes the selector fail. Basing the failure on the state
+        // rather than on a call count keeps the test independent of how many times the client asks
+        // the selector — it also runs for the state the server echoes back when a subscription
+        // becomes live.
+        INacosInstanceSelector selector = NacosInstanceSelectors.From(context =>
+        {
+            if (context.Instances.Any(instance => instance.Port == 8082))
+            {
+                throw new InvalidOperationException("selector failed");
+            }
+
+            return [.. context.Instances.Where(instance => instance.Port == 8081)];
+        });
+
+        await using Subscription subscription = await harness.SubscribeAsync(Service, selector);
+
+        (await subscription.RequireNextAsync()).Instances.ShouldHaveSingleItem().Port.ShouldBe(8081);
+
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-2", ports: [8082, 8083]),
+            TestContext.Current.CancellationToken);
+
+        (await subscription.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
+
+        // The kept instance is back, which leaves the selected view exactly as it was before the
+        // failure, so there is nothing to deliver.
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-3", ports: [8083, 8081]),
+            TestContext.Current.CancellationToken);
+
+        (await subscription.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
+
+        // A later change that really alters the view is still delivered, so the failure did not
+        // wedge the subscription.
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-4", ports: [8083, 8084]),
+            TestContext.Current.CancellationToken);
+
+        (await subscription.RequireNextAsync()).Instances.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task Subscribe_WithSelector_EndsWhenTheEnumerationIsCancelled()
+    {
+        // The selector overload has no token parameter, so the token has to arrive through
+        // WithCancellation; without this test the overload would only ever end on disposal.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        using var cts = new CancellationTokenSource();
+
+        await using var changes = harness.Client.SubscribeAsync(Service, NacosInstanceSelectors.All)
+            .WithCancellation(cts.Token)
+            .GetAsyncEnumerator();
+
+        (await changes.MoveNextAsync()).ShouldBeTrue();
+
+        await cts.CancelAsync();
+
+        await Should.ThrowAsync<OperationCanceledException>(
+            async () =>
+            {
+                await changes.MoveNextAsync();
+            });
+    }
+
+    [Fact]
     public async Task Reconnect_DeliversWhatChangedWhileTheSubscriptionWasGone()
     {
         // The server discarded the subscription with the connection, so nothing could be pushed
@@ -469,6 +669,13 @@ public sealed class NacosNamingClientTests
             Hosts = [.. ports.Select(port => Host(port))],
         },
     };
+
+    /// <summary>Builds a selector that keeps the instances of one port.</summary>
+    /// <param name="port">The port to keep.</param>
+    /// <returns>The selector.</returns>
+    private static INacosInstanceSelector KeepPort(int port) =>
+        NacosInstanceSelectors.From(context =>
+            [.. context.Instances.Where(instance => instance.Port == port)]);
 
     /// <summary>Builds a single healthy wire host.</summary>
     private static Instance Host(int port, double weight = 1.0) => new()
@@ -611,8 +818,12 @@ public sealed class NacosNamingClientTests
 
         /// <summary>Starts a subscription and returns a handle that reads its changes.</summary>
         /// <param name="service">The service to observe.</param>
+        /// <param name="selector">
+        /// The client-side filter to apply, or <see langword="null"/> for the plain subscription.
+        /// </param>
         /// <returns>The subscription handle.</returns>
-        public async Task<Subscription> SubscribeAsync(NacosServiceKey service)
+        public async Task<Subscription> SubscribeAsync(
+            NacosServiceKey service, INacosInstanceSelector? selector = null)
         {
             await _connection.ConnectAsync(TestContext.Current.CancellationToken);
 
@@ -623,10 +834,24 @@ public sealed class NacosNamingClientTests
             {
                 try
                 {
-                    await foreach (NacosServiceChange change in
-                        Client.SubscribeAsync(service, ct: cts.Token))
+                    if (selector is null)
                     {
-                        changes.Writer.TryWrite(change);
+                        await foreach (NacosServiceChange change in
+                            Client.SubscribeAsync(service, ct: cts.Token))
+                        {
+                            changes.Writer.TryWrite(change);
+                        }
+                    }
+                    else
+                    {
+                        // The selector overload takes no token of its own, so the handle supplies
+                        // one the way a consumer would: through WithCancellation. That also makes
+                        // disposal a check that the token really does reach the iterator.
+                        await foreach (NacosServiceChange change in
+                            Client.SubscribeAsync(service, selector).WithCancellation(cts.Token))
+                        {
+                            changes.Writer.TryWrite(change);
+                        }
                     }
                 }
                 catch (OperationCanceledException)

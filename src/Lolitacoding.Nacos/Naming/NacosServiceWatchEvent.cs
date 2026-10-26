@@ -8,7 +8,9 @@ namespace Lolitacoding.Nacos.Naming;
 /// A fuzzy watch follows a pattern rather than one service, so its events describe the matched
 /// <em>set</em>: a service entering it, leaving it, or changing while it stays in it. The push
 /// carries no instance list; a consumer that needs the instances subscribes to the service it
-/// learned about with <see cref="INacosNamingClient.SubscribeAsync"/> or reads them with
+/// learned about with
+/// <see cref="INacosNamingClient.SubscribeAsync(NacosServiceKey, string?, CancellationToken)"/> or
+/// reads them with
 /// <see cref="INacosNamingClient.GetInstancesAsync"/>.
 /// </para>
 /// <para>

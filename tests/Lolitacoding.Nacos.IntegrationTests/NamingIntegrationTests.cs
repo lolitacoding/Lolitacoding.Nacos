@@ -91,6 +91,107 @@ public sealed class NamingIntegrationTests
     }
 
     [Fact]
+    public async Task Subscribe_WithSelector_FiltersTheInstancesARealServerReports()
+    {
+        // The selector is a client-side filter, so the server must report both instances and the
+        // subscription must still deliver only the labelled one. Relabelling the excluded instance
+        // and then removing the included one exercise the two directions a filter has to follow:
+        // an instance entering the selected view and one leaving it.
+        //
+        // Each instance is registered by its own client, because the server keeps one published
+        // instance per service per connection (AbstractClient.publishers is keyed by service): a
+        // second registration from the same connection would replace the first. Two instances of a
+        // service are two processes, so two connections is what a real deployment looks like too.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory client = CreateClient(container);
+        await using NacosClientFactory goldOwner = CreateClient(container);
+        await using NacosClientFactory silverOwner = CreateClient(container);
+
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+        await goldOwner.ConnectAsync(TestContext.Current.CancellationToken);
+        await silverOwner.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var service = new NacosServiceKey(NacosHttp.UniqueId("naming-selector-it"), "DEFAULT_GROUP");
+
+        var gold = new NacosInstance(
+            "10.20.30.51", 8091, metadata: new Dictionary<string, string> { ["tier"] = "gold" });
+        var silver = new NacosInstance(
+            "10.20.30.52", 8092, metadata: new Dictionary<string, string> { ["tier"] = "silver" });
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromMinutes(2));
+
+        // Opened before the instances exist, so the initial element is empty and every later element
+        // is a push: that is the path the selector runs on. The token goes to GetAsyncEnumerator,
+        // which is where an async iterator receives it.
+        await using IAsyncEnumerator<NacosServiceChange> changes = client.Naming
+            .SubscribeAsync(
+                service,
+                NacosInstanceSelectors.Metadata(new Dictionary<string, string> { ["tier"] = "gold" }))
+            .GetAsyncEnumerator(cts.Token);
+
+        (await changes.MoveNextAsync()).ShouldBeTrue();
+        changes.Current.Instances.ShouldBeEmpty();
+
+        await goldOwner.Naming.RegisterInstanceAsync(service, gold, cts.Token);
+        await silverOwner.Naming.RegisterInstanceAsync(service, silver, cts.Token);
+
+        // The server holds both, so what the subscription delivers below is the selector's doing.
+        // Health is not the subject here: an ephemeral instance is briefly unhealthy until its
+        // first heartbeat lands, so the read asks for every instance rather than only healthy ones.
+        NacosServiceInfo all = await NacosEventually.BecomesAsync(
+            () => client.Naming.GetInstancesAsync(service, healthyOnly: false, ct: cts.Token),
+            result => result.Instances.Count >= 2,
+            cts.Token);
+
+        all.Instances.Select(instance => instance.Endpoint).ShouldBe(
+            ["10.20.30.51:8091", "10.20.30.52:8092"], ignoreOrder: true);
+
+        // Re-registering the same instance is not a change, so the instance is cycled to make the
+        // change repeatable if the first push lands before the subscription is live on the server.
+        await NacosEventually.PushedAsync(
+            async ct =>
+            {
+                await goldOwner.Naming.DeregisterInstanceAsync(service, gold, ct).ConfigureAwait(false);
+                await goldOwner.Naming.RegisterInstanceAsync(service, gold, ct).ConfigureAwait(false);
+            },
+            changes,
+            change => change.Instances.Any(instance => instance.Port == 8091),
+            cts.Token);
+
+        changes.Current.Instances.ShouldHaveSingleItem().Port.ShouldBe(8091);
+
+        // Relabelling the excluded instance makes it match, so it has to appear in the selected view.
+        var silverAsGold = silver with
+        {
+            Metadata = new Dictionary<string, string> { ["tier"] = "gold" },
+        };
+
+        await NacosEventually.PushedAsync(
+            async ct =>
+            {
+                await silverOwner.Naming.DeregisterInstanceAsync(service, silver, ct).ConfigureAwait(false);
+                await silverOwner.Naming.RegisterInstanceAsync(service, silverAsGold, ct).ConfigureAwait(false);
+            },
+            changes,
+            change => change.Instances.Count == 2
+                && change.Instances.Any(instance => instance.Port == 8091)
+                && change.Instances.Any(instance => instance.Port == 8092),
+            cts.Token);
+
+        // Removing the only instance that still matches leaves the selected view empty even though
+        // the server still reports the relabelled one.
+        await goldOwner.Naming.DeregisterInstanceAsync(service, gold, cts.Token);
+
+        await NacosEventually.ReportsAsync(
+            changes,
+            change => change.Instances.All(instance => instance.Port != 8091),
+            cts.Token);
+
+        changes.Current.Instances.ShouldHaveSingleItem().Port.ShouldBe(8092);
+    }
+
+    [Fact]
     public async Task Watch_ReportsServicesEnteringAndLeavingTheMatchedSet()
     {
         // A naming fuzzy watch tracks which services match a pattern, not their instances: the
