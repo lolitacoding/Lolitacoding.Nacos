@@ -42,6 +42,16 @@ internal sealed class NacosConfigSnapshotStore
     /// </remarks>
     private const string MetadataSeparator = "\n---nacos-meta---\n";
 
+    /// <summary>
+    /// The marker that introduces the current metadata layout.
+    /// </summary>
+    /// <remarks>
+    /// Snapshots written before the encrypted data key was stored begin directly with the content
+    /// type and carry no marker. Keeping the marker explicit means those files stay readable: their
+    /// first line is never mistaken for a version tag.
+    /// </remarks>
+    private const string MetadataVersionMarker = "v2\n";
+
     private readonly string _rootDirectory;
 
     /// <summary>
@@ -60,12 +70,16 @@ internal sealed class NacosConfigSnapshotStore
     /// <param name="key">The configuration coordinates.</param>
     /// <param name="content">The content to store.</param>
     /// <param name="contentType">The content type.</param>
+    /// <param name="encryptedDataKey">
+    /// The encrypted data key that belongs with the content, or <see langword="null"/>.
+    /// </param>
     /// <param name="ct">A token that cancels the write.</param>
     /// <returns>A task that completes once the snapshot is durable.</returns>
     public async Task SaveAsync(
         NacosConfigKey key,
         string content,
         string? contentType,
+        string? encryptedDataKey = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(key);
@@ -80,10 +94,12 @@ internal sealed class NacosConfigSnapshotStore
             return;
         }
 
-        // The content type occupies the first line so the snapshot stays human-readable and the
-        // separator can never be confused with payload that happens to start with a newline.
+        // The metadata occupies the first section so the snapshot stays human-readable and the
+        // separator can never be confused with payload that happens to start with a newline. The
+        // content type and key are base64-encoded because both are arbitrary strings, while the
+        // metadata layout is line-oriented.
         string payload = string.Concat(
-            contentType ?? string.Empty,
+            EncodeMetadata(contentType, encryptedDataKey),
             MetadataSeparator,
             content);
 
@@ -118,9 +134,15 @@ internal sealed class NacosConfigSnapshotStore
     /// <param name="key">The configuration coordinates.</param>
     /// <param name="ct">A token that cancels the read.</param>
     /// <returns>
-    /// The content and its type, or <see langword="null"/> when no usable snapshot exists.
+    /// The content, its type and the encrypted data key that belongs with it, or
+    /// <see langword="null"/> when no usable snapshot exists.
     /// </returns>
-    public async Task<(string Content, string? ContentType)?> LoadAsync(
+    /// <remarks>
+    /// A file written before the encrypted data key was stored has no version marker; it is read
+    /// as before, with a <see langword="null"/> key. A malformed metadata section is treated as an
+    /// absent snapshot rather than as content that might not belong to the key beside it.
+    /// </remarks>
+    public async Task<(string Content, string? ContentType, string? EncryptedDataKey)?> LoadAsync(
         NacosConfigKey key,
         CancellationToken ct = default)
     {
@@ -146,10 +168,15 @@ internal sealed class NacosConfigSnapshotStore
                 return null;
             }
 
-            string contentType = payload[..separatorIndex];
+            string metadata = payload[..separatorIndex];
             string content = payload[(separatorIndex + MetadataSeparator.Length)..];
 
-            return (content, contentType.Length == 0 ? null : contentType);
+            if (!TryDecodeMetadata(metadata, out string? contentType, out string? encryptedDataKey))
+            {
+                return null;
+            }
+
+            return (content, contentType, encryptedDataKey);
         }
         catch (IOException)
         {
@@ -160,6 +187,66 @@ internal sealed class NacosConfigSnapshotStore
             return null;
         }
     }
+
+    /// <summary>
+    /// Encodes the metadata section of a snapshot.
+    /// </summary>
+    /// <param name="contentType">The content type, or <see langword="null"/>.</param>
+    /// <param name="encryptedDataKey">The encrypted data key, or <see langword="null"/>.</param>
+    /// <returns>The metadata section, without the separator.</returns>
+    private static string EncodeMetadata(string? contentType, string? encryptedDataKey) =>
+        string.Concat(
+            MetadataVersionMarker,
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(contentType ?? string.Empty)),
+            "\n",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(encryptedDataKey ?? string.Empty)));
+
+    /// <summary>
+    /// Decodes the metadata section of a snapshot.
+    /// </summary>
+    /// <param name="metadata">The metadata section, without the separator.</param>
+    /// <param name="contentType">The decoded content type, or <see langword="null"/>.</param>
+    /// <param name="encryptedDataKey">The decoded key, or <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> when the section could be decoded.</returns>
+    private static bool TryDecodeMetadata(
+        string metadata,
+        out string? contentType,
+        out string? encryptedDataKey)
+    {
+        contentType = null;
+        encryptedDataKey = null;
+
+        if (!metadata.StartsWith(MetadataVersionMarker, StringComparison.Ordinal))
+        {
+            // The original layout stored the content type verbatim as the whole section.
+            contentType = metadata.Length == 0 ? null : metadata;
+            return true;
+        }
+
+        string[] lines = metadata[MetadataVersionMarker.Length..].Split('\n');
+
+        if (lines.Length != 2)
+        {
+            return false;
+        }
+
+        try
+        {
+            contentType = DecodeOptional(lines[0]);
+            encryptedDataKey = DecodeOptional(lines[1]);
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>Decodes one base64 metadata line.</summary>
+    /// <param name="value">The encoded value, which may be empty.</param>
+    /// <returns>The decoded value, or <see langword="null"/> when the line was empty.</returns>
+    private static string? DecodeOptional(string value) =>
+        value.Length == 0 ? null : Encoding.UTF8.GetString(Convert.FromBase64String(value));
 
     /// <summary>
     /// Removes the snapshot for a configuration.

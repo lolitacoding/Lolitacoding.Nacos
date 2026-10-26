@@ -56,6 +56,13 @@ drops.
 | `EnableLocalCache` | `bool` | `true` | Write successfully read configurations to the snapshot directory for failover. |
 | `DefaultContentType` | `string` | `"text"` | Content type applied when publishing and no explicit type is given. Cannot be empty. |
 | `FuzzyWatchResyncInterval` | `TimeSpan` | 3 min | How often every pattern watch is re-sent so a push lost on a healthy connection is repaired. The server answers a re-sent watch with a diff, so the repetition is idempotent. Must be positive. |
+| `EncryptionProviders` | `IList<INacosConfigEncryptionProvider>` | empty | Algorithms for data ids that start with `cipher-`. When the list is non-empty the client adds `NacosConfigEncryptionFilter` to its filter chain. Every entry must have a non-empty `AlgorithmName`; the first match wins. |
+
+`EncryptionProviders` is the .NET counterpart of the Java `EncryptionPluginService` service loader:
+there is no assembly-wide discovery, so the algorithms are listed explicitly. A data id such as
+`cipher-AES-application.json` selects the provider named `AES`. Adding a filter by hand with
+`INacosConfigClient.AddConfigFilter` is how any other transformation is run; see
+[java-parity.md](java-parity.md#p1-4-configuration-filters-and-encrypted-content).
 
 ### `NacosNamingOptions`
 

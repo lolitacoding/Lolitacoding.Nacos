@@ -706,6 +706,7 @@ Lolitacoding.Nacos.Client.NacosClient.DisposeAsync() -> System.Threading.Tasks.V
 Lolitacoding.Nacos.Client.NacosClient.Lock.get -> Lolitacoding.Nacos.Locking.INacosLockClient!
 Lolitacoding.Nacos.Client.NacosClient.Naming.get -> Lolitacoding.Nacos.Naming.INacosNamingClient!
 Lolitacoding.Nacos.Config.INacosConfigClient
+Lolitacoding.Nacos.Config.INacosConfigClient.AddConfigFilter(Lolitacoding.Nacos.Config.INacosConfigFilter! filter) -> void
 Lolitacoding.Nacos.Config.INacosConfigClient.AddListenerAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Func<Lolitacoding.Nacos.Config.NacosConfigChange!, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! onChange, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<System.IAsyncDisposable!>!
 Lolitacoding.Nacos.Config.INacosConfigClient.GetConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Config.NacosConfigResult!>!
 Lolitacoding.Nacos.Config.INacosConfigClient.ListenAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Config.NacosConfigChange!>!
@@ -713,6 +714,17 @@ Lolitacoding.Nacos.Config.INacosConfigClient.PublishConfigAsync(Lolitacoding.Nac
 Lolitacoding.Nacos.Config.INacosConfigClient.RemoveConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Lolitacoding.Nacos.Config.INacosConfigClient.WatchAsync(string! dataIdPattern, string! groupPattern, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Config.NacosConfigWatchEvent!>!
 Lolitacoding.Nacos.Config.INacosConfigClient.WatchAsync(string! groupPattern, System.Threading.CancellationToken ct) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Config.NacosConfigWatchEvent!>!
+Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider
+Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider.AlgorithmName.get -> string!
+Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider.Decrypt(string! secretKey, string! content) -> string!
+Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider.DecryptSecretKey(string! encryptedSecretKey) -> string!
+Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider.Encrypt(string! secretKey, string! content) -> string!
+Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider.EncryptSecretKey(string! secretKey) -> string!
+Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider.GenerateSecretKey() -> string!
+Lolitacoding.Nacos.Config.INacosConfigFilter
+Lolitacoding.Nacos.Config.INacosConfigFilter.InvokeAsync(Lolitacoding.Nacos.Config.NacosConfigFilterContext! context, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Lolitacoding.Nacos.Config.INacosConfigFilter.Name.get -> string!
+Lolitacoding.Nacos.Config.INacosConfigFilter.Order.get -> int
 Lolitacoding.Nacos.Config.NacosConfigChange
 Lolitacoding.Nacos.Config.NacosConfigChange.<Clone>$() -> Lolitacoding.Nacos.Config.NacosConfigChange!
 Lolitacoding.Nacos.Config.NacosConfigChange.Content.get -> string?
@@ -721,6 +733,26 @@ Lolitacoding.Nacos.Config.NacosConfigChange.Key.get -> Lolitacoding.Nacos.Config
 Lolitacoding.Nacos.Config.NacosConfigChange.PreviousMd5.get -> string?
 Lolitacoding.Nacos.Config.NacosConfigChange.PreviousMd5.init -> void
 Lolitacoding.Nacos.Config.NacosConfigChange.Result.get -> Lolitacoding.Nacos.Config.NacosConfigResult!
+Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter
+Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter.InvokeAsync(Lolitacoding.Nacos.Config.NacosConfigFilterContext! context, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter.Name.get -> string!
+Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter.NacosConfigEncryptionFilter(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider!>! providers, Microsoft.Extensions.Logging.ILogger? logger = null) -> void
+Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter.Order.get -> int
+Lolitacoding.Nacos.Config.NacosConfigFilterContext
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.Content.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.Content.set -> void
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.ContentType.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.ContentType.set -> void
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.EncryptedDataKey.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.EncryptedDataKey.set -> void
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.FromLocalCache.get -> bool
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.Key.get -> Lolitacoding.Nacos.Config.NacosConfigKey!
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.Md5.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.NacosConfigFilterContext(Lolitacoding.Nacos.Config.NacosConfigKey! key, Lolitacoding.Nacos.Config.NacosConfigFilterStage stage, string? content = null, string? contentType = null, string? encryptedDataKey = null, string? md5 = null, bool fromLocalCache = false) -> void
+Lolitacoding.Nacos.Config.NacosConfigFilterContext.Stage.get -> Lolitacoding.Nacos.Config.NacosConfigFilterStage
+Lolitacoding.Nacos.Config.NacosConfigFilterStage
+Lolitacoding.Nacos.Config.NacosConfigFilterStage.Publish = 0 -> Lolitacoding.Nacos.Config.NacosConfigFilterStage
+Lolitacoding.Nacos.Config.NacosConfigFilterStage.Read = 1 -> Lolitacoding.Nacos.Config.NacosConfigFilterStage
 Lolitacoding.Nacos.Config.NacosConfigKey
 Lolitacoding.Nacos.Config.NacosConfigKey.<Clone>$() -> Lolitacoding.Nacos.Config.NacosConfigKey!
 Lolitacoding.Nacos.Config.NacosConfigKey.DataId.get -> string!
@@ -733,6 +765,7 @@ Lolitacoding.Nacos.Config.NacosConfigResult
 Lolitacoding.Nacos.Config.NacosConfigResult.<Clone>$() -> Lolitacoding.Nacos.Config.NacosConfigResult!
 Lolitacoding.Nacos.Config.NacosConfigResult.Content.get -> string?
 Lolitacoding.Nacos.Config.NacosConfigResult.ContentType.get -> string?
+Lolitacoding.Nacos.Config.NacosConfigResult.EncryptedDataKey.get -> string?
 Lolitacoding.Nacos.Config.NacosConfigResult.Equals(Lolitacoding.Nacos.Config.NacosConfigResult? other) -> bool
 Lolitacoding.Nacos.Config.NacosConfigResult.Exists.get -> bool
 Lolitacoding.Nacos.Config.NacosConfigResult.FromLocalCache.get -> bool
@@ -816,6 +849,7 @@ Lolitacoding.Nacos.NacosConfigOptions.DefaultContentType.get -> string!
 Lolitacoding.Nacos.NacosConfigOptions.DefaultContentType.set -> void
 Lolitacoding.Nacos.NacosConfigOptions.EnableLocalCache.get -> bool
 Lolitacoding.Nacos.NacosConfigOptions.EnableLocalCache.set -> void
+Lolitacoding.Nacos.NacosConfigOptions.EncryptionProviders.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider!>!
 Lolitacoding.Nacos.NacosConfigOptions.FuzzyWatchResyncInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosConfigOptions.FuzzyWatchResyncInterval.set -> void
 Lolitacoding.Nacos.NacosConfigOptions.LongPollingTimeout.get -> System.TimeSpan
@@ -1038,6 +1072,7 @@ const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Streamable = "mcp-streamable" -> st
 const Lolitacoding.Nacos.Ai.NacosMcpStatus.Active = "active" -> string!
 const Lolitacoding.Nacos.Ai.NacosMcpStatus.Deleted = "deleted" -> string!
 const Lolitacoding.Nacos.Ai.NacosMcpStatus.Deprecated = "deprecated" -> string!
+const Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter.FilterName = "Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter" -> string!
 const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.ActivitySourceName = "Lolitacoding.Nacos" -> string!
 const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.MeterName = "Lolitacoding.Nacos" -> string!
 const Lolitacoding.Nacos.Locking.NacosLockTypes.Mutex = "NACOS_LOCK" -> string!

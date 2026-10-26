@@ -27,11 +27,11 @@ the bottom with the reason it is not implemented here.
 | P0-1 | Configuration fuzzy watch | `ConfigService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | **Done** — `INacosConfigClient.WatchAsync`, `NacosConfigWatchEvent`, `Config.FuzzyWatchResyncInterval` | The only protocol capability this client explicitly told the server it could not do. It is how a process discovers configuration keys it does not know by name. |
 | P0-2 | Naming fuzzy watch | `NamingService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | **Done** — `INacosNamingClient.WatchAsync`, `NacosServiceWatchEvent`, `Naming.FuzzyWatchResyncInterval` | Discovers services by pattern and keeps that set current, without polling a service list. |
 | P1-3 | Client-side naming selectors | `NamingService.subscribe(serviceName, groupName, NamingSelector, listener)` and the matching `unsubscribe` | **Done** — `INacosNamingClient.SubscribeAsync(NacosServiceKey, INacosInstanceSelector)`, `NacosInstanceSelectors`, `NacosInstanceSelectorContext` | Zone and label routing is the normal way to keep traffic local; without it every consumer sees every instance. |
-| P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | Missing; the key is on the wire but dropped | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
+| P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | **Done** — `INacosConfigFilter`, `INacosConfigClient.AddConfigFilter`, `NacosConfigEncryptionFilter`, `INacosConfigEncryptionProvider`, `NacosConfigResult.EncryptedDataKey` | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
 | P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | Missing; `ServiceListRequest`/`ServiceListResponse` already exist on the wire | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
 | P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | Missing; `BatchInstanceRequest` already exists on the wire | Registers many instances of one service in one round trip. `batchDeregisterInstance` is a client-side loop in Java, so only registration is a real gap. |
 | P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | Missing; only the gRPC watch is implemented | The watch path for deployments where the gRPC push channel is unavailable. |
-| P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | Missing; snapshots are plaintext | A process that fails over to disk writes secrets there in the clear. |
+| P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | **Addressed by P1-4** — a snapshot keeps the stored ciphertext and the wrapped key | A process that fails over to disk must not write the plaintext of an encrypted configuration there. |
 | P2-9 | Address-server discovery | `PropertyKeyConst.ENDPOINT`, `ServerListManager` address-server polling | Missing; server addresses are configured explicitly | Deployments that hand out the server list through an address server cannot use this client. |
 | P2-10 | Server status | `ConfigService.getServerStatus()`, `NamingService.getServerStatus()` | Missing; the transport state exists but is not exposed | A health check needs to answer "am I connected" without issuing a request. |
 | P3-11 | `NamingMaintainService` | `createService`, `updateService`, `deleteService`, `getService`, `updateInstance` | Missing by design | Administrative API under `/v3/admin/ns/*`; needs a bearer token even with auth disabled. It is not part of a runtime client. |
@@ -163,11 +163,58 @@ filter as well as the instances.
 
 ## P1-4: configuration filters and encrypted content
 
-Java runs every publish and query through a chain of `IConfigFilter`s. The built-in one is
-`ConfigEncryptionFilter`, which encrypts on publish, decrypts on query, and stores the data key
-locally so an encrypted snapshot can be read back. The wire already carries
-`ConfigQueryResponse.EncryptedDataKey`; this library currently ignores it, so an encrypted
-configuration arrives as ciphertext with the key discarded.
+Java runs every publish and query through a chain of `IConfigFilter`s
+(`ConfigFilterChainManager`), and `ConfigEncryptionFilter` is one of them. This library mirrors the
+extension point as `INacosConfigFilter`:
+
+| Java | Here |
+| --- | --- |
+| `ConfigService.addConfigFilter(IConfigFilter)` | `INacosConfigClient.AddConfigFilter(INacosConfigFilter)` |
+| `IConfigFilter.doFilter(request, response, chain)` | `INacosConfigFilter.InvokeAsync(NacosConfigFilterContext, CancellationToken)` |
+| `ConfigRequest` / `ConfigResponse` | `NacosConfigFilterContext` with `Stage` = `Publish` / `Read` |
+| `EncryptionPluginService` SPI | `INacosConfigEncryptionProvider` |
+| `ConfigEncryptionFilter` | `NacosConfigEncryptionFilter`, seeded from `NacosConfigOptions.EncryptionProviders` |
+| `ConfigQueryResponse.encryptedDataKey` | `NacosConfigResult.EncryptedDataKey` |
+
+The chain is flat. Filters run in `Order` order, lowest first, and filters with equal orders keep
+their insertion order; each sees the previous filter's mutations. There is no `next` delegate — a
+filter that must stop the operation throws. Adding a filter whose `Name` is already registered is
+ignored, so the first registration wins, as in Java.
+
+Encryption follows the Java rules exactly:
+
+- A data id opts in by starting with `cipher-` but not being exactly `cipher-`.
+- The algorithm is the segment between the first and second `-`:
+  `cipher-AES-application.json` selects the provider whose `AlgorithmName` is `AES`. Matching is
+  ordinal, so `aes` does not select `AES`.
+- No provider for that name means pass-through with a warning (event `4019`). A missing plugin must
+  not turn a publish into an outage.
+- On publish the filter generates a data key, encrypts the content, and puts the provider-wrapped
+  key in `additionMap["encryptedDataKey"]` (`""` when nothing was encrypted). Both the content type
+  and the key are fields the server reads out of the addition map, not top-level wire fields.
+- On read the filter decrypts the stored content with the stored key and leaves
+  `EncryptedDataKey` as the stored (wrapped) key. Java replaces it with the plaintext key
+  internally; exposing that here would leak the key through `NacosConfigResult.EncryptedDataKey`.
+
+Where the chain runs:
+
+- **Publish** runs it before the request is sent. The snapshot keeps the filtered (for an encrypted
+  configuration, ciphertext) content and the wrapped key, because that is the pair the server
+  stored.
+- **Read** runs it after the raw MD5 is verified and after the raw pair is written to the snapshot.
+  This includes a read served from a local snapshot. The returned `Md5` stays the hash of the stored
+  value, so change detection is unaffected.
+- **Listener push** runs it after the raw MD5 comparison and the snapshot update. A filter that
+  throws is logged (event `4020`) and the delivery is skipped; the subscription survives. On an
+  explicit read or publish the exception reaches the caller.
+
+`NacosConfigResult.EncryptedDataKey` is the stored key, `null` for a configuration that never had
+one. The snapshot metadata is versioned (`v2`) and base64-encodes both the content type and the key;
+a file written before this version still loads, with no key.
+
+Encryption is enabled through `NacosConfigOptions.EncryptionProviders`, because .NET has no
+equivalent of the Java service loader for arbitrary assemblies. `AddConfigFilter` remains the entry
+point for every other transformation, and for assembling the chain explicitly.
 
 ## P1-5: service list paging
 

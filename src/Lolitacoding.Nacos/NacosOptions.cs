@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Internal;
 
 namespace Lolitacoding.Nacos;
@@ -373,6 +374,25 @@ public sealed class NacosConfigOptions
     public TimeSpan FuzzyWatchResyncInterval { get; set; } = TimeSpan.FromMinutes(3);
 
     /// <summary>
+    /// Gets the encryption providers used for data ids that start with <c>cipher-</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When this list is not empty the client adds a <see cref="NacosConfigEncryptionFilter"/> to
+    /// its filter chain automatically, so an application only has to supply the algorithm
+    /// implementation. The filter selects a provider by the algorithm named in the data id, for
+    /// example <c>cipher-AES-application.json</c> selects the provider whose
+    /// <see cref="INacosConfigEncryptionProvider.AlgorithmName"/> is <c>AES</c>.
+    /// </para>
+    /// <para>
+    /// The official Java client discovers the same implementations through a service loader and
+    /// enables encryption without any configuration. There is no equivalent for arbitrary .NET
+    /// assemblies, so the list is explicit; the first provider with a matching name wins.
+    /// </para>
+    /// </remarks>
+    public IList<INacosConfigEncryptionProvider> EncryptionProviders { get; } = [];
+
+    /// <summary>
     /// Validates the configuration options.
     /// </summary>
     /// <exception cref="NacosConfigurationException">A value is invalid.</exception>
@@ -394,6 +414,21 @@ public sealed class NacosConfigOptions
         {
             throw new NacosConfigurationException(
                 "NacosConfigOptions.FuzzyWatchResyncInterval must be greater than zero.");
+        }
+
+        foreach (INacosConfigEncryptionProvider? provider in EncryptionProviders)
+        {
+            if (provider is null)
+            {
+                throw new NacosConfigurationException(
+                    "NacosConfigOptions.EncryptionProviders contains a null entry.");
+            }
+
+            if (string.IsNullOrWhiteSpace(provider.AlgorithmName))
+            {
+                throw new NacosConfigurationException(
+                    "Every entry of NacosConfigOptions.EncryptionProviders must have a non-empty AlgorithmName.");
+            }
         }
     }
 }

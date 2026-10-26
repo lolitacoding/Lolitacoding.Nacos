@@ -143,6 +143,15 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
 
 - **Publish** is a `ConfigPublishRequest`. The content type is not a field of its own: the server
   reads it from the free-form `additionMap` under the key `"type"`.
+- **Encrypted content carries its key beside it, not inside it.** On publish the wrapped data key is
+  `additionMap["encryptedDataKey"]`, an empty string when the value is not encrypted, because the
+  server reads it with `getAdditionParam("encryptedDataKey")`. On read the key is the top-level
+  `ConfigQueryResponse.encryptedDataKey`. Encryption and decryption are client-side: the server
+  stores and returns whatever bytes it was given, so a client without the matching provider sees
+  ciphertext and the wrapped key. See `java-parity.md` P1-4.
+- **The filter chain** runs on publish (request), on reads including a snapshot or failover read
+  (response), and on listener pushes after the raw hash comparison. The MD5 the client compares is
+  always the hash of the stored value, never of the filtered value, or every push would look new.
 - **MD5 verification** compares the content hash against the value the server reports. A mismatch is
   an error, not a warning, because applying corrupted content would silently misconfigure the
   application. Controlled by `NacosConfigOptions.VerifyMd5`.

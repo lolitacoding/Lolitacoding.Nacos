@@ -67,6 +67,18 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     /// <summary>The timer that periodically re-sends every watch, or <see langword="null"/>.</summary>
     private ITimer? _fuzzyWatchResyncTimer;
 
+    /// <summary>
+    /// The filter chain in execution order.
+    /// </summary>
+    /// <remarks>
+    /// Replaced as a whole under <see cref="_filterSync"/> rather than mutated in place, so a
+    /// publish or read that is already running keeps a stable view while a filter is being added.
+    /// </remarks>
+    private volatile INacosConfigFilter[] _filters = [];
+
+    /// <summary>Serialises additions to the filter chain.</summary>
+    private readonly object _filterSync = new();
+
     private bool _disposed;
 
     /// <summary>
@@ -97,9 +109,63 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         _logger = logger;
         _snapshots = snapshots;
 
+        // The official client registers its encryption filter through a service loader. .NET has
+        // no equivalent for arbitrary assemblies, so configuring providers is what seeds the
+        // chain; AddConfigFilter remains available for everything else.
+        if (options.Config.EncryptionProviders.Count > 0)
+        {
+            _filters =
+            [
+                new NacosConfigEncryptionFilter(
+                    [.. options.Config.EncryptionProviders], logger),
+            ];
+        }
+
         // The server forgets every listener when the connection drops, so they are re-registered
         // here. Without this, a reconnect would silently stop delivering changes.
         _connection.Reconnected += OnReconnectedAsync;
+    }
+
+    /// <inheritdoc />
+    public void AddConfigFilter(INacosConfigFilter filter)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (string.IsNullOrWhiteSpace(filter.Name))
+        {
+            throw new ArgumentException(
+                "A configuration filter must expose a non-empty Name.", nameof(filter));
+        }
+
+        lock (_filterSync)
+        {
+            INacosConfigFilter[] current = _filters;
+
+            foreach (INacosConfigFilter existing in current)
+            {
+                if (string.Equals(existing.Name, filter.Name, StringComparison.Ordinal))
+                {
+                    NacosConfigLog.ConfigFilterDuplicateIgnored(_logger, filter.Name);
+                    return;
+                }
+            }
+
+            // The new filter goes before the first one with a strictly greater order, so filters
+            // with equal orders keep their insertion order — the same rule the Java chain applies.
+            int index = 0;
+            while (index < current.Length && current[index].Order <= filter.Order)
+            {
+                index++;
+            }
+
+            var ordered = new INacosConfigFilter[current.Length + 1];
+            Array.Copy(current, ordered, index);
+            ordered[index] = filter;
+            Array.Copy(current, index, ordered, index + 1, current.Length - index);
+
+            _filters = ordered;
+        }
     }
 
     /// <inheritdoc />
@@ -112,13 +178,13 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
 
         NacosConfigKey resolved = key.WithDefaultNamespace(_options.Namespace);
 
+        NacosConfigResult result;
+
         try
         {
-            NacosConfigResult result = await QueryAsync(resolved, localMd5: null, ct).ConfigureAwait(false);
+            result = await QueryAsync(resolved, localMd5: null, ct).ConfigureAwait(false);
 
             await UpdateSnapshotAsync(resolved, result, ct).ConfigureAwait(false);
-
-            return result;
         }
         catch (NacosException ex) when (ex is NacosConnectionException or NacosTimeoutException)
         {
@@ -126,14 +192,18 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             // that survives the outage and one that cannot start, so it is used here.
             NacosConfigResult? cached = await ReadSnapshotAsync(resolved, ct).ConfigureAwait(false);
 
-            if (cached is not null)
+            if (cached is null)
             {
-                NacosConfigLog.ServedFromSnapshot(_logger, resolved.ToString(), ex.Message);
-                return cached;
+                throw;
             }
 
-            throw;
+            NacosConfigLog.ServedFromSnapshot(_logger, resolved.ToString(), ex.Message);
+            result = cached;
         }
+
+        // Filtering happens after the snapshot is written: the snapshot must keep the value as the
+        // server stores it, key included, so a later failover can run the same filters over it.
+        return await FilterReadAsync(result, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -151,34 +221,60 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         NacosConfigKey resolved = key.WithDefaultNamespace(_options.Namespace);
         string resolvedContentType = contentType ?? _options.Config.DefaultContentType;
 
+        var context = new NacosConfigFilterContext(
+            resolved,
+            NacosConfigFilterStage.Publish,
+            content,
+            resolvedContentType);
+
+        await ApplyFiltersAsync(context, ct).ConfigureAwait(false);
+
+        if (context.Content is null)
+        {
+            // A filter that removes the content would otherwise publish an empty document, which
+            // is virtually never what the caller meant.
+            NacosConfigLog.FilterRemovedPublishedContent(_logger, resolved.ToString());
+
+            throw new InvalidOperationException(string.Concat(
+                "A configuration filter removed the content of '", resolved.ToString(),
+                "' while publishing; a filter must not publish an empty value."));
+        }
+
+        string publishedContent = context.Content;
+        string publishedContentType = context.ContentType ?? resolvedContentType;
+
         var request = new ConfigPublishRequest
         {
             DataId = resolved.DataId,
             Group = resolved.Group,
             Tenant = resolved.Namespace,
-            Content = content,
+            Content = publishedContent,
             CasMd5 = casMd5,
-            // The content type is not a field of its own on the wire: the server reads it out of
-            // the free-form addition map under the key "type".
+            // The content type and the encrypted data key are not fields of their own on the wire:
+            // the server reads them out of the free-form addition map.
             AdditionMap = new Dictionary<string, string>(StringComparer.Ordinal)
             {
-                ["type"] = resolvedContentType,
+                ["type"] = publishedContentType,
+                ["encryptedDataKey"] = context.EncryptedDataKey ?? string.Empty,
             },
         };
 
         await _connection.RequestAsync<ConfigPublishResponse>(request, ct).ConfigureAwait(false);
 
         // The published value is the newest known one, so the snapshot is updated immediately
-        // rather than waiting for the next read.
+        // rather than waiting for the next read. It keeps the filtered (for an encrypted
+        // configuration, ciphertext) content and the key, because that is the pair the server
+        // stored and therefore the pair a later failover has to filter again.
         await UpdateSnapshotAsync(
             resolved,
             new NacosConfigResult(
                 resolved,
-                content,
-                NacosMd5.Compute(content),
-                resolvedContentType,
+                publishedContent,
+                NacosMd5.Compute(publishedContent),
+                publishedContentType,
                 _timeProvider.GetUtcNow(),
-                fromLocalCache: false),
+                fromLocalCache: false,
+                context.EncryptedDataKey),
             ct).ConfigureAwait(false);
     }
 
@@ -398,7 +494,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         {
             return new NacosConfigResult(
                 key, content: null, md5: response.Md5, contentType: response.ContentType,
-                ToTimestamp(response.LastModified), fromLocalCache: false);
+                ToTimestamp(response.LastModified), fromLocalCache: false,
+                encryptedDataKey: response.EncryptedDataKey);
         }
 
         VerifyMd5(key, response.Content, response.Md5);
@@ -409,7 +506,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             response.Md5 ?? NacosMd5.Compute(response.Content),
             response.ContentType,
             ToTimestamp(response.LastModified),
-            fromLocalCache: false);
+            fromLocalCache: false,
+            encryptedDataKey: response.EncryptedDataKey);
     }
 
     /// <summary>
@@ -445,6 +543,75 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
                     "The content of configuration '", key.ToString(),
                     "' failed MD5 verification, so it was rejected rather than applied."));
         }
+    }
+
+    /// <summary>
+    /// Runs the filter chain over a value.
+    /// </summary>
+    /// <param name="context">The mutable value.</param>
+    /// <param name="ct">A token that cancels the operation.</param>
+    /// <returns>A task that completes once every filter ran.</returns>
+    private async ValueTask ApplyFiltersAsync(
+        NacosConfigFilterContext context,
+        CancellationToken ct)
+    {
+        foreach (INacosConfigFilter filter in _filters)
+        {
+            await filter.InvokeAsync(context, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Runs the read side of the filter chain over a raw value.
+    /// </summary>
+    /// <param name="raw">The value as the server or the snapshot stored it.</param>
+    /// <param name="ct">A token that cancels the operation.</param>
+    /// <returns>The value a caller should see.</returns>
+    /// <remarks>
+    /// The hash stays the one of the stored value: it is what the client compares to decide whether
+    /// a notification is new, and a filter that changed the content would otherwise make every
+    /// notification look like a change. A missing value is not filtered, because there is nothing
+    /// to transform and a filter is not the place to invent content for a configuration that does
+    /// not exist.
+    /// </remarks>
+    private async ValueTask<NacosConfigResult> FilterReadAsync(
+        NacosConfigResult raw,
+        CancellationToken ct)
+    {
+        INacosConfigFilter[] filters = _filters;
+
+        if (filters.Length == 0 || raw.Content is null)
+        {
+            return raw;
+        }
+
+        var context = new NacosConfigFilterContext(
+            raw.Key,
+            NacosConfigFilterStage.Read,
+            raw.Content,
+            raw.ContentType,
+            raw.EncryptedDataKey,
+            raw.Md5,
+            raw.FromLocalCache);
+
+        await ApplyFiltersAsync(context, ct).ConfigureAwait(false);
+
+        if (ReferenceEquals(context.Content, raw.Content)
+            && string.Equals(context.ContentType, raw.ContentType, StringComparison.Ordinal)
+            && string.Equals(context.EncryptedDataKey, raw.EncryptedDataKey, StringComparison.Ordinal))
+        {
+            // A filter that only observes the value should not force a copy on every read.
+            return raw;
+        }
+
+        return new NacosConfigResult(
+            raw.Key,
+            context.Content,
+            raw.Md5,
+            context.ContentType,
+            raw.LastModified,
+            raw.FromLocalCache,
+            context.EncryptedDataKey);
     }
 
     /// <summary>
@@ -603,9 +770,24 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
 
         NacosConfigLog.ConfigChanged(_logger, key.ToString(), previous, result.Md5);
 
+        NacosConfigResult delivered;
+
+        try
+        {
+            delivered = await FilterReadAsync(result, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // The change itself is already recorded, so a filter that fails here must not take down
+            // the shared read loop or be retried forever. The consumer keeps the value it had and
+            // the next genuine change runs the chain again.
+            NacosConfigLog.ConfigFilterFailedOnPush(_logger, key.ToString(), ex.Message);
+            return;
+        }
+
         await InvokeSafelyAsync(
             registration,
-            new NacosConfigChange(key, result) { PreviousMd5 = previous },
+            new NacosConfigChange(key, delivered) { PreviousMd5 = previous },
             ct).ConfigureAwait(false);
     }
 
@@ -1409,7 +1591,9 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
 
         try
         {
-            await _snapshots.SaveAsync(key, result.Content, result.ContentType, ct).ConfigureAwait(false);
+            await _snapshots.SaveAsync(
+                key, result.Content, result.ContentType, result.EncryptedDataKey, ct)
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -1426,7 +1610,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
 
         try
         {
-            (string Content, string? ContentType)? snapshot =
+            (string Content, string? ContentType, string? EncryptedDataKey)? snapshot =
                 await _snapshots.LoadAsync(key, ct).ConfigureAwait(false);
 
             if (snapshot is null)
@@ -1440,7 +1624,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
                 NacosMd5.Compute(snapshot.Value.Content),
                 snapshot.Value.ContentType,
                 DateTimeOffset.MinValue,
-                fromLocalCache: true);
+                fromLocalCache: true,
+                snapshot.Value.EncryptedDataKey);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

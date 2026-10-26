@@ -58,6 +58,35 @@ public interface INacosConfigClient : IAsyncDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Adds a filter that transforms configuration content on the way in and out.
+    /// </summary>
+    /// <param name="filter">The filter to add.</param>
+    /// <remarks>
+    /// <para>
+    /// Filters run in <see cref="INacosConfigFilter.Order"/> order, lowest first, on every publish
+    /// and on every read that yields content — including a read served from a local snapshot. This
+    /// is the counterpart of the official Java client's
+    /// <c>ConfigService.addConfigFilter(IConfigFilter)</c>.
+    /// </para>
+    /// <para>
+    /// A filter with a <see cref="INacosConfigFilter.Name"/> that is already registered is ignored,
+    /// so the first registration wins. The chain is replaced atomically, so adding a filter while
+    /// reads or publishes are in flight is safe.
+    /// </para>
+    /// <para>
+    /// Encryption is normally enabled through <see cref="NacosConfigOptions.EncryptionProviders"/>,
+    /// which seeds this chain with the built-in <see cref="NacosConfigEncryptionFilter"/>. Use this
+    /// method for other transformations, or when the filter chain has to be assembled explicitly.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="filter"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="filter"/> has an empty <see cref="INacosConfigFilter.Name"/>.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The client has been disposed.</exception>
+    void AddConfigFilter(INacosConfigFilter filter);
+
+    /// <summary>
     /// Removes a configuration.
     /// </summary>
     /// <param name="key">The configuration to remove.</param>

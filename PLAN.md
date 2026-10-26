@@ -480,4 +480,20 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增 23 个：`Naming/NacosInstanceSelectorTests.cs` 15 个（工厂语义与 Java 边界：空集合保留全部、整串地址匹配、空 map 保留全部、按序号比较、复制入参、构造期拒绝非法正则、`From` 传入 service 与集群过滤、返回 null 视为错误、null 上下文拒绝）；`Naming/NacosNamingClientTests.cs` 8 个订阅用例（首个元素即收窄、以全集群订阅、被过滤实例的推送不唤醒、选中视图变化才投递、实例进入选中集、只影响自己的消费者、selector 抛异常后保留上次视图且不卡死、`WithCancellation` 能结束枚举）。
 - 验收：Release 构建零警告零错误；单元测试 **727 个全绿**（新增 23 个）；集成测试新增 `NamingIntegrationTests.Subscribe_WithSelector_FiltersTheInstancesARealServerReports`（真实容器 `v3.0.2`，三个连接：服务端确有两条实例 → 只投递 gold → silver 改标签后进入选中集 → gold 注销后选中集只剩 silver），整套 **58 个全绿**。
 
+#### P1-4 · 配置过滤器链与加密数据密钥（✅ 已完成）
+
+- **缺口**：Java 每次发布与读取都经过 `IConfigFilter` 链（`ConfigFilterChainManager`），内置的 `ConfigEncryptionFilter` 负责发布时加密、读取时解密，并把数据密钥存到本地快照旁。3.x 的 `ConfigQueryResponse` 已带 `encryptedDataKey`，但本客户端此前丢弃它，导致加密配置读回来只有密文、没有密钥。
+- **公共面**：`INacosConfigFilter`（`Name` / `Order` / `InvokeAsync`）、`NacosConfigFilterContext`（`Key` / `Stage` / 可变的 `Content`、`ContentType`、`EncryptedDataKey` / 只读的 `Md5`、`FromLocalCache`）、`NacosConfigFilterStage{Publish, Read}`、`INacosConfigClient.AddConfigFilter`、`INacosConfigEncryptionProvider`（对应 Java `EncryptionPluginService` 的 `GenerateSecretKey` / `Encrypt` / `Decrypt` / `EncryptSecretKey` / `DecryptSecretKey` / `AlgorithmName`），以及内置的 `NacosConfigEncryptionFilter`。`NacosConfigResult.EncryptedDataKey` 暴露服务端存储的（已包装）密钥。
+- **链的语义**：按 `Order` 升序执行，同序保持插入顺序；每个过滤器看到前一个的修改。没有 Java 的 `next` 委托——要中止就抛异常。同名过滤器只保留第一次注册（与 Java 的 `ConfigFilterChainManager.addFilter` 一致）。`AddConfigFilter` 以整体替换数组的方式实现，读/发布在途时添加过滤器不会看到半成品链。
+- **加密规则（逐条复刻 Java）**：dataId 以 `cipher-` 开头且不恰好等于 `cipher-` 才启用；算法取第一个与第二个 `-` 之间的段（`cipher-AES-app.json` → `AES`），按序数比较（大小写敏感）；找不到对应 provider 时原样放行并记警告（事件 4019），与 Java 一样不让缺插件变成发布失败。
+- **发布**：过滤器先跑，请求发送 `context.Content`、`additionMap["type"]` 与 `additionMap["encryptedDataKey"]`（未加密时为 `""`）。密钥不是顶层字段：服务端用 `getAdditionParam("encryptedDataKey")` 读取，与 `type` 同一张自由映射表。过滤器把内容置空时抛 `InvalidOperationException`（事件 4022），避免把配置误清空。快照保存过滤后的（密文）内容与包装密钥，因为那才是服务端存储的一对。
+- **读取**：先校验原始 MD5，再把原始内容与密钥写入快照，最后跑过滤器；返回的 `Md5` 始终是存储值的哈希，变更检测不受影响。本地快照回退同样跑链，否则断链时会把密文交给调用方。内容为空时不跑过滤器。
+- **推送**：先比较原始 MD5 并更新快照，再跑链投递；过滤器抛异常时记日志（事件 4020）并跳过本次投递，订阅保留。显式读取/发布上的过滤器异常则直接抛给调用方。
+- **与 Java 的刻意差异**：Java 在读取后把 `encryptedDataKey` 换成**明文**密钥；本客户端保留服务端存储的包装密钥，否则新公开的 `NacosConfigResult.EncryptedDataKey` 会泄露密钥。
+- **快照格式**：元数据加版本标记 `v2`，内容类型与密钥各自 base64 编码；旧文件（无 `v2` 标记）仍按原格式读取、密钥为 null；元数据损坏视为无快照。
+- **配置入口**：.NET 没有 Java `ServiceLoader` 的等价物，因此由 `NacosConfigOptions.EncryptionProviders`（`IList<INacosConfigEncryptionProvider>`，默认空）显式登记；非空时客户端自动加入 `NacosConfigEncryptionFilter`（Order 0）。`AddConfigFilter` 仍是自定义变换与显式装配链的入口。
+- **日志** 4019–4022（缺 provider / 推送过滤器失败 / 同名过滤器忽略 / 过滤器清空发布内容）；`docs/java-parity.md` 的 P1-4 标记完成并记录链与加密语义，`docs/protocol-notes.md` 写明密钥的线上位置与链的运行时机，`docs/configuration.md` 增加 `EncryptionProviders`，`docs/faq.md` 新增「How do I encrypt configuration values?」，`README.md` 补一段说明。
+- 单元测试新增 39 个：`Config/NacosConfigFilterTests.cs` 19 个（加密/解密、非 cipher、恰好 `cipher-`、未知算法、大小写、算法分段四种形态、首个匹配 provider、空内容、取消、构造校验、`Name`/`Order`、选项校验）；`Config/NacosConfigClientTests.cs` 16 个（顺序、同名忽略、发布密文与密钥、未加密空密钥、清空内容抛错、发布快照存密文对、读取过滤但保留原始 MD5、cipher 读取解密、缺失内容不跑链、读取异常上抛、快照回退解密、推送解密、推送失败隔离且订阅存活、`AddConfigFilter` 三个参数/生命周期用例）；`Internal/NacosConfigSnapshotStoreTests.cs` 新增 4 个（密钥往返、含分隔符的密钥、旧格式兼容、损坏元数据）。
+- 验收：Release 构建零警告零错误；单元测试 **766 个全绿**（新增 39 个）；集成测试新增 `ConfigIntegrationTests.Encryption_RoundTripsThroughARealServer`（真实容器 `v3.0.2`：加密客户端发布 → 无 provider 的客户端读到密文与包装密钥 → 加密客户端读到明文 → 监听推送同样收到明文），整套 **59 个全绿**。
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

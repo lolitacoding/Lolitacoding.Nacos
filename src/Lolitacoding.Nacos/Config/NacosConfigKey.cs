@@ -82,13 +82,17 @@ public sealed record NacosConfigResult
     /// <param name="contentType">The content type, for example <c>text</c> or <c>json</c>.</param>
     /// <param name="lastModified">The last modification time.</param>
     /// <param name="fromLocalCache">Whether the value came from a local snapshot.</param>
+    /// <param name="encryptedDataKey">
+    /// The encrypted data key that travels with the content, or <see langword="null"/>.
+    /// </param>
     internal NacosConfigResult(
         NacosConfigKey key,
         string? content,
         string? md5,
         string? contentType,
         DateTimeOffset lastModified,
-        bool fromLocalCache)
+        bool fromLocalCache,
+        string? encryptedDataKey = null)
     {
         Key = key;
         Content = content;
@@ -96,6 +100,7 @@ public sealed record NacosConfigResult
         ContentType = contentType;
         LastModified = lastModified;
         FromLocalCache = fromLocalCache;
+        EncryptedDataKey = encryptedDataKey;
     }
 
     /// <summary>Gets the configuration that was read.</summary>
@@ -111,6 +116,17 @@ public sealed record NacosConfigResult
 
     /// <summary>Gets the content type, for example <c>text</c> or <c>json</c>.</summary>
     public string? ContentType { get; }
+
+    /// <summary>
+    /// Gets the encrypted data key that travels with the content, or <see langword="null"/>.
+    /// </summary>
+    /// <remarks>
+    /// The key is the one the server stored, in its encrypted form. It is carried here so a caller
+    /// that stores the value elsewhere can keep the content and the key together; the client itself
+    /// keeps both in its snapshot. For a configuration that is not encrypted this is
+    /// <see langword="null"/> (or the empty string the server reports).
+    /// </remarks>
+    public string? EncryptedDataKey { get; }
 
     /// <summary>Gets the time the configuration was last modified.</summary>
     public DateTimeOffset LastModified { get; }

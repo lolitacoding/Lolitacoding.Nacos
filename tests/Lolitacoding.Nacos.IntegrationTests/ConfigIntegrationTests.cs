@@ -279,23 +279,95 @@ public sealed class ConfigIntegrationTests
         changes.Current.Content.ShouldBe(during);
     }
 
+    [Fact]
+    public async Task Encryption_RoundTripsThroughARealServer()
+    {
+        // The server stores whatever it is given: encryption and decryption are client-side, and
+        // the wrapped key travels beside the content. A client without the provider therefore sees
+        // ciphertext while the client that published it reads plaintext, including on a push.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory plainClient = CreateClient(container);
+        await using NacosClientFactory encryptedClient = CreateClient(
+            container,
+            options => options.Config.EncryptionProviders.Add(new ReversibleEncryptionProvider()));
+
+        await plainClient.ConnectAsync(TestContext.Current.CancellationToken);
+        await encryptedClient.ConnectAsync(TestContext.Current.CancellationToken);
+
+        string dataId = NacosHttp.UniqueId("cipher-AES-config-it");
+        var key = new NacosConfigKey(dataId, "DEFAULT_GROUP");
+        string secret = NacosHttp.ConfigContent("secret-value");
+
+        await encryptedClient.Config.PublishConfigAsync(
+            key, secret, "text", ct: TestContext.Current.CancellationToken);
+
+        // What the server holds: the ciphertext and the wrapped key, no plaintext.
+        NacosConfigResult stored = await NacosEventually.BecomesAsync(
+            () => plainClient.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+            result => result.Exists,
+            TestContext.Current.CancellationToken);
+
+        stored.Content.ShouldBe(ReversibleEncryptionProvider.Cipher(secret));
+        stored.EncryptedDataKey.ShouldBe(ReversibleEncryptionProvider.WrappedKey);
+
+        // The publishing client reads it back as plaintext.
+        NacosConfigResult read = await NacosEventually.BecomesAsync(
+            () => encryptedClient.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+            result => result.Content == secret,
+            TestContext.Current.CancellationToken);
+
+        read.Content.ShouldBe(secret);
+        read.EncryptedDataKey.ShouldBe(ReversibleEncryptionProvider.WrappedKey);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cts.CancelAfter(TimeSpan.FromMinutes(1));
+
+        await using IAsyncEnumerator<NacosConfigChange> changes =
+            encryptedClient.Config.ListenAsync(key, cts.Token).GetAsyncEnumerator(cts.Token);
+
+        (await changes.MoveNextAsync()).ShouldBeTrue();
+        changes.Current.Content.ShouldBe(secret);
+
+        // The push path runs the chain too, so a listener never sees ciphertext.
+        string updated = NacosHttp.ConfigContent("updated-secret");
+
+        await NacosEventually.PushedAsync(
+            ct => encryptedClient.Config.PublishConfigAsync(key, updated, "text", ct: ct),
+            changes,
+            change => change.Content == updated,
+            cts.Token);
+
+        changes.Current.Content.ShouldBe(updated);
+    }
+
     private static NacosClientFactory CreateClient(NacosContainer container) =>
-        NacosClientFactory.Create(
-            new NacosOptions
+        CreateClient(container, configure: null);
+
+    private static NacosClientFactory CreateClient(
+        NacosContainer container,
+        Action<NacosOptions>? configure)
+    {
+        var options = new NacosOptions
+        {
+            ServerAddresses = [container.HttpAddress],
+            ConnectionTimeout = TimeSpan.FromSeconds(15),
+            Reconnect = new NacosReconnectOptions
             {
-                ServerAddresses = [container.HttpAddress],
-                ConnectionTimeout = TimeSpan.FromSeconds(15),
-                Reconnect = new NacosReconnectOptions
-                {
-                    InitialDelay = TimeSpan.FromMilliseconds(500),
-                    MaxDelay = TimeSpan.FromSeconds(5),
-                    JitterFactor = 0.1,
-                },
+                InitialDelay = TimeSpan.FromMilliseconds(500),
+                MaxDelay = TimeSpan.FromSeconds(5),
+                JitterFactor = 0.1,
             },
+        };
+
+        configure?.Invoke(options);
+
+        return NacosClientFactory.Create(
+            options,
             httpClient: null,
             channelFactory: null,
             timeProvider: TimeProvider.System,
             loggerFactory: NullLoggerFactory.Instance);
+    }
 
     /// <summary>
     /// Builds a client whose recovery first tries again long after the server is back, and whose
@@ -329,4 +401,44 @@ public sealed class ConfigIntegrationTests
             channelFactory: null,
             timeProvider: TimeProvider.System,
             loggerFactory: NullLoggerFactory.Instance);
+
+    /// <summary>
+    /// A reversible stand-in for a real encryption plugin.
+    /// </summary>
+    /// <remarks>
+    /// The transform is readable rather than cryptographic: the test is about where the filter runs
+    /// and what travels over the wire, not about the strength of a cipher.
+    /// </remarks>
+    private sealed class ReversibleEncryptionProvider : INacosConfigEncryptionProvider
+    {
+        private const string CipherPrefix = "cipher(";
+        private const string WrappedPrefix = "wrapped(";
+
+        /// <summary>Gets the wrapped form of the fixed data key.</summary>
+        public static string WrappedKey => string.Concat(WrappedPrefix, "secret", ")");
+
+        /// <summary>Returns the ciphertext for a plaintext value.</summary>
+        /// <param name="plaintext">The value to encrypt.</param>
+        /// <returns>The ciphertext.</returns>
+        public static string Cipher(string plaintext) =>
+            string.Concat(CipherPrefix, plaintext, ")");
+
+        public string AlgorithmName => "AES";
+
+        public string GenerateSecretKey() => "secret";
+
+        public string Encrypt(string secretKey, string content) => Cipher(content);
+
+        public string Decrypt(string secretKey, string content) => Unwrap(content, CipherPrefix);
+
+        public string EncryptSecretKey(string secretKey) => WrappedKey;
+
+        public string DecryptSecretKey(string encryptedSecretKey) =>
+            Unwrap(encryptedSecretKey, WrappedPrefix);
+
+        private static string Unwrap(string value, string prefix) =>
+            value.StartsWith(prefix, StringComparison.Ordinal) && value.EndsWith(')')
+                ? value[prefix.Length..^1]
+                : value;
+    }
 }

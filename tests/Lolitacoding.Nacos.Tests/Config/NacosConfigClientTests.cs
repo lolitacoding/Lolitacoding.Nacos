@@ -21,6 +21,9 @@ public sealed class NacosConfigClientTests
 
     private static readonly NacosConfigKey Key = new(DataId, Group, "public");
 
+    private static readonly NacosConfigKey CipherKey =
+        new("cipher-AES-application.json", Group, "public");
+
     [Fact]
     public async Task GetConfig_ReturnsTheContentAndHash()
     {
@@ -177,6 +180,11 @@ public sealed class NacosConfigClientTests
 
         await harness.DropAndReconnectAsync(TestContext.Current.CancellationToken);
 
+        // The reconnect is only finished once the replay has been sent; the handshake alone is not
+        // the request this test is about.
+        await harness.WaitForRequestAsync(
+            "ConfigBatchListenRequest", TestContext.Current.CancellationToken);
+
         using JsonDocument body = harness.LastRequestBody();
         JsonElement root = body.RootElement;
 
@@ -330,8 +338,381 @@ public sealed class NacosConfigClientTests
     }
 
     [Fact]
-    public async Task RemoveConfig_SendsTheCoordinates()
+    public async Task PublishConfig_RunsFiltersInOrder()
     {
+        // Filters see the previous filter's mutations, and a lower order runs first regardless of
+        // the order the filters were added in.
+        var observed = new List<string>();
+        using Harness harness = CreateHarness(_ => PayloadCodec.Encode(new ConfigPublishResponse()));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("second", 2, (context, _) =>
+        {
+            lock (observed)
+            {
+                observed.Add("second");
+            }
+
+            context.Content += "-2";
+            return ValueTask.CompletedTask;
+        }));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("zeroth", 0, (context, _) =>
+        {
+            lock (observed)
+            {
+                observed.Add("zeroth");
+            }
+
+            context.Content += "-0";
+            return ValueTask.CompletedTask;
+        }));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("first", 1, (context, _) =>
+        {
+            lock (observed)
+            {
+                observed.Add("first");
+            }
+
+            context.Content += "-1";
+            return ValueTask.CompletedTask;
+        }));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+        await harness.Client.PublishConfigAsync(
+            Key, "content", ct: TestContext.Current.CancellationToken);
+
+        observed.ShouldBe(["zeroth", "first", "second"]);
+
+        using JsonDocument body = harness.LastRequestBody();
+        body.RootElement.GetProperty("content").GetString().ShouldBe("content-0-1-2");
+    }
+
+    [Fact]
+    public async Task PublishConfig_IgnoresASecondFilterWithTheSameName()
+    {
+        // The Java chain keeps the first registration for a name; a second one would otherwise
+        // transform the value twice.
+        using Harness harness = CreateHarness(_ => PayloadCodec.Encode(new ConfigPublishResponse()));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("duplicate", 0, (context, _) =>
+        {
+            context.Content += "-first";
+            return ValueTask.CompletedTask;
+        }));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("duplicate", 1, (context, _) =>
+        {
+            context.Content += "-second";
+            return ValueTask.CompletedTask;
+        }));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+        await harness.Client.PublishConfigAsync(
+            Key, "content", ct: TestContext.Current.CancellationToken);
+
+        using JsonDocument body = harness.LastRequestBody();
+        body.RootElement.GetProperty("content").GetString().ShouldBe("content-first");
+    }
+
+    [Fact]
+    public async Task PublishConfig_SendsTheEncryptedPairForACipherDataId()
+    {
+        // The server stores the ciphertext and the wrapped key; neither is a top-level field, so
+        // both have to travel in the addition map.
+        var provider = new FakeEncryptionProvider();
+        using Harness harness = CreateHarness(
+            _ => PayloadCodec.Encode(new ConfigPublishResponse()),
+            configureConfig: config => config.EncryptionProviders.Add(provider));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+        await harness.Client.PublishConfigAsync(
+            CipherKey, "plain", "text", ct: TestContext.Current.CancellationToken);
+
+        using JsonDocument body = harness.LastRequestBody();
+        JsonElement root = body.RootElement;
+
+        root.GetProperty("content").GetString().ShouldBe("cipher(plain)");
+        root.GetProperty("additionMap").GetProperty("encryptedDataKey").GetString()
+            .ShouldBe("wrapped(secret)");
+    }
+
+    [Fact]
+    public async Task PublishConfig_SendsAnEmptyEncryptedDataKeyWhenNothingEncrypts()
+    {
+        // The Java client always writes the key, using "" for "not encrypted". The server reads
+        // the field unconditionally, so omitting it is not equivalent.
+        using Harness harness = CreateHarness(_ => PayloadCodec.Encode(new ConfigPublishResponse()));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+        await harness.Client.PublishConfigAsync(
+            Key, "content", ct: TestContext.Current.CancellationToken);
+
+        using JsonDocument body = harness.LastRequestBody();
+        body.RootElement.GetProperty("additionMap").GetProperty("encryptedDataKey").GetString()
+            .ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task PublishConfig_ThrowsWhenAFilterRemovesTheContent()
+    {
+        // Publishing an empty document because a filter returned null would silently wipe the
+        // configuration, so it is an error instead.
+        using Harness harness = CreateHarness(
+            _ => throw new NacosServerException("the publish must not reach the server"));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("removing", 0, (context, _) =>
+        {
+            context.Content = null;
+            return ValueTask.CompletedTask;
+        }));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => harness.Client.PublishConfigAsync(
+                Key, "content", ct: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task PublishConfig_StoresTheEncryptedPairInTheSnapshot()
+    {
+        // The snapshot has to keep what the server stored, key included, or a failover read would
+        // hand ciphertext to the caller.
+        var provider = new FakeEncryptionProvider();
+        using Harness harness = CreateHarness(
+            _ => PayloadCodec.Encode(new ConfigPublishResponse()),
+            snapshots: true,
+            configureConfig: config => config.EncryptionProviders.Add(provider));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+        await harness.Client.PublishConfigAsync(
+            CipherKey, "published", "text", ct: TestContext.Current.CancellationToken);
+
+        harness.Handler = _ => throw new NacosConnectionException("server is down");
+
+        NacosConfigResult result = await harness.GetAsync(CipherKey, TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("published");
+        result.FromLocalCache.ShouldBeTrue();
+        result.EncryptedDataKey.ShouldBe("wrapped(secret)");
+    }
+
+    [Fact]
+    public async Task GetConfig_ReturnsTheFilteredValueWithTheStoredHash()
+    {
+        // The hash describes what the server stored, not what the caller sees. Recomputing it
+        // after filtering would make every notification look like a change.
+        using Harness harness = CreateHarness(_ => QueryResponse("hello", "text"));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("upper", 0, (context, _) =>
+        {
+            context.Content = context.Content!.ToUpperInvariant();
+            return ValueTask.CompletedTask;
+        }));
+
+        NacosConfigResult result = await harness.GetAsync(Key, TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("HELLO");
+        result.Md5.ShouldBe(NacosMd5.Compute("hello"));
+    }
+
+    [Fact]
+    public async Task GetConfig_ReturnsDecryptedContentForACipherDataId()
+    {
+        var provider = new FakeEncryptionProvider();
+        using Harness harness = CreateHarness(
+            _ => EncryptedQueryResponse("plain"),
+            configureConfig: config => config.EncryptionProviders.Add(provider));
+
+        NacosConfigResult result = await harness.GetAsync(
+            CipherKey, TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("plain");
+        result.Md5.ShouldBe(NacosMd5.Compute("cipher(plain)"));
+
+        // The stored key is exposed as-is; the plaintext key never leaves the provider.
+        result.EncryptedDataKey.ShouldBe("wrapped(secret)");
+    }
+
+    [Fact]
+    public async Task GetConfig_DoesNotRunFiltersForAMissingConfiguration()
+    {
+        using Harness harness = CreateHarness(_ => PayloadCodec.Encode(new ConfigQueryResponse
+        {
+            ResultCode = ConfigQueryResponse.ConfigNotFound,
+            ErrorCode = ConfigQueryResponse.ConfigNotFound,
+            Message = "not found",
+        }));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("exploding", 0, (_, _) =>
+            throw new InvalidOperationException("a filter must not run without content")));
+
+        NacosConfigResult result = await harness.GetAsync(Key, TestContext.Current.CancellationToken);
+
+        result.Exists.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task GetConfig_PropagatesAFilterFailure()
+    {
+        // A read has a caller to report to, so a broken filter fails the read rather than handing
+        // back a value that was never transformed.
+        using Harness harness = CreateHarness(_ => QueryResponse("hello", "text"));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("exploding", 0, (_, _) =>
+            throw new InvalidOperationException("cannot decrypt")));
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => harness.GetAsync(Key, TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetConfig_ServesASnapshotThroughTheFilterChain()
+    {
+        // The snapshot keeps the stored value, so the same chain has to run on the failover path;
+        // otherwise an outage would expose ciphertext.
+        var provider = new FakeEncryptionProvider();
+        using Harness harness = CreateHarness(
+            _ => EncryptedQueryResponse("v1"),
+            snapshots: true,
+            configureConfig: config => config.EncryptionProviders.Add(provider));
+
+        (await harness.GetAsync(CipherKey, TestContext.Current.CancellationToken))
+            .Content.ShouldBe("v1");
+
+        harness.Handler = _ => throw new NacosConnectionException("server is down");
+
+        NacosConfigResult result = await harness.GetAsync(
+            CipherKey, TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("v1");
+        result.FromLocalCache.ShouldBeTrue();
+        result.EncryptedDataKey.ShouldBe("wrapped(secret)");
+    }
+
+    [Fact]
+    public async Task Listener_DeliversTheFilteredValueForAPushedChange()
+    {
+        var provider = new FakeEncryptionProvider();
+        using Harness harness = CreateHarness(
+            ListenThenEncryptedQuery("v1"),
+            configureConfig: config => config.EncryptionProviders.Add(provider));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var changes = new List<NacosConfigChange>();
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            CipherKey,
+            (change, _) =>
+            {
+                lock (changes)
+                {
+                    changes.Add(change);
+                }
+
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken);
+
+        changes.ShouldHaveSingleItem().Content.ShouldBe("v1");
+
+        harness.Handler = request => PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+            ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+            : EncryptedQueryResponse("v2");
+
+        await harness.PushChangeAsync(CipherKey);
+        await WaitForNotificationsAsync(changes, 2, TestContext.Current.CancellationToken);
+
+        changes[1].Content.ShouldBe("v2");
+    }
+
+    [Fact]
+    public async Task Listener_KeepsTheSubscriptionWhenAFilterFailsOnAPush()
+    {
+        // A pushed change has no caller to report to, so a failing filter must be logged and
+        // skipped. The subscription has to survive: the next change is still delivered.
+        var reachedFilter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using Harness harness = CreateHarness(ListenThenQuery("v1"));
+
+        harness.Client.AddConfigFilter(new DelegateFilter("failing", 0, (context, _) =>
+        {
+            if (context.Stage == NacosConfigFilterStage.Read && context.Content == "bad")
+            {
+                reachedFilter.TrySetResult();
+                throw new InvalidOperationException("cannot decrypt");
+            }
+
+            return ValueTask.CompletedTask;
+        }));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var changes = new List<NacosConfigChange>();
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            Key,
+            (change, _) =>
+            {
+                lock (changes)
+                {
+                    changes.Add(change);
+                }
+
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken);
+
+        harness.Handler = request => PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+            ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+            : QueryResponse("bad", "text");
+
+        await harness.PushChangeAsync(Key);
+        await reachedFilter.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+
+        harness.Handler = request => PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+            ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+            : QueryResponse("v2", "text");
+
+        await harness.PushChangeAsync(Key);
+        await WaitForNotificationsAsync(changes, 2, TestContext.Current.CancellationToken);
+
+        // The failed value was never delivered; the next genuine change was.
+        changes.Count.ShouldBe(2);
+        changes[1].Content.ShouldBe("v2");
+    }
+
+    [Fact]
+    public void AddConfigFilter_RejectsANullFilter()
+    {
+        using Harness harness = CreateHarness();
+
+        Should.Throw<ArgumentNullException>(() => harness.Client.AddConfigFilter(null!));
+    }
+
+    [Fact]
+    public void AddConfigFilter_RejectsAnEmptyName()
+    {
+        using Harness harness = CreateHarness();
+
+        Should.Throw<ArgumentException>(
+            () => harness.Client.AddConfigFilter(new DelegateFilter(" ", 0, (_, _) =>
+                ValueTask.CompletedTask)));
+    }
+
+    [Fact]
+    public async Task AddConfigFilter_ThrowsAfterDispose()
+    {
+        using Harness harness = CreateHarness();
+
+        await harness.Client.DisposeAsync();
+
+        Should.Throw<ObjectDisposedException>(
+            () => harness.Client.AddConfigFilter(new DelegateFilter("late", 0, (_, _) =>
+                ValueTask.CompletedTask)));
+    }
+
+    [Fact]
+    public async Task RemoveConfig_SendsTheCoordinates()    {
         using Harness harness = CreateHarness(request =>
         {
             PayloadMetadataAssertions.AssertType(request, "ConfigRemoveRequest");
@@ -397,6 +778,35 @@ public sealed class NacosConfigClientTests
             ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
             : QueryResponse(content, "text");
 
+    /// <summary>Builds a successful query response for encrypted content.</summary>
+    /// <param name="plaintext">The value before encryption.</param>
+    /// <returns>The encoded response, carrying the ciphertext and its wrapped key.</returns>
+    /// <remarks>
+    /// The hash is computed over the ciphertext because that is what the server stores and what
+    /// the client verifies before running the filter chain.
+    /// </remarks>
+    private static Payload EncryptedQueryResponse(string plaintext)
+    {
+        string ciphertext = string.Concat("cipher(", plaintext, ")");
+
+        return PayloadCodec.Encode(new ConfigQueryResponse
+        {
+            Content = ciphertext,
+            Md5 = NacosMd5.Compute(ciphertext),
+            ContentType = "text",
+            EncryptedDataKey = "wrapped(secret)",
+            LastModified = 1_700_000_000_000,
+        });
+    }
+
+    /// <summary>Answers a listener registration and the encrypted read that follows it.</summary>
+    /// <param name="plaintext">The value the server holds, before encryption.</param>
+    /// <returns>The scripted handler.</returns>
+    private static Func<Payload, Payload> ListenThenEncryptedQuery(string plaintext) => request =>
+        PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+            ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+            : EncryptedQueryResponse(plaintext);
+
     /// <summary>Waits until a listener has been notified a given number of times.</summary>
     /// <param name="changes">The notifications observed so far.</param>
     /// <param name="expected">How many are expected.</param>
@@ -427,8 +837,30 @@ public sealed class NacosConfigClientTests
         Func<Payload, Payload>? handler = null,
         string @namespace = "public",
         bool verifyMd5 = true,
-        bool snapshots = false) =>
-        new(handler ?? (_ => QueryResponse("hello", "text")), @namespace, verifyMd5, snapshots);
+        bool snapshots = false,
+        Action<NacosConfigOptions>? configureConfig = null) =>
+        new(
+            handler ?? (_ => QueryResponse("hello", "text")),
+            @namespace,
+            verifyMd5,
+            snapshots,
+            configureConfig);
+
+    /// <summary>
+    /// A filter whose body is supplied by the test.
+    /// </summary>
+    private sealed class DelegateFilter(
+        string name,
+        int order,
+        Func<NacosConfigFilterContext, CancellationToken, ValueTask> invoke) : INacosConfigFilter
+    {
+        public string Name => name;
+
+        public int Order => order;
+
+        public ValueTask InvokeAsync(NacosConfigFilterContext context, CancellationToken ct) =>
+            invoke(context, ct);
+    }
 
     /// <summary>
     /// Wires a config client to a fake transport and provides request inspection.
@@ -445,7 +877,8 @@ public sealed class NacosConfigClientTests
             Func<Payload, Payload> handler,
             string @namespace,
             bool verifyMd5,
-            bool snapshots)
+            bool snapshots,
+            Action<NacosConfigOptions>? configureConfig = null)
         {
             Handler = handler;
             _snapshotRoot = TestPaths.CreateScratchDirectory("config-client");
@@ -485,6 +918,8 @@ public sealed class NacosConfigClientTests
                 },
             };
 
+            configureConfig?.Invoke(options.Config);
+
             var connection = new NacosGrpcConnection(
                 options,
                 NacosConnectionModule.Config,
@@ -497,6 +932,21 @@ public sealed class NacosConfigClientTests
 
             Client = new NacosConfigClient(
                 options, connection, TimeProvider.System, NullLogger<NacosConfigClient>.Instance, snapshotStore);
+
+            // The production factory does this wiring; without it a pushed notification would be
+            // acknowledged but never turned into a listener callback.
+            connection.ServerRequestReceived += (request, ct) =>
+            {
+                if (request is ConfigChangeNotifyRequest notification)
+                {
+                    // Deliberately not awaited: the fetch needs the read loop to keep running.
+                    _ = Client.OnConfigChangedAsync(notification, ct);
+                    return Task.FromResult<NacosResponse?>(
+                        new ConfigChangeNotifyResponse { RequestId = notification.RequestId });
+                }
+
+                return Task.FromResult<NacosResponse?>(null);
+            };
 
             Connection = connection;
         }
@@ -545,6 +995,31 @@ public sealed class NacosConfigClientTests
         {
             Payload payload = _channels[^1].UnaryRequests[^1];
             return JsonDocument.Parse(PayloadCodec.ReadBodyBytes(payload));
+        }
+
+        /// <summary>Waits until the current channel has sent a request of a given payload type.</summary>
+        /// <param name="typeName">The <c>metadata.type</c> to wait for.</param>
+        /// <param name="ct">A token that cancels the wait.</param>
+        /// <returns>A task that completes once such a request was recorded.</returns>
+        public Task WaitForRequestAsync(string typeName, CancellationToken ct) =>
+            WaitForAsync(
+                () => _channels[^1].UnaryRequests.Any(
+                    request => PayloadCodec.ReadTypeName(request) == typeName),
+                ct);
+
+        /// <summary>Pushes a change notification for a configuration, as the server would.</summary>
+        /// <param name="key">The configuration that changed.</param>
+        /// <returns>A task that completes once the frame was handed to the transport.</returns>
+        public Task PushChangeAsync(NacosConfigKey key)
+        {
+            _currentStream.Push(TestPayload.ForRequest(new ConfigChangeNotifyRequest
+            {
+                DataId = key.DataId,
+                Group = key.Group,
+                Tenant = key.Namespace,
+            }));
+
+            return Task.CompletedTask;
         }
 
         public void Dispose()

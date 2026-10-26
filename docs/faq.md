@@ -211,6 +211,37 @@ The selector overload has no token parameter; pass one with `WithCancellation` a
 enumeration to unsubscribe. Use the plain `SubscribeAsync(service, clusters)` overload when the
 cluster is the only criterion, because the server then does the narrowing.
 
+## How do I encrypt configuration values?
+
+Publish under a data id that starts with `cipher-`, and register the algorithm implementation:
+
+```csharp
+var options = new NacosOptions { ServerAddresses = ["http://127.0.0.1:8848"] };
+options.Config.EncryptionProviders.Add(new MyAesEncryptionProvider());
+
+await using NacosClient client = NacosClient.Create(options);
+await client.ConnectAsync();
+
+var key = new NacosConfigKey("cipher-AES-db.json", NacosConstants.DefaultGroup);
+await client.Config.PublishConfigAsync(key, connectionString, contentType: "text");
+```
+
+The client encrypts before sending, stores the provider-wrapped data key beside the content, and
+decrypts on read and on every pushed change. The data id selects the provider: `cipher-AES-...`
+uses the provider whose `AlgorithmName` is `AES`, matched case-sensitively. A client that does not
+register the provider sees the ciphertext and the wrapped key, because encryption is client-side and
+the server stores exactly what it was given.
+
+The snapshot keeps the stored ciphertext and the wrapped key, so a failover read is decrypted the
+same way. `NacosConfigResult.EncryptedDataKey` exposes the stored key. A data id with the `cipher-`
+prefix but no matching provider is passed through unchanged with a warning (event `4019`), which is
+what the Java client does.
+
+For a transformation that is not encryption, implement `INacosConfigFilter` and add it with
+`client.Config.AddConfigFilter(...)`. Filters run in `Order` order on publish, read and push; a
+filter that throws fails an explicit read or publish, and is logged and skipped on a push (event
+`4020`).
+
 ## Can a change to a subscribed service slip through?
 
 No. `ListenAsync` / `SubscribeAsync` first hand you the state as it was read, and only then register

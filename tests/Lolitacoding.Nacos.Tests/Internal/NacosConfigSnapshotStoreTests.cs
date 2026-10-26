@@ -18,14 +18,106 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("app.json", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, """{"a":1}""", "json", TestContext.Current.CancellationToken);
+        await store.SaveAsync(
+            key, """{"a":1}""", "json", ct: TestContext.Current.CancellationToken);
 
-        (string Content, string? ContentType)? loaded =
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
             await store.LoadAsync(key, TestContext.Current.CancellationToken);
 
         loaded.ShouldNotBeNull();
         loaded.Value.Content.ShouldBe("""{"a":1}""");
         loaded.Value.ContentType.ShouldBe("json");
+        loaded.Value.EncryptedDataKey.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task SaveThenLoad_RoundTripsTheEncryptedDataKey()
+    {
+        // The key is what makes an encrypted value readable after an outage. Losing it would turn
+        // a usable snapshot into ciphertext nobody can decrypt.
+        var store = new NacosConfigSnapshotStore(_root);
+        var key = new NacosConfigKey("cipher-AES-app", "DEFAULT_GROUP", "public");
+
+        await store.SaveAsync(
+            key,
+            "ciphertext",
+            "text",
+            encryptedDataKey: "wrapped-key",
+            ct: TestContext.Current.CancellationToken);
+
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
+            await store.LoadAsync(key, TestContext.Current.CancellationToken);
+
+        loaded.ShouldNotBeNull();
+        loaded.Value.Content.ShouldBe("ciphertext");
+        loaded.Value.EncryptedDataKey.ShouldBe("wrapped-key");
+    }
+
+    [Fact]
+    public async Task Save_PreservesAKeyWithMetadataSeparatorTextInIt()
+    {
+        // Both metadata fields are base64-encoded, so a key that happens to contain the separator
+        // must not be able to split the file in the wrong place.
+        var store = new NacosConfigSnapshotStore(_root);
+        var key = new NacosConfigKey("cipher-AES-app", "DEFAULT_GROUP", "public");
+        string secret = "line1\n---nacos-meta---\nline2";
+
+        await store.SaveAsync(
+            key,
+            "ciphertext",
+            "text",
+            encryptedDataKey: secret,
+            ct: TestContext.Current.CancellationToken);
+
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
+            await store.LoadAsync(key, TestContext.Current.CancellationToken);
+
+        loaded.ShouldNotBeNull();
+        loaded.Value.EncryptedDataKey.ShouldBe(secret);
+    }
+
+    [Fact]
+    public async Task Load_ReadsASnapshotWrittenBeforeTheKeyWasStored()
+    {
+        // Files written by an older version have no version marker: the first line is the content
+        // type itself. They must stay readable rather than be discarded on upgrade.
+        var store = new NacosConfigSnapshotStore(_root);
+        var key = new NacosConfigKey("app", "DEFAULT_GROUP", "public");
+
+        await store.SaveAsync(key, "placeholder", "text", ct: TestContext.Current.CancellationToken);
+
+        string configDirectory = Path.Combine(_root, "config");
+        string file = Directory.GetFiles(configDirectory).ShouldHaveSingleItem();
+        await File.WriteAllTextAsync(
+            file,
+            "json\n---nacos-meta---\nlegacy",
+            TestContext.Current.CancellationToken);
+
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
+            await store.LoadAsync(key, TestContext.Current.CancellationToken);
+
+        loaded.ShouldNotBeNull();
+        loaded.Value.Content.ShouldBe("legacy");
+        loaded.Value.ContentType.ShouldBe("json");
+        loaded.Value.EncryptedDataKey.ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Load_IgnoresMalformedMetadata()
+    {
+        var store = new NacosConfigSnapshotStore(_root);
+        var key = new NacosConfigKey("app", "DEFAULT_GROUP", "public");
+
+        await store.SaveAsync(key, "placeholder", "text", ct: TestContext.Current.CancellationToken);
+
+        string configDirectory = Path.Combine(_root, "config");
+        string file = Directory.GetFiles(configDirectory).ShouldHaveSingleItem();
+        await File.WriteAllTextAsync(
+            file,
+            "v2\nnot-base64!\n\n---nacos-meta---\ncontent",
+            TestContext.Current.CancellationToken);
+
+        (await store.LoadAsync(key, TestContext.Current.CancellationToken)).ShouldBeNull();
     }
 
     [Fact]
@@ -33,7 +125,7 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
     {
         var store = new NacosConfigSnapshotStore(_root);
 
-        (string Content, string? ContentType)? loaded = await store.LoadAsync(
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded = await store.LoadAsync(
             new NacosConfigKey("missing", "DEFAULT_GROUP", "public"),
             TestContext.Current.CancellationToken);
 
@@ -46,10 +138,10 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("app", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, "old", "text", TestContext.Current.CancellationToken);
-        await store.SaveAsync(key, "new", "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, "old", "text", ct: TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, "new", "text", ct: TestContext.Current.CancellationToken);
 
-        (string Content, string? ContentType)? loaded =
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
             await store.LoadAsync(key, TestContext.Current.CancellationToken);
 
         loaded.ShouldNotBeNull();
@@ -65,9 +157,9 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var key = new NacosConfigKey("tricky", "DEFAULT_GROUP", "public");
         string content = "line1\n---nacos-meta---\nline2\n\ttabbed \r\n";
 
-        await store.SaveAsync(key, content, "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, content, "text", ct: TestContext.Current.CancellationToken);
 
-        (string Content, string? ContentType)? loaded =
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
             await store.LoadAsync(key, TestContext.Current.CancellationToken);
 
         loaded.ShouldNotBeNull();
@@ -80,9 +172,10 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("empty", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, string.Empty, "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(
+            key, string.Empty, "text", ct: TestContext.Current.CancellationToken);
 
-        (string Content, string? ContentType)? loaded =
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
             await store.LoadAsync(key, TestContext.Current.CancellationToken);
 
         loaded.ShouldNotBeNull();
@@ -98,9 +191,9 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var second = new NacosConfigKey("app", "GROUP_B", "public");
         var third = new NacosConfigKey("app", "GROUP_A", "other-namespace");
 
-        await store.SaveAsync(first, "one", "text", TestContext.Current.CancellationToken);
-        await store.SaveAsync(second, "two", "text", TestContext.Current.CancellationToken);
-        await store.SaveAsync(third, "three", "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(first, "one", "text", ct: TestContext.Current.CancellationToken);
+        await store.SaveAsync(second, "two", "text", ct: TestContext.Current.CancellationToken);
+        await store.SaveAsync(third, "three", "text", ct: TestContext.Current.CancellationToken);
 
         (await store.LoadAsync(first, TestContext.Current.CancellationToken))!.Value.Content.ShouldBe("one");
         (await store.LoadAsync(second, TestContext.Current.CancellationToken))!.Value.Content.ShouldBe("two");
@@ -115,7 +208,7 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("app", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, "content", "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, "content", "text", ct: TestContext.Current.CancellationToken);
 
         string configDirectory = Path.Combine(_root, "config");
         Directory.GetFiles(configDirectory).ShouldHaveSingleItem();
@@ -128,7 +221,7 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("app", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, "content", "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, "content", "text", ct: TestContext.Current.CancellationToken);
         store.Remove(key);
 
         (await store.LoadAsync(key, TestContext.Current.CancellationToken)).ShouldBeNull();
@@ -150,7 +243,7 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("app", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, "content", "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, "content", "text", ct: TestContext.Current.CancellationToken);
 
         string configDirectory = Path.Combine(_root, "config");
         string file = Directory.GetFiles(configDirectory).ShouldHaveSingleItem();
@@ -165,9 +258,9 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("app", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, "content", null, TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, "content", null, ct: TestContext.Current.CancellationToken);
 
-        (string Content, string? ContentType)? loaded =
+        (string Content, string? ContentType, string? EncryptedDataKey)? loaded =
             await store.LoadAsync(key, TestContext.Current.CancellationToken);
 
         loaded.ShouldNotBeNull();
@@ -183,7 +276,7 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         var store = new NacosConfigSnapshotStore(_root);
         var key = new NacosConfigKey("../../escape", "DEFAULT_GROUP", "public");
 
-        await store.SaveAsync(key, "content", "text", TestContext.Current.CancellationToken);
+        await store.SaveAsync(key, "content", "text", ct: TestContext.Current.CancellationToken);
 
         string configDirectory = Path.Combine(_root, "config");
         Directory.GetFiles(configDirectory).ShouldHaveSingleItem();

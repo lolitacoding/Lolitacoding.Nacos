@@ -74,6 +74,12 @@ await foreach (NacosConfigWatchEvent item in
 }
 ```
 
+Configuration values can also be transformed on the way in and out. The built-in filter encrypts
+data ids that start with `cipher-`: add an `INacosConfigEncryptionProvider` to
+`options.Config.EncryptionProviders` and publish under `cipher-AES-...`; reads and pushed changes
+arrive decrypted, while the server keeps the ciphertext and the wrapped key. For any other
+transformation, implement `INacosConfigFilter` and add it with `client.Config.AddConfigFilter(...)`.
+
 ### Service registration and discovery
 
 ```csharp

@@ -201,4 +201,52 @@ internal static partial class NacosConfigLog
         ILogger logger,
         string pattern,
         string? changeType);
+
+    /// <summary>Logs that a cipher data id has no provider for its algorithm.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <param name="algorithm">The algorithm the data id names, when one could be read.</param>
+    [LoggerMessage(
+        EventId = 4019,
+        Level = LogLevel.Warning,
+        Message = "No encryption provider named {Algorithm} is configured, so configuration {Key} "
+            + "is passed through unchanged.")]
+    public static partial void EncryptionProviderMissing(
+        ILogger logger,
+        string key,
+        string? algorithm);
+
+    /// <summary>Logs that a filter failed while a pushed change was being prepared.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 4020,
+        Level = LogLevel.Error,
+        Message = "A configuration filter failed for {Key} while a pushed change was being "
+            + "prepared; the change was not delivered: {Reason}")]
+    public static partial void ConfigFilterFailedOnPush(
+        ILogger logger,
+        string key,
+        string reason);
+
+    /// <summary>Logs that a filter name was already taken and the new filter was ignored.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The duplicate filter name.</param>
+    [LoggerMessage(
+        EventId = 4021,
+        Level = LogLevel.Debug,
+        Message = "A configuration filter named {Name} is already registered; the additional one "
+            + "is ignored.")]
+    public static partial void ConfigFilterDuplicateIgnored(ILogger logger, string name);
+
+    /// <summary>Logs that a filter removed the content of a configuration being published.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    [LoggerMessage(
+        EventId = 4022,
+        Level = LogLevel.Error,
+        Message = "A configuration filter removed the content of {Key} while publishing; the "
+            + "publish was aborted.")]
+    public static partial void FilterRemovedPublishedContent(ILogger logger, string key);
 }
