@@ -496,4 +496,17 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增 39 个：`Config/NacosConfigFilterTests.cs` 19 个（加密/解密、非 cipher、恰好 `cipher-`、未知算法、大小写、算法分段四种形态、首个匹配 provider、空内容、取消、构造校验、`Name`/`Order`、选项校验）；`Config/NacosConfigClientTests.cs` 16 个（顺序、同名忽略、发布密文与密钥、未加密空密钥、清空内容抛错、发布快照存密文对、读取过滤但保留原始 MD5、cipher 读取解密、缺失内容不跑链、读取异常上抛、快照回退解密、推送解密、推送失败隔离且订阅存活、`AddConfigFilter` 三个参数/生命周期用例）；`Internal/NacosConfigSnapshotStoreTests.cs` 新增 4 个（密钥往返、含分隔符的密钥、旧格式兼容、损坏元数据）。
 - 验收：Release 构建零警告零错误；单元测试 **766 个全绿**（新增 39 个）；集成测试新增 `ConfigIntegrationTests.Encryption_RoundTripsThroughARealServer`（真实容器 `v3.0.2`：加密客户端发布 → 无 provider 的客户端读到密文与包装密钥 → 加密客户端读到明文 → 监听推送同样收到明文），整套 **59 个全绿**。
 
+#### P1-5 · 服务列表分页（✅ 已完成）
+
+- **缺口**：Java 的 `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` 按页枚举一个 group 下的服务名；本客户端的线上消息（`ServiceListRequest`/`ServiceListResponse`）早已存在，但没有公开方法，只能靠模糊监听跟随集合、无法一次性列出已有服务。
+- **公共面**：`INacosNamingClient.GetServicesAsync(int pageNo = 1, int pageSize = 10, string? groupName = null, CancellationToken ct = default)` 返回 `NacosServiceListPage`（`Count` 与 `Services`）。参数顺序与 Java 对齐；`groupName` 省略时用 `NacosConstants.DefaultGroup`，与 Java 的两参重载一致。
+- **服务端语义（读 `ServiceListRequestHandler` 与 `ServiceUtil.pageServiceName` 确认）**：`count` 是分页**前**该 group 的服务总数，因此第 `ceil(Count / pageSize)` 页之后仍返回空列表并保留总数；服务端按 `group@@service` 分页后再剥掉 group 前缀，所以 `Services` 里是裸服务名；group 为精确匹配，没有通配符。
+- **参数校验**：`pageNo`、`pageSize` 小于 1 直接抛 `ArgumentOutOfRangeException`。Java 原样发送：页码 ≤ 0 被服务端 `start < 0 → 0` 夹到第一页，页大小 ≤ 0 则会在 `subList` 里报一个与调用者无关的错。提前校验把两种错误都变成调用点上的明确异常。
+- **不做本地缓存回退**：与 `GetInstancesAsync` 不同，服务列表描述的是命名空间本身；断链时用旧列表会静默隐藏期间新建的服务，因此直接抛出连接异常。
+- **selector 不公开**：3.x 的 `ServiceListRequestHandler` 对 `selector` 字段只留了 `// TODO select service by selector`，而 CMDB label/表达式 selector 已从 3.x 客户端移除。暴露一个不起作用的参数比不暴露更糟；等服务端实现过滤后可以在不改动现有方法的前提下增加重载。
+- **日志**：无需新增事件，查询失败沿用传输层异常与既有日志。
+- **文档**：`docs/java-parity.md` 的 P1-5 标记完成并写出与 Java 的对照表、分页/计数/裸名/校验/无缓存/无 selector 的理由；`docs/protocol-notes.md` 增加 `ServiceListRequest`/`ServiceListResponse` 的字段与分页语义；`docs/faq.md` 新增「How do I list every service in a group?」（含翻页循环示例）；`README.md` 命名示例补一段。
+- 单元测试新增 10 个：请求字段与结果、默认 group 与默认分页、越界页保留总数、缺失名称列表视为空、页码 < 1 两种、页大小 < 1 两种、断链不回退缓存、释放后抛 `ObjectDisposedException`。
+- 验收：Release 构建零警告零错误；单元测试 **776 个全绿**（新增 10 个）；集成测试新增 `NamingIntegrationTests.GetServices_PagesAGroupThroughARealServer`（真实容器 `v3.0.2`：同 group 注册两个服务 → 第一页 1 条且总数为 2 → 第二页另一条 → 第三页空但总数仍为 2 → 另一个 group 为空），整套 **60 个全绿**。
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

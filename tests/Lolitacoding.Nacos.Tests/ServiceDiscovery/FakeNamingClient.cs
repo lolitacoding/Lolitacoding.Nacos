@@ -77,6 +77,16 @@ internal sealed class FakeNamingClient : INacosNamingClient
     }
 
     /// <inheritdoc />
+    public Task<NacosServiceListPage> GetServicesAsync(
+        int pageNo = 1,
+        int pageSize = 10,
+        string? groupName = null,
+        CancellationToken ct = default) =>
+        // The provider under test resolves individual services; listing a group is outside its
+        // contract, so the fake reports an empty page instead of standing a namespace up.
+        Task.FromResult(new NacosServiceListPage(0, []));
+
+    /// <inheritdoc />
     public async IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
         NacosServiceKey service,
         string? clusters = null,

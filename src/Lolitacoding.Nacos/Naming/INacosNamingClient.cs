@@ -59,6 +59,52 @@ public interface INacosNamingClient : IAsyncDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Lists one page of the services in a group.
+    /// </summary>
+    /// <param name="pageNo">The one-based page number.</param>
+    /// <param name="pageSize">The number of names to return per page.</param>
+    /// <param name="groupName">
+    /// The group to list, or <see langword="null"/> for <see cref="NacosConstants.DefaultGroup"/>.
+    /// </param>
+    /// <param name="ct">A token that cancels the operation.</param>
+    /// <returns>The names on the requested page and the total number in the group.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is the paged alternative to a fuzzy watch: it names every service in a group, including
+    /// services the client has never subscribed to, at the cost of one round trip per page and no
+    /// change notifications. Use
+    /// <see cref="WatchAsync(string, CancellationToken)"/> when the set has to stay current.
+    /// </para>
+    /// <para>
+    /// The server pages a snapshot of the group, so a service created or removed between two page
+    /// reads can shift the names across the page boundaries. A caller that needs a consistent view
+    /// should read all pages and reconcile the union, or follow the group with a watch.
+    /// </para>
+    /// <para>
+    /// The result's <see cref="NacosServiceListPage.Count"/> is the total for the group, not the size
+    /// of the page. A page beyond the last one is not an error: it returns no names and still
+    /// reports the count.
+    /// </para>
+    /// <para>
+    /// The Java SDK's selector argument is not reproduced. Nacos 3.x accepts a selector field on the
+    /// request but the server handler ignores it (<c>TODO select service by selector</c> upstream),
+    /// so exposing one here would advertise a filter that does nothing.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="pageNo"/> or <paramref name="pageSize"/> is less than one.
+    /// </exception>
+    /// <exception cref="NacosConnectionException">
+    /// The server could not be reached. Unlike an instance query this is not served from a local
+    /// cache: the list describes the namespace, and a stale copy would silently hide new services.
+    /// </exception>
+    Task<NacosServiceListPage> GetServicesAsync(
+        int pageNo = 1,
+        int pageSize = 10,
+        string? groupName = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Observes a service's instance list until the caller stops enumerating or cancels.
     /// </summary>
     /// <param name="service">The service to observe.</param>

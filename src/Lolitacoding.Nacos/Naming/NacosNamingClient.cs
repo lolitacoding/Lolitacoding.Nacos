@@ -212,6 +212,34 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task<NacosServiceListPage> GetServicesAsync(
+        int pageNo = 1,
+        int pageSize = 10,
+        string? groupName = null,
+        CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageNo, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
+
+        var request = new ServiceListRequest
+        {
+            Namespace = _options.Namespace,
+            GroupName = groupName ?? NacosConstants.DefaultGroup,
+            PageNo = pageNo,
+            PageSize = pageSize,
+        };
+
+        ServiceListResponse response = await _connection
+            .RequestAsync<ServiceListResponse>(request, ct)
+            .ConfigureAwait(false);
+
+        // The server reports the group total before paging, so Count stays the group's size even
+        // when the requested page is past the end. The names arrive without their group prefix.
+        return new NacosServiceListPage(response.Count, response.ServiceNames ?? []);
+    }
+
+    /// <inheritdoc />
     public IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
         NacosServiceKey service,
         string? clusters = null,

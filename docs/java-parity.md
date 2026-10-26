@@ -28,7 +28,7 @@ the bottom with the reason it is not implemented here.
 | P0-2 | Naming fuzzy watch | `NamingService.fuzzyWatch(...)`, `fuzzyWatchWithGroupKeys(...)`, `cancelFuzzyWatch(...)` | **Done** — `INacosNamingClient.WatchAsync`, `NacosServiceWatchEvent`, `Naming.FuzzyWatchResyncInterval` | Discovers services by pattern and keeps that set current, without polling a service list. |
 | P1-3 | Client-side naming selectors | `NamingService.subscribe(serviceName, groupName, NamingSelector, listener)` and the matching `unsubscribe` | **Done** — `INacosNamingClient.SubscribeAsync(NacosServiceKey, INacosInstanceSelector)`, `NacosInstanceSelectors`, `NacosInstanceSelectorContext` | Zone and label routing is the normal way to keep traffic local; without it every consumer sees every instance. |
 | P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | **Done** — `INacosConfigFilter`, `INacosConfigClient.AddConfigFilter`, `NacosConfigEncryptionFilter`, `INacosConfigEncryptionProvider`, `NacosConfigResult.EncryptedDataKey` | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
-| P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | Missing; `ServiceListRequest`/`ServiceListResponse` already exist on the wire | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
+| P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | **Done** — `INacosNamingClient.GetServicesAsync`, `NacosServiceListPage` (selector omitted: the server ignores it) | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
 | P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | Missing; `BatchInstanceRequest` already exists on the wire | Registers many instances of one service in one round trip. `batchDeregisterInstance` is a client-side loop in Java, so only registration is a real gap. |
 | P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | Missing; only the gRPC watch is implemented | The watch path for deployments where the gRPC push channel is unavailable. |
 | P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | **Addressed by P1-4** — a snapshot keeps the stored ciphertext and the wrapped key | A process that fails over to disk must not write the plaintext of an encrypted configuration there. |
@@ -218,9 +218,33 @@ point for every other transformation, and for assembling the chain explicitly.
 
 ## P1-5: service list paging
 
-`ServiceListRequest{pageNo, pageSize, selector}` returns a page of service names. The server
-handler filters strictly by group and currently ignores the selector, so the .NET surface will
-expose paging and leave the selector out until the server honours it.
+`ServiceListRequest{pageNo, pageSize}` returns a page of service names. The .NET surface is
+`GetServicesAsync(pageNo, pageSize, groupName, ct)` returning `NacosServiceListPage`:
+
+| Java | Here |
+| --- | --- |
+| `getServicesOfServer(pageNo, pageSize)` | `GetServicesAsync(pageNo, pageSize)` (group defaults to `DEFAULT_GROUP`) |
+| `getServicesOfServer(pageNo, pageSize, groupName)` | `GetServicesAsync(pageNo, pageSize, groupName)` |
+| `getServicesOfServer(..., AbstractSelector)` | Not reproduced — see below |
+| `ListView<String>.getCount()` / `getData()` | `NacosServiceListPage.Count` / `Services` |
+
+- `Count` is the group total the server computed **before** paging, so `ceil(Count / pageSize)` is
+  the number of pages. A page beyond the last one is not an error: it has no names and still
+  reports the total.
+- Each name is bare. The server pages over `group@@service` keys and then strips the prefix
+  (`ServiceUtil.pageServiceName`), so the group passed to the call is the group of every name.
+- Group matching is exact; there is no wildcard. Use `WatchAsync(groupPattern)` to follow a pattern.
+- `pageNo` and `pageSize` below one are rejected with `ArgumentOutOfRangeException`. Java sends them
+  as given; the server clamps a non-positive page number to the first page and fails on a
+  non-positive page size inside `subList`, so validating at the call site turns both into one clear
+  error.
+- There is no local-cache failover, unlike `GetInstancesAsync`: the list describes the namespace, and
+  serving a stale copy during an outage would silently hide services created in the meantime.
+- **The selector is left out.** The Java client can send a label selector, but the Nacos 3.x
+  `ServiceListRequestHandler` ignores the field (`// TODO select service by selector`), and the CMDB
+  label/expression selectors were removed from the 3.x client. Exposing an argument that changes
+  nothing would be worse than omitting it; when the server implements the filter, a selector
+  overload can be added without changing this method.
 
 ## P2 items
 
@@ -256,8 +280,8 @@ The comparison also confirmed what is already covered, so it is not re-opened by
   reconnect replay, server-push handling, local snapshot failover, MD5 verification and the
   `304` fast path.
 - **Naming**: register, deregister, ephemeral and persistent instances, subscribe and unsubscribe,
-  instance queries with cluster and health filters, reconnect replay of registrations and
-  subscriptions, local snapshot failover, load balancing.
+  instance queries with cluster and health filters, paged service listing, reconnect replay of
+  registrations and subscriptions, local snapshot failover, load balancing.
 - **Lock**: acquire with wait semantics, reentrancy, watchdog renewal, release and notifications.
 - **AI registry**: prompt, skill, agent-spec, MCP server, agent-card and RAD agent reads and
   subscriptions; MCP release with `createDraft`; endpoint registration with reconnect replay;

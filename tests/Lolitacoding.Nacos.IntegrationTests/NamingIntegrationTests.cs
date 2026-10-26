@@ -289,6 +289,60 @@ public sealed class NamingIntegrationTests
         info.Instances.ShouldNotContain(i => i.Port == 8082);
     }
 
+    [Fact]
+    public async Task GetServices_PagesAGroupThroughARealServer()
+    {
+        // The list is the paged alternative to a watch, so it has to report what the namespace
+        // holds: the group total, one page of bare service names, and nothing from other groups.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        string group = NacosHttp.UniqueId("naming-paging-group");
+        var first = new NacosServiceKey(NacosHttp.UniqueId("naming-paging-a"), group);
+        var second = new NacosServiceKey(NacosHttp.UniqueId("naming-paging-b"), group);
+
+        await client.Naming.RegisterInstanceAsync(
+            first, new NacosInstance("10.20.30.61", 8101), TestContext.Current.CancellationToken);
+        await client.Naming.RegisterInstanceAsync(
+            second, new NacosInstance("10.20.30.62", 8102), TestContext.Current.CancellationToken);
+
+        // A registration answers before the service becomes listable, so the read is repeated until
+        // both registrations are visible.
+        NacosServiceListPage page = await NacosEventually.BecomesAsync(
+            () => client.Naming.GetServicesAsync(
+                pageNo: 1, pageSize: 1, groupName: group, TestContext.Current.CancellationToken),
+            result => result.Count == 2 && result.Services.Count == 1,
+            TestContext.Current.CancellationToken);
+
+        page.Count.ShouldBe(2);
+        page.Services.ShouldHaveSingleItem();
+        page.Services[0].ShouldBeOneOf(first.ServiceName, second.ServiceName);
+
+        // The second page holds the other name, and the count still describes the group.
+        NacosServiceListPage secondPage = await client.Naming.GetServicesAsync(
+            pageNo: 2, pageSize: 1, groupName: group, TestContext.Current.CancellationToken);
+
+        secondPage.Count.ShouldBe(2);
+        secondPage.Services.ShouldHaveSingleItem();
+        secondPage.Services[0].ShouldNotBe(page.Services[0]);
+
+        // A page beyond the last one is empty, not an error, and keeps the total.
+        NacosServiceListPage past = await client.Naming.GetServicesAsync(
+            pageNo: 3, pageSize: 1, groupName: group, TestContext.Current.CancellationToken);
+
+        past.Count.ShouldBe(2);
+        past.Services.ShouldBeEmpty();
+
+        // A group that holds nothing is reported as empty rather than as every group's services.
+        NacosServiceListPage other = await client.Naming.GetServicesAsync(
+            groupName: NacosHttp.UniqueId("naming-paging-other"),
+            ct: TestContext.Current.CancellationToken);
+
+        other.Count.ShouldBe(0);
+        other.Services.ShouldBeEmpty();
+    }
+
     private static NacosClientFactory CreateClient(NacosContainer container) =>
         NacosClientFactory.Create(
             new NacosOptions

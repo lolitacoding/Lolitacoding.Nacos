@@ -112,6 +112,11 @@ await foreach (NacosServiceChange change in
 {
     Console.WriteLine($"{change.Instances.Count} gold instances");
 }
+
+// List the services of a group one page at a time. Count is the group total; the names are bare.
+NacosServiceListPage page = await client.Naming.GetServicesAsync(
+    pageNo: 1, pageSize: 100, groupName: NacosConstants.DefaultGroup);
+Console.WriteLine($"{page.Services.Count} of {page.Count} services");
 ```
 
 ### Dependency injection

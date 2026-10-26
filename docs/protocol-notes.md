@@ -229,6 +229,14 @@ configuration, and the protocol is a small state machine over three request type
   the plain overload's `clusters` argument is the server-side narrowing. A consumer is notified only
   when its selected view changes, and the first element is filtered the same way, so a subscription
   never starts from a list it would not deliver later.
+- **The service list is paged.** `ServiceListRequest{namespace, groupName, pageNo, pageSize}` is
+  answered with `ServiceListResponse{count, serviceNames}`. `count` is the number of services in the
+  group *before* paging, so a page beyond the last one returns no names and still reports the total.
+  The server strips the group prefix from each returned key (`ServiceUtil.pageServiceName`), so the
+  names are bare and the group is the one that was asked for. Group matching is exact, and the
+  request's `selector` field is accepted but ignored by the 3.x handler (`TODO select service by
+  selector`), which is why this client does not expose it. A non-positive page size would reach the
+  server's `subList` and fail there, so it is rejected at the call site.
 
 ### Naming fuzzy watch
 

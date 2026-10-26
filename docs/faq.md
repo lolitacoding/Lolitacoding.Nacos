@@ -183,6 +183,38 @@ pattern may match (`50311`); both arrive as `NacosServerException` with that cod
 every `Config.FuzzyWatchResyncInterval` / `Naming.FuzzyWatchResyncInterval` (3 minutes by default) so
 a lost push is repaired.
 
+## How do I list every service in a group?
+
+Use `GetServicesAsync`. It asks the server for one page at a time and reports the group total, so
+paging is a loop over `Count`:
+
+```csharp
+int pageNo = 1;
+while (true)
+{
+    NacosServiceListPage page = await client.Naming.GetServicesAsync(
+        pageNo: pageNo, pageSize: 100, groupName: "DEFAULT_GROUP", ct: ct);
+
+    foreach (string name in page.Services)
+    {
+        Console.WriteLine(name);   // the bare service name
+    }
+
+    if (pageNo * 100 >= page.Count)
+    {
+        break;
+    }
+
+    pageNo++;
+}
+```
+
+`page.Count` is the total for the group, not the size of the page, and `page.Services` holds bare
+names because the server strips the group prefix. The group must match exactly; there is no wildcard.
+Use `WatchAsync(groupPattern)` instead when the set has to stay current, and note that the list is
+not served from a local cache during an outage — a stale list would hide services that appeared
+meanwhile.
+
 ## How do I follow only some instances of a service?
 
 Use the selector overload of `SubscribeAsync`. It keeps a subset of what the server reports, so a

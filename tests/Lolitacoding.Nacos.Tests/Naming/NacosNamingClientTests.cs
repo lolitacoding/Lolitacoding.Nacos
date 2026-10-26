@@ -620,6 +620,158 @@ public sealed class NacosNamingClientTests
                 Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken));
     }
 
+    [Fact]
+    public async Task GetServices_SendsThePageAndGroup()
+    {
+        using NamingHarness harness = new(@namespace: "tenant-a", handler: request =>
+            PayloadCodec.ReadTypeName(request) == "ServiceListRequest"
+                ? ServicesResponse(count: 5, "alpha", "beta")
+                : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        NacosServiceListPage page = await harness.Client.GetServicesAsync(
+            pageNo: 2, pageSize: 2, groupName: "tenant-a-group",
+            ct: TestContext.Current.CancellationToken);
+
+        ServiceListRequest request = harness.LastRequest<ServiceListRequest>();
+        request.Namespace.ShouldBe("tenant-a");
+        request.GroupName.ShouldBe("tenant-a-group");
+        request.PageNo.ShouldBe(2);
+        request.PageSize.ShouldBe(2);
+
+        // Count is the group total the server reported before paging, not the page size.
+        page.Count.ShouldBe(5);
+        page.Services.ShouldBe(["alpha", "beta"]);
+    }
+
+    [Fact]
+    public async Task GetServices_DefaultsToTheFirstPageOfTheDefaultGroup()
+    {
+        // The Java SDK's two-argument overload lists DEFAULT_GROUP; a caller that omits both the
+        // group and the paging has to land on the same request.
+        using NamingHarness harness = new(handler: request =>
+            PayloadCodec.ReadTypeName(request) == "ServiceListRequest"
+                ? ServicesResponse(count: 0)
+                : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.GetServicesAsync(ct: TestContext.Current.CancellationToken);
+
+        ServiceListRequest request = harness.LastRequest<ServiceListRequest>();
+        request.GroupName.ShouldBe(NacosConstants.DefaultGroup);
+        request.PageNo.ShouldBe(1);
+        request.PageSize.ShouldBe(10);
+    }
+
+    [Fact]
+    public async Task GetServices_ReturnsTheGroupCountForAPagePastTheEnd()
+    {
+        // The server answers a page beyond the last one with no names and the full count, so the
+        // caller can still tell how many pages there were.
+        using NamingHarness harness = new(handler: request =>
+            PayloadCodec.ReadTypeName(request) == "ServiceListRequest"
+                ? ServicesResponse(count: 3)
+                : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        NacosServiceListPage page = await harness.Client.GetServicesAsync(
+            pageNo: 4, ct: TestContext.Current.CancellationToken);
+
+        page.Count.ShouldBe(3);
+        page.Services.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task GetServices_TreatsAMissingNameListAsEmpty()
+    {
+        // The server omits the list when a namespace holds no services; that is an empty page, not
+        // a failure to read the answer.
+        using NamingHarness harness = new(handler: request =>
+            PayloadCodec.ReadTypeName(request) == "ServiceListRequest"
+                ? PayloadCodec.Encode(new ServiceListResponse { Count = 0, ServiceNames = null })
+                : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        NacosServiceListPage page = await harness.Client.GetServicesAsync(
+            ct: TestContext.Current.CancellationToken);
+
+        page.Count.ShouldBe(0);
+        page.Services.ShouldBeEmpty();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task GetServices_RejectsAPageNumberBelowOne(int pageNo)
+    {
+        // The server would clamp the start offset, which turns a caller's mistake into a silently
+        // wrong page; rejecting it here makes the mistake visible at the call site.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(
+            () => harness.Client.GetServicesAsync(
+                pageNo: pageNo, ct: TestContext.Current.CancellationToken));
+
+        harness.CountRequests("ServiceListRequest").ShouldBe(0);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task GetServices_RejectsAPageSizeBelowOne(int pageSize)
+    {
+        // A non-positive page size would reach the server's subList and fail there with an
+        // unrelated error.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<ArgumentOutOfRangeException>(
+            () => harness.Client.GetServicesAsync(
+                pageSize: pageSize, ct: TestContext.Current.CancellationToken));
+
+        harness.CountRequests("ServiceListRequest").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task GetServices_DoesNotServeFromCacheWhenTheServerIsUnreachable()
+    {
+        // Unlike an instance list, the service list describes the namespace: a stale copy would
+        // silently hide services that were added during the outage, so there is no failover here.
+        using NamingHarness harness = new(handler: _ =>
+            throw new NacosConnectionException("server is down"));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<NacosConnectionException>(
+            () => harness.Client.GetServicesAsync(ct: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task GetServices_ThrowsAfterDispose()
+    {
+        using NamingHarness harness = new();
+        await harness.Client.DisposeAsync();
+
+        await Should.ThrowAsync<ObjectDisposedException>(
+            () => harness.Client.GetServicesAsync(ct: TestContext.Current.CancellationToken));
+    }
+
+    /// <summary>Builds a successful service list response.</summary>
+    /// <param name="count">The total number of services in the group.</param>
+    /// <param name="names">The names on the page.</param>
+    /// <returns>The encoded response.</returns>
+    private static Payload ServicesResponse(int count, params string[] names) =>
+        PayloadCodec.Encode(new ServiceListResponse
+        {
+            Count = count,
+            ServiceNames = [.. names],
+        });
+
     /// <summary>Builds a successful query response carrying the given hosts.</summary>
     private static Payload QueryResponse(IReadOnlyList<Instance> hosts) =>
         PayloadCodec.Encode(new QueryServiceResponse
@@ -769,6 +921,8 @@ public sealed class NacosNamingClientTests
         public static Payload Fallback(Payload request) => PayloadCodec.ReadTypeName(request) switch
         {
             "ServiceQueryRequest" => QueryResponse([Host(8080), Host(8081)]),
+            "ServiceListRequest" => PayloadCodec.Encode(
+                new ServiceListResponse { Count = 0, ServiceNames = [] }),
             "SubscribeServiceRequest" => SubscribeResponse(),
             "InstanceRequest" or "PersistentInstanceRequest" => PayloadCodec.Encode(new InstanceResponse()),
             _ => throw new InvalidOperationException(
