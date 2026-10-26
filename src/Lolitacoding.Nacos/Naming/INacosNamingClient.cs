@@ -17,12 +17,57 @@ public interface INacosNamingClient : IAsyncDisposable
     /// <param name="ct">A token that cancels the operation.</param>
     /// <returns>A task that completes once the server accepted the registration.</returns>
     /// <remarks>
+    /// <para>
     /// Registering the same instance twice is idempotent, so a caller may safely re-register on
     /// startup without checking first.
+    /// </para>
+    /// <para>
+    /// The server keeps one published instance set per service per connection: this call replaces
+    /// whatever this client last published for the service, including the instances of a previous
+    /// <see cref="RegisterInstancesAsync"/>. Use the batch method to publish several instances of
+    /// one service from one connection.
+    /// </para>
     /// </remarks>
     Task RegisterInstanceAsync(
         NacosServiceKey service,
         NacosInstance instance,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Registers several instances of one service in a single round trip.
+    /// </summary>
+    /// <param name="service">The service to register the instances under.</param>
+    /// <param name="instances">The instances to publish together.</param>
+    /// <param name="ct">A token that cancels the operation.</param>
+    /// <returns>A task that completes once the server accepted the batch.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is the batch form of <see cref="RegisterInstanceAsync"/>: one request publishes the whole
+    /// list instead of one request per instance. The list replaces whatever this client last
+    /// published for the service, so a second batch or a single registration supersedes the first
+    /// rather than adding to it. That is the server's model — one published instance set per
+    /// service per connection — not a limitation of this client, and it is why a deployment that
+    /// must publish several instances of one service either uses this method or opens one
+    /// connection per instance.
+    /// </para>
+    /// <para>
+    /// Every instance must be ephemeral. Nacos has no batch path for persistent instances: the
+    /// server's batch handler is the ephemeral one, and the persistent store's batch method is still
+    /// unimplemented upstream, so a persistent instance would be dropped. It is refused here before
+    /// anything is sent.
+    /// </para>
+    /// <para>
+    /// The list is published as given. Duplicate endpoints are not removed; the server stores the
+    /// list it receives.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="instances"/> is empty or contains a <see langword="null"/> element, or one of
+    /// the instances is persistent.
+    /// </exception>
+    Task RegisterInstancesAsync(
+        NacosServiceKey service,
+        IReadOnlyList<NacosInstance> instances,
         CancellationToken ct = default);
 
     /// <summary>
@@ -32,9 +77,49 @@ public interface INacosNamingClient : IAsyncDisposable
     /// <param name="instance">The instance to remove.</param>
     /// <param name="ct">A token that cancels the operation.</param>
     /// <returns>A task that completes once the server accepted the removal.</returns>
+    /// <remarks>
+    /// The server removes the published instance set of the service on this connection, so any other
+    /// instance this client published for the same service — including the rest of a batch — goes
+    /// with it. The argument identifies the service and is echoed in the request; it does not select
+    /// one entry out of a batch.
+    /// </remarks>
     Task DeregisterInstanceAsync(
         NacosServiceKey service,
         NacosInstance instance,
+        CancellationToken ct = default);
+
+    /// <summary>
+    /// Removes some instances of a service that was published with
+    /// <see cref="RegisterInstancesAsync"/>.
+    /// </summary>
+    /// <param name="service">The service the instances belong to.</param>
+    /// <param name="instances">The instances to remove.</param>
+    /// <param name="ct">A token that cancels the operation.</param>
+    /// <returns>A task that completes once the server accepted the new set.</returns>
+    /// <remarks>
+    /// <para>
+    /// Nacos has no batch deregistration message. The official client removes the named instances
+    /// from the batch it last registered and publishes the remainder as a new batch, which is what
+    /// this method does; when nothing remains it sends an ordinary deregistration instead of an
+    /// empty batch. Instances are matched by address and port, the same comparison the official
+    /// client uses.
+    /// </para>
+    /// <para>
+    /// The method only applies to a batch published by this client. Removing instances of a single
+    /// registration is what <see cref="DeregisterInstanceAsync"/> is for, and there is nothing to
+    /// subtract from a registration this client does not own.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="instances"/> is empty or contains a <see langword="null"/> element.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">
+    /// This client did not publish <paramref name="service"/> with
+    /// <see cref="RegisterInstancesAsync"/>.
+    /// </exception>
+    Task DeregisterInstancesAsync(
+        NacosServiceKey service,
+        IReadOnlyList<NacosInstance> instances,
         CancellationToken ct = default);
 
     /// <summary>

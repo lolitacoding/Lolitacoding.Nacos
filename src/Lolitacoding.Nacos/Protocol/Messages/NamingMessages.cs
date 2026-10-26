@@ -174,6 +174,9 @@ internal class InstanceResponse : NacosResponse
 /// </summary>
 internal sealed class BatchInstanceRequest : NamingRequest
 {
+    /// <summary>The <c>type</c> value that registers every instance in the request.</summary>
+    public const string RegisterType = "batchRegisterInstance";
+
     /// <summary>Gets or sets the operation to perform.</summary>
     public string? Type { get; set; }
 

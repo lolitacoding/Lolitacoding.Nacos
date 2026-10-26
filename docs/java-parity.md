@@ -29,7 +29,7 @@ the bottom with the reason it is not implemented here.
 | P1-3 | Client-side naming selectors | `NamingService.subscribe(serviceName, groupName, NamingSelector, listener)` and the matching `unsubscribe` | **Done** — `INacosNamingClient.SubscribeAsync(NacosServiceKey, INacosInstanceSelector)`, `NacosInstanceSelectors`, `NacosInstanceSelectorContext` | Zone and label routing is the normal way to keep traffic local; without it every consumer sees every instance. |
 | P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | **Done** — `INacosConfigFilter`, `INacosConfigClient.AddConfigFilter`, `NacosConfigEncryptionFilter`, `INacosConfigEncryptionProvider`, `NacosConfigResult.EncryptedDataKey` | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
 | P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | **Done** — `INacosNamingClient.GetServicesAsync`, `NacosServiceListPage` (selector omitted: the server ignores it) | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
-| P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | Missing; `BatchInstanceRequest` already exists on the wire | Registers many instances of one service in one round trip. `batchDeregisterInstance` is a client-side loop in Java, so only registration is a real gap. |
+| P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` / `batchDeregisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | **Done** — `INacosNamingClient.RegisterInstancesAsync` / `DeregisterInstancesAsync` | Registers many instances of one service in one round trip. |
 | P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | Missing; only the gRPC watch is implemented | The watch path for deployments where the gRPC push channel is unavailable. |
 | P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | **Addressed by P1-4** — a snapshot keeps the stored ciphertext and the wrapped key | A process that fails over to disk must not write the plaintext of an encrypted configuration there. |
 | P2-9 | Address-server discovery | `PropertyKeyConst.ENDPOINT`, `ServerListManager` address-server polling | Missing; server addresses are configured explicitly | Deployments that hand out the server list through an address server cannot use this client. |
@@ -246,10 +246,42 @@ point for every other transformation, and for assembling the chain explicitly.
   nothing would be worse than omitting it; when the server implements the filter, a selector
   overload can be added without changing this method.
 
+## P2-6: batch instance registration
+
+`NamingService.batchRegisterInstance(serviceName, groupName, instances)` sends one
+`BatchInstanceRequest{namespace, serviceName, groupName, type = "batchRegisterInstance", instances}`.
+The .NET surface is `RegisterInstancesAsync(service, instances, ct)`, with
+`DeregisterInstancesAsync` for the companion operation:
+
+| Java | Here |
+| --- | --- |
+| `batchRegisterInstance(serviceName, groupName, List<Instance>)` | `RegisterInstancesAsync(service, instances)` |
+| `batchDeregisterInstance(serviceName, groupName, List<Instance>)` | `DeregisterInstancesAsync(service, instances)` |
+| `NamingUtils.checkInstanceIsEphemeral` / `checkInstanceIsLegal` | `ArgumentException` at the call site |
+
+- The server keeps **one published instance set per service per connection**
+  (`AbstractClient.publishers`, keyed by service). A batch publishes the whole set in one request;
+  a later single registration or batch replaces it, and a deregistration removes it. A deployment
+  that must publish several instances of one service therefore either batch-registers them from
+  one connection or opens one connection per instance. The client's replay state is keyed the same
+  way, so after a reconnect it replays the last registration for each service rather than a
+  mixture of superseded ones. A refused registration is not replayed, but the registration it
+  replaced is restored to the replay state: that is the set the server still holds, and forgetting
+  it would lose an instance at the next reconnect.
+- Only ephemeral instances are accepted, as in Java: the server's batch handler
+  (`BatchInstanceRequestHandler`) is built on `EphemeralClientOperationServiceImpl`, and the CP
+  store has no batch path (`// TODO PersistentClientOperationServiceImpl Nacos batchRegister`).
+- An empty batch is refused. Java sends it with a warning; on the server it replaces the published
+  set with nothing, which is a deregistration spelled as a registration.
+- **Batch deregistration is not a loop in 3.x.** `NamingGrpcClientProxy.batchDeregisterService`
+  takes the batch this client last registered, subtracts the named instances by IP and port, and
+  publishes the remainder as a new batch. It refuses a service that was not batch-registered
+  (`INVALID_PARAM`). `DeregisterInstancesAsync` does the same and throws `InvalidOperationException`
+  in that case; when nothing remains it sends an ordinary deregistration instead of Java's empty
+  batch, which leaves the same server state without a lingering empty published set.
+
 ## P2 items
 
-- **Batch registration** is one `BatchInstanceRequest` with `type = BATCH_REGISTER_INSTANCE`; the
-  server accepts a list of instances of a single service. Deregistration stays a loop, as in Java.
 - **AI batch watch** is the HTTP long-poll fallback: a request carrying the client watch ids and
   the fingerprints the client holds, answered when one of them changes. It only makes sense
   together with P3-14, so it is ranked below the gRPC-only watch this library already has.
@@ -279,9 +311,10 @@ The comparison also confirmed what is already covered, so it is not re-opened by
 - **Configuration**: read, publish, compare-and-swap publish, remove, exact listeners with
   reconnect replay, server-push handling, local snapshot failover, MD5 verification and the
   `304` fast path.
-- **Naming**: register, deregister, ephemeral and persistent instances, subscribe and unsubscribe,
-  instance queries with cluster and health filters, paged service listing, reconnect replay of
-  registrations and subscriptions, local snapshot failover, load balancing.
+- **Naming**: register, deregister, batch registration and deregistration, ephemeral and persistent
+  instances, subscribe and unsubscribe, instance queries with cluster and health filters, paged
+  service listing, reconnect replay of registrations and subscriptions, local snapshot failover,
+  load balancing.
 - **Lock**: acquire with wait semantics, reentrancy, watchdog renewal, release and notifications.
 - **AI registry**: prompt, skill, agent-spec, MCP server, agent-card and RAD agent reads and
   subscriptions; MCP release with `createDraft`; endpoint registration with reconnect replay;

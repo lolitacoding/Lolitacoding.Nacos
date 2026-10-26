@@ -509,4 +509,17 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增 10 个：请求字段与结果、默认 group 与默认分页、越界页保留总数、缺失名称列表视为空、页码 < 1 两种、页大小 < 1 两种、断链不回退缓存、释放后抛 `ObjectDisposedException`。
 - 验收：Release 构建零警告零错误；单元测试 **776 个全绿**（新增 10 个）；集成测试新增 `NamingIntegrationTests.GetServices_PagesAGroupThroughARealServer`（真实容器 `v3.0.2`：同 group 注册两个服务 → 第一页 1 条且总数为 2 → 第二页另一条 → 第三页空但总数仍为 2 → 另一个 group 为空），整套 **60 个全绿**。
 
+#### P2-6 · 批量实例注册与批量注销（✅ 已完成）
+
+- **缺口**：Java 的 `NamingService.batchRegisterInstance(serviceName, groupName, instances)` 用一条 `BatchInstanceRequest`（`type = "batchRegisterInstance"`）发布一个服务的多个实例；本客户端的消息类早已存在，但没有公开方法。原对照表把 `batchDeregisterInstance` 记成「Java 侧的循环」，这是错的：3.x 的 gRPC 实现取本客户端上次注册的批次、按 IP+端口扣掉指定实例，再把剩余部分作为新批次重新发布。
+- **公共面**：`INacosNamingClient.RegisterInstancesAsync(NacosServiceKey, IReadOnlyList<NacosInstance>, CancellationToken)` 与 `DeregisterInstancesAsync(...)`；日志新增 5021（发布批次，Debug）。
+- **服务端模型（读 `AbstractClient.addServiceInstance` 与 `EphemeralClientOperationServiceImpl.batchRegisterInstance` 确认）**：服务端按「连接 + 服务」只保存一份已发布实例集合（`publishers` 以 service 为键），因此批次是一次发布整份集合，之后的单条注册、另一个批次都会**替换**它，注销则删除整份集合。部署若要在一个连接上发布同一服务的多个实例，只能用批次，或每个实例一个连接。
+- **客户端重放随之改为按服务记账**：原实现按「服务 + 端点」保存注册，重连时会把已被替换的旧注册也重放一遍；现在每个服务只保留最后一次注册（单条或批次），与 Java 的 redo 表键一致。这同时修掉了一个既有缺陷：同一连接先后注册两个实例后重连，旧实现可能把两个都重放，最终哪个生效取决于字典枚举顺序。发送失败的注册仍然不重放，但它替换掉的上一份注册会恢复记账——服务端此时保留的正是那一份，忘掉它会让重连丢掉一个仍在发布的实例。
+- **校验**：空列表、包含 `null`、含持久化实例都在发送前抛 `ArgumentException`。空批次在服务端不是空操作，而是把已发布集合替换为空——等于用注册的语法做注销；持久化实例则没有批量通道（`PersistentClientOperationServiceImpl.batchRegisterInstance` 仍是 `TODO`），发出去会被静默丢弃。
+- **批量注销**：按 IP+端口匹配，扣掉后把剩余实例作为新批次发布；服务不是由 `RegisterInstancesAsync` 发布的批次时抛 `InvalidOperationException`（Java 抛 `INVALID_PARAM`）。剩余为空时改发一条普通注销，而不是 Java 的空批次：服务端状态相同，但不会留下一个空批次在重连时重放。
+- **文档**：`docs/java-parity.md` 的 P2-6 标记完成并新增对照表与上述取舍（同时修正原文「注销是循环」的说法）；`docs/protocol-notes.md` 记录「每个连接每个服务一份已发布集合」与 `BatchInstanceRequest`；`docs/faq.md` 新增「How do I register several instances of one service from one client?」；`README.md` 命名示例补一段。
+- 单元测试新增 14 个：批次请求字段与默认集群、空批次、持久化实例、`null` 元素、服务端拒绝后不再重放、替换失败时恢复上一份注册、重连重放整个批次、单条注册替换批次后的重放、批次替换单条后的重放、批量注销发布剩余部分并重放、全部移除时发普通注销且不重放、未批量注册时拒绝、空列表拒绝、释放后抛 `ObjectDisposedException`。
+- 验收：Release 构建零警告零错误；单元测试 **790 个全绿**（新增 14 个）；集成测试新增 `NamingIntegrationTests.RegisterInstances_PublishesABatchAndReplacesItThroughARealServer`（真实容器 `v3.0.2`：一条请求发布两个实例 → 查询两条 → 批量注销一个 → 只剩另一个 → 单条注册替换整个批次 → 只剩新实例 → 注销后为空），整套 **61 个全绿**。
+
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

@@ -208,6 +208,12 @@ configuration, and the protocol is a small state machine over three request type
 
 - Registration, deregistration and queries use `InstanceRequest`/`PersistentInstanceRequest` and
   `ServiceQueryRequest`.
+- **One published instance set per service per connection.** The server stores an instance
+  registration in `AbstractClient.publishers`, keyed by service, so a new registration replaces the
+  previous set rather than adding to it. `BatchInstanceRequest{type = "batchRegisterInstance",
+  instances}` publishes the whole set in one request; a deregistration removes the set. This is why
+  the client's replay state is keyed by service and why a batch is the only way one connection
+  publishes several instances of the same service.
 - Subscriptions use `SubscribeServiceRequest`; changes arrive as `NotifySubscriberRequest`, which
   carries the complete instance list, and are answered with `NotifySubscriberResponse`. The
   subscription's own response carries `serviceInfo`: the state of the service at the instant the

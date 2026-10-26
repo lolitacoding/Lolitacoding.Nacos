@@ -124,6 +124,47 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
+    public async Task RegisterInstance_WhenAReplacementIsRejected_KeepsTheEarlierRegistration()
+    {
+        // The failed attempt never reached the server, so the server still holds the earlier set.
+        // Forgetting it would lose that instance at the next reconnect, when only the replay can
+        // restore what the connection took with it.
+        bool reject = false;
+
+        using NamingHarness harness = new(handler: request =>
+            reject && PayloadCodec.ReadTypeName(request) == "InstanceRequest"
+                ? PayloadCodec.Encode(new InstanceResponse
+                {
+                    ResultCode = NacosResponse.FailureCode,
+                    ErrorCode = 20005,
+                    Message = "rejected",
+                })
+                : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstanceAsync(
+            Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken);
+
+        reject = true;
+
+        await Should.ThrowAsync<NacosServerException>(
+            () => harness.Client.RegisterInstanceAsync(
+                Service, new NacosInstance("10.0.0.6", 8081), TestContext.Current.CancellationToken));
+
+        reject = false;
+
+        int before = harness.CountRequests("InstanceRequest");
+
+        await harness.DropAndReconnectAsync();
+        await NamingHarness.WaitForAsync(
+            () => harness.CountRequests("InstanceRequest") > before);
+
+        // The replay restores the set the server still has, not the attempt it refused.
+        harness.LastRequest<InstanceRequest>().Instance!.Ip.ShouldBe("10.0.0.5");
+    }
+
+    [Fact]
     public async Task DeregisterInstance_SendsTheDeregistration()
     {
         using NamingHarness harness = new();
@@ -135,6 +176,297 @@ public sealed class NacosNamingClientTests
         InstanceRequest request = harness.LastRequest<InstanceRequest>();
         request.Type.ShouldBe(InstanceRequest.DeregisterType);
         request.Instance!.Ip.ShouldBe("10.0.0.5");
+    }
+
+    [Fact]
+    public async Task RegisterInstances_SendsOneBatchRequest()
+    {
+        // The point of the batch is one round trip for the whole list, so the test asserts both the
+        // request shape and the absence of per-instance requests.
+        using NamingHarness harness = new(@namespace: "tenant-a");
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstancesAsync(
+            Service,
+            [
+                new NacosInstance("10.0.0.5", 8080, clusterName: "zone-a"),
+                new NacosInstance("10.0.0.6", 8081),
+            ],
+            TestContext.Current.CancellationToken);
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(1);
+        harness.CountRequests("InstanceRequest").ShouldBe(0);
+
+        BatchInstanceRequest request = harness.LastRequest<BatchInstanceRequest>();
+        request.Namespace.ShouldBe("tenant-a");
+        request.ServiceName.ShouldBe("order-service");
+        request.GroupName.ShouldBe("DEFAULT_GROUP");
+        request.Type.ShouldBe(BatchInstanceRequest.RegisterType);
+        request.Instances!.Count.ShouldBe(2);
+        request.Instances[0].Ip.ShouldBe("10.0.0.5");
+        request.Instances[0].ClusterName.ShouldBe("zone-a");
+
+        // A batch instance without a cluster still lands in the configured default, like a single
+        // registration.
+        request.Instances[1].ClusterName.ShouldBe("DEFAULT");
+    }
+
+    [Fact]
+    public async Task RegisterInstances_RejectsAnEmptyBatch()
+    {
+        // An empty batch is not a no-op on the wire: it would replace the service's published set
+        // with nothing, so it is a deregistration spelled as a registration.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<ArgumentException>(
+            () => harness.Client.RegisterInstancesAsync(
+                Service, [], TestContext.Current.CancellationToken));
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task RegisterInstances_RejectsAPersistentInstance()
+    {
+        // Nacos has no batch path for persistent instances; the ephemeral handler would silently
+        // store the registration as ephemeral.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<ArgumentException>(
+            () => harness.Client.RegisterInstancesAsync(
+                Service,
+                [new NacosInstance("10.0.0.5", 8080, ephemeral: false)],
+                TestContext.Current.CancellationToken));
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task RegisterInstances_RejectsANullInstance()
+    {
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<ArgumentException>(
+            () => harness.Client.RegisterInstancesAsync(
+                Service, [null!], TestContext.Current.CancellationToken));
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task RegisterInstances_WhenTheServerRejects_ForgetsTheRegistration()
+    {
+        using NamingHarness harness = new(handler: request =>
+            PayloadCodec.ReadTypeName(request) == "BatchInstanceRequest"
+                ? PayloadCodec.Encode(new BatchInstanceResponse
+                {
+                    ResultCode = NacosResponse.FailureCode,
+                    ErrorCode = 20005,
+                    Message = "rejected",
+                })
+                : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<NacosServerException>(
+            () => harness.Client.RegisterInstancesAsync(
+                Service,
+                [new NacosInstance("10.0.0.5", 8080), new NacosInstance("10.0.0.6", 8081)],
+                TestContext.Current.CancellationToken));
+
+        await harness.DropAndReconnectAsync();
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task Reconnect_ReplaysABatchRegistration()
+    {
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstancesAsync(
+            Service,
+            [new NacosInstance("10.0.0.5", 8080), new NacosInstance("10.0.0.6", 8081)],
+            TestContext.Current.CancellationToken);
+
+        int before = harness.CountRequests("BatchInstanceRequest");
+
+        await harness.DropAndReconnectAsync();
+        await NamingHarness.WaitForAsync(
+            () => harness.CountRequests("BatchInstanceRequest") > before);
+
+        // The whole set is re-asserted in one request, not one request per instance.
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(before + 1);
+        harness.LastRequest<BatchInstanceRequest>().Instances!.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task RegisterInstance_AfterABatch_ReplaysOnlyTheSingleInstance()
+    {
+        // The server keeps one published instance set per service per connection, so a single
+        // registration supersedes the batch. Replaying both would resurrect the batch's instances.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstancesAsync(
+            Service,
+            [new NacosInstance("10.0.0.5", 8080), new NacosInstance("10.0.0.6", 8081)],
+            TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstanceAsync(
+            Service, new NacosInstance("10.0.0.7", 8082), TestContext.Current.CancellationToken);
+
+        int batchesBefore = harness.CountRequests("BatchInstanceRequest");
+        int singlesBefore = harness.CountRequests("InstanceRequest");
+
+        await harness.DropAndReconnectAsync();
+        await NamingHarness.WaitForAsync(
+            () => harness.CountRequests("InstanceRequest") > singlesBefore);
+
+        harness.CountRequests("InstanceRequest").ShouldBe(singlesBefore + 1);
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(batchesBefore);
+        harness.LastRequest<InstanceRequest>().Instance!.Ip.ShouldBe("10.0.0.7");
+    }
+
+    [Fact]
+    public async Task RegisterInstances_AfterASingle_ReplacesTheSingleOnReplay()
+    {
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstanceAsync(
+            Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstancesAsync(
+            Service,
+            [new NacosInstance("10.0.0.6", 8081), new NacosInstance("10.0.0.7", 8082)],
+            TestContext.Current.CancellationToken);
+
+        int batchesBefore = harness.CountRequests("BatchInstanceRequest");
+        int singlesBefore = harness.CountRequests("InstanceRequest");
+
+        await harness.DropAndReconnectAsync();
+        await NamingHarness.WaitForAsync(
+            () => harness.CountRequests("BatchInstanceRequest") > batchesBefore);
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(batchesBefore + 1);
+        harness.CountRequests("InstanceRequest").ShouldBe(singlesBefore);
+        harness.LastRequest<BatchInstanceRequest>().Instances!.Count.ShouldBe(2);
+    }
+
+    [Fact]
+    public async Task DeregisterInstances_PublishesTheRemainder()
+    {
+        // Nacos has no batch deregistration message: the remainder is published as a new batch.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var first = new NacosInstance("10.0.0.5", 8080);
+        var second = new NacosInstance("10.0.0.6", 8081);
+
+        await harness.Client.RegisterInstancesAsync(
+            Service, [first, second], TestContext.Current.CancellationToken);
+
+        await harness.Client.DeregisterInstancesAsync(
+            Service, [first], TestContext.Current.CancellationToken);
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(2);
+
+        BatchInstanceRequest request = harness.LastRequest<BatchInstanceRequest>();
+        request.Instances!.ShouldHaveSingleItem().Ip.ShouldBe("10.0.0.6");
+
+        // The replay must follow the new set, not the batch the caller removed from.
+        int before = harness.CountRequests("BatchInstanceRequest");
+
+        await harness.DropAndReconnectAsync();
+        await NamingHarness.WaitForAsync(
+            () => harness.CountRequests("BatchInstanceRequest") > before);
+
+        harness.LastRequest<BatchInstanceRequest>().Instances!.ShouldHaveSingleItem()
+            .Ip.ShouldBe("10.0.0.6");
+    }
+
+    [Fact]
+    public async Task DeregisterInstances_WhenEverythingIsRemoved_SendsADeregistration()
+    {
+        // The official client publishes an empty batch here; an ordinary deregistration leaves the
+        // same server state without a lingering empty published set.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var first = new NacosInstance("10.0.0.5", 8080);
+        var second = new NacosInstance("10.0.0.6", 8081);
+
+        await harness.Client.RegisterInstancesAsync(
+            Service, [first, second], TestContext.Current.CancellationToken);
+
+        int batches = harness.CountRequests("BatchInstanceRequest");
+
+        await harness.Client.DeregisterInstancesAsync(
+            Service, [first, second], TestContext.Current.CancellationToken);
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(batches);
+
+        InstanceRequest request = harness.LastRequest<InstanceRequest>();
+        request.Type.ShouldBe(InstanceRequest.DeregisterType);
+        request.Instance!.Ip.ShouldBe("10.0.0.5");
+
+        // Nothing is left to replay.
+        int deregistrations = harness.CountRequests("InstanceRequest");
+
+        await harness.DropAndReconnectAsync();
+        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+
+        harness.CountRequests("BatchInstanceRequest").ShouldBe(batches);
+        harness.CountRequests("InstanceRequest").ShouldBe(deregistrations);
+    }
+
+    [Fact]
+    public async Task DeregisterInstances_RejectsAServiceThatWasNotBatchRegistered()
+    {
+        // There is no batch to subtract from, and guessing that the caller meant a plain
+        // deregistration would remove more than they asked for.
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstanceAsync(
+            Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<InvalidOperationException>(
+            () => harness.Client.DeregisterInstancesAsync(
+                Service, [new NacosInstance("10.0.0.5", 8080)], TestContext.Current.CancellationToken));
+
+        harness.CountRequests("InstanceRequest").ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task DeregisterInstances_RejectsAnEmptyList()
+    {
+        using NamingHarness harness = new();
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.Client.RegisterInstancesAsync(
+            Service, [new NacosInstance("10.0.0.5", 8080)], TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<ArgumentException>(
+            () => harness.Client.DeregisterInstancesAsync(
+                Service, [], TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task RegisterInstances_ThrowsAfterDispose()
+    {
+        using NamingHarness harness = new();
+        await harness.Client.DisposeAsync();
+
+        await Should.ThrowAsync<ObjectDisposedException>(
+            () => harness.Client.RegisterInstancesAsync(
+                Service, [new NacosInstance("10.0.0.5", 8080)],
+                TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -925,6 +1257,7 @@ public sealed class NacosNamingClientTests
                 new ServiceListResponse { Count = 0, ServiceNames = [] }),
             "SubscribeServiceRequest" => SubscribeResponse(),
             "InstanceRequest" or "PersistentInstanceRequest" => PayloadCodec.Encode(new InstanceResponse()),
+            "BatchInstanceRequest" => PayloadCodec.Encode(new BatchInstanceResponse()),
             _ => throw new InvalidOperationException(
                 $"The harness has no response for '{PayloadCodec.ReadTypeName(request)}'."),
         };

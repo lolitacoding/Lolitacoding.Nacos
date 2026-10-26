@@ -215,6 +215,38 @@ Use `WatchAsync(groupPattern)` instead when the set has to stay current, and not
 not served from a local cache during an outage — a stale list would hide services that appeared
 meanwhile.
 
+## How do I register several instances of one service from one client?
+
+Use `RegisterInstancesAsync`. It sends the whole list in one request:
+
+```csharp
+var service = new NacosServiceKey("order-service", "DEFAULT_GROUP");
+
+await client.Naming.RegisterInstancesAsync(service,
+[
+    new NacosInstance("10.0.0.5", 8080),
+    new NacosInstance("10.0.0.6", 8080),
+], ct);
+```
+
+The Nacos server keeps **one published instance set per service per connection**, so this is the
+only way one client publishes several instances of the same service: calling
+`RegisterInstanceAsync` twice for the same service replaces the first instance instead of adding
+the second. A later single registration or batch also replaces the whole set, and
+`DeregisterInstanceAsync` removes the whole set.
+
+To remove part of a batch, use `DeregisterInstancesAsync`. It republishes the remainder, because
+the protocol has no batch-deregistration message; instances are matched by address and port, and
+the service must have been registered with `RegisterInstancesAsync` first:
+
+```csharp
+await client.Naming.DeregisterInstancesAsync(service,
+    [new NacosInstance("10.0.0.5", 8080)], ct);
+```
+
+Only ephemeral instances can be batch-registered. For persistent instances, register each one
+individually from its own client connection.
+
 ## How do I follow only some instances of a service?
 
 Use the selector overload of `SubscribeAsync`. It keeps a subset of what the server reports, so a

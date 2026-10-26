@@ -55,8 +55,18 @@ internal sealed class FakeNamingClient : INacosNamingClient
         Task.CompletedTask;
 
     /// <inheritdoc />
+    public Task RegisterInstancesAsync(
+        NacosServiceKey service, IReadOnlyList<NacosInstance> instances, CancellationToken ct = default) =>
+        Task.CompletedTask;
+
+    /// <inheritdoc />
     public Task DeregisterInstanceAsync(
         NacosServiceKey service, NacosInstance instance, CancellationToken ct = default) =>
+        Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task DeregisterInstancesAsync(
+        NacosServiceKey service, IReadOnlyList<NacosInstance> instances, CancellationToken ct = default) =>
         Task.CompletedTask;
 
     /// <inheritdoc />

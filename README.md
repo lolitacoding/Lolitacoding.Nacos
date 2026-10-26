@@ -91,6 +91,16 @@ await client.Naming.RegisterInstanceAsync(
     service,
     new NacosInstance(ipAddress: "10.0.0.5", port: 8080, weight: 1.0));
 
+// One connection publishes one instance set per service, so several instances of the same service
+// go out as one batch. A second single registration would replace the first instead of adding.
+var payment = new NacosServiceKey("payment-service", NacosConstants.DefaultGroup);
+
+await client.Naming.RegisterInstancesAsync(payment,
+[
+    new NacosInstance("10.0.0.6", 8080),
+    new NacosInstance("10.0.0.7", 8080),
+]);
+
 NacosServiceInfo info = await client.Naming.GetInstancesAsync(service);
 IReadOnlyList<NacosInstance> instances = info.HealthyInstances;
 

@@ -227,4 +227,14 @@ internal static partial class NacosNamingLog
         Message = "A naming instance selector for {Service} failed and was skipped; the subscription "
             + "keeps the view it last delivered: {Reason}")]
     public static partial void SelectorFailed(ILogger logger, string service, string reason);
+
+    /// <summary>Logs that several instances of one service were published as one batch.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service the instances belong to.</param>
+    /// <param name="count">The number of instances in the published set.</param>
+    [LoggerMessage(
+        EventId = 5021,
+        Level = LogLevel.Debug,
+        Message = "Published {Count} instances of {Service} as one batch.")]
+    public static partial void InstancesRegistered(ILogger logger, string service, int count);
 }

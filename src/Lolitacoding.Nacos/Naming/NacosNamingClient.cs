@@ -119,26 +119,86 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         NacosInstance resolvedInstance = ApplyDefaultCluster(instance);
 
         // The registration is recorded before it is sent, so a reconnect that races the first
-        // attempt still finds it and replays it.
-        string id = RegistrationId(resolved, resolvedInstance);
-        var registration = new Registration(resolved, resolvedInstance);
-        _registrations[id] = registration;
+        // attempt still finds it and replays it. The key is the service, not the endpoint: the
+        // server keeps one published instance set per service per connection, so a new
+        // registration supersedes the previous one for replay as well.
+        _registrations.TryGetValue(resolved.ToString(), out Registration? previous);
+        var registration = new Registration(resolved, [resolvedInstance], isBatch: false);
+        _registrations[resolved.ToString()] = registration;
 
         try
         {
-            await SendRegistrationAsync(resolved, resolvedInstance, isReplay: false, ct).ConfigureAwait(false);
+            await SendRegistrationAsync(registration, isReplay: false, ct).ConfigureAwait(false);
             registration.Confirmed = true;
         }
         catch
         {
             // The registration never reached the server, so it must not be replayed later as
-            // though it had been accepted.
-            _registrations.TryRemove(id, out _);
+            // though it had been accepted; the set the server still holds is the one to keep.
+            Revert(resolved, registration, previous);
             throw;
         }
 
         NacosNamingLog.InstanceRegistered(
             _logger, resolved.ToString(), resolvedInstance.Endpoint, resolvedInstance.Ephemeral);
+    }
+
+    /// <inheritdoc />
+    public async Task RegisterInstancesAsync(
+        NacosServiceKey service,
+        IReadOnlyList<NacosInstance> instances,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(instances);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (instances.Count == 0)
+        {
+            // An empty batch is not a no-op on the wire: it replaces the service's published set
+            // with nothing, which is a deregistration spelled as a registration.
+            throw new ArgumentException(
+                "A batch registration must contain at least one instance.", nameof(instances));
+        }
+
+        NacosServiceKey resolved = service.WithDefaultNamespace(_options.Namespace);
+        var resolvedInstances = new NacosInstance[instances.Count];
+
+        for (int i = 0; i < instances.Count; i++)
+        {
+            NacosInstance instance = instances[i]
+                ?? throw new ArgumentException(
+                    "A batch registration cannot contain a null instance.", nameof(instances));
+
+            if (!instance.Ephemeral)
+            {
+                // The server's batch handler is the ephemeral one; the persistent store has no
+                // batch path and would silently drop the registration.
+                throw new ArgumentException(
+                    "Batch registration only supports ephemeral instances; register a persistent "
+                    + "instance with RegisterInstanceAsync.",
+                    nameof(instances));
+            }
+
+            resolvedInstances[i] = ApplyDefaultCluster(instance);
+        }
+
+        var registration = new Registration(resolved, resolvedInstances, isBatch: true);
+        _registrations.TryGetValue(resolved.ToString(), out Registration? previous);
+        _registrations[resolved.ToString()] = registration;
+
+        try
+        {
+            await SendRegistrationAsync(registration, isReplay: false, ct).ConfigureAwait(false);
+            registration.Confirmed = true;
+        }
+        catch
+        {
+            Revert(resolved, registration, previous);
+            throw;
+        }
+
+        NacosNamingLog.InstancesRegistered(_logger, resolved.ToString(), resolvedInstances.Length);
     }
 
     /// <inheritdoc />
@@ -154,8 +214,10 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         NacosServiceKey resolved = service.WithDefaultNamespace(_options.Namespace);
         NacosInstance resolvedInstance = ApplyDefaultCluster(instance);
 
-        // Removed first so a concurrent reconnect cannot re-register what is being removed.
-        _registrations.TryRemove(RegistrationId(resolved, resolvedInstance), out _);
+        // Removed first so a concurrent reconnect cannot re-register what is being removed. The
+        // server removes the service's whole published set, so the entry is the service, not the
+        // endpoint.
+        _registrations.TryRemove(resolved.ToString(), out _);
 
         var request = new InstanceRequest
         {
@@ -170,6 +232,92 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 
         NacosNamingLog.InstanceDeregistered(
             _logger, resolved.ToString(), resolvedInstance.Endpoint);
+    }
+
+    /// <inheritdoc />
+    public async Task DeregisterInstancesAsync(
+        NacosServiceKey service,
+        IReadOnlyList<NacosInstance> instances,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(service);
+        ArgumentNullException.ThrowIfNull(instances);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        if (instances.Count == 0)
+        {
+            throw new ArgumentException(
+                "A batch deregistration must name at least one instance.", nameof(instances));
+        }
+
+        NacosServiceKey resolved = service.WithDefaultNamespace(_options.Namespace);
+
+        var removed = new HashSet<(string Ip, int Port)>();
+        foreach (NacosInstance instance in instances)
+        {
+            if (instance is null)
+            {
+                throw new ArgumentException(
+                    "A batch deregistration cannot contain a null instance.", nameof(instances));
+            }
+
+            removed.Add((instance.IpAddress, instance.Port));
+        }
+
+        if (!_registrations.TryGetValue(resolved.ToString(), out Registration? registration)
+            || !registration.IsBatch)
+        {
+            // There is no batch to subtract from: the official client refuses this too, rather than
+            // guessing that the caller meant a plain deregistration.
+            throw new InvalidOperationException(
+                $"The service {resolved} has no batch registration from this client to remove "
+                + "instances from; use DeregisterInstanceAsync for a single registration.");
+        }
+
+        // Matched by address and port only, as the official client does: a caller constructs the
+        // instance locally and cannot know the server-assigned id.
+        NacosInstance[] remainder =
+            [.. registration.Instances.Where(instance => !removed.Contains((instance.IpAddress, instance.Port)))];
+
+        if (remainder.Length == 0)
+        {
+            // The official client publishes an empty batch here. An ordinary deregistration leaves
+            // the same server state without a lingering empty published set, so it is preferred.
+            _registrations.TryRemove(resolved.ToString(), out _);
+
+            var request = new InstanceRequest
+            {
+                Namespace = resolved.Namespace,
+                ServiceName = resolved.ServiceName,
+                GroupName = resolved.GroupName,
+                Type = InstanceRequest.DeregisterType,
+                Instance = ToWireInstance(resolved, ApplyDefaultCluster(instances[0])),
+            };
+
+            await _connection.RequestAsync<InstanceResponse>(request, ct).ConfigureAwait(false);
+
+            NacosNamingLog.InstanceDeregistered(_logger, resolved.ToString(), instances[0].Endpoint);
+            return;
+        }
+
+        // The remainder replaces the tracked batch before it is sent, so a reconnect that races the
+        // attempt replays the set the caller asked for rather than the one being replaced.
+        _registrations.TryGetValue(resolved.ToString(), out Registration? previous);
+        var replacement = new Registration(resolved, remainder, isBatch: true);
+        _registrations[resolved.ToString()] = replacement;
+
+        try
+        {
+            await SendRegistrationAsync(replacement, isReplay: false, ct).ConfigureAwait(false);
+            replacement.Confirmed = true;
+        }
+        catch
+        {
+            Revert(resolved, replacement, previous);
+            throw;
+        }
+
+        NacosNamingLog.InstancesRegistered(_logger, resolved.ToString(), remainder.Length);
     }
 
     /// <inheritdoc />
@@ -689,8 +837,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         {
             try
             {
-                await SendRegistrationAsync(
-                    registration.Service, registration.Instance, isReplay: true, ct).ConfigureAwait(false);
+                await SendRegistrationAsync(registration, isReplay: true, ct).ConfigureAwait(false);
 
                 registration.Confirmed = true;
                 restored++;
@@ -736,24 +883,51 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <summary>
-    /// Sends a single instance registration.
+    /// Sends the registration this client holds for one service.
     /// </summary>
-    /// <param name="service">The resolved service key.</param>
-    /// <param name="instance">The instance to register.</param>
-    /// <param name="isReplay">Whether this is a reconnect replay, which changes the request type.</param>
+    /// <param name="registration">The registration to send.</param>
+    /// <param name="isReplay">Whether this is a reconnect replay.</param>
     /// <param name="ct">A token that cancels the request.</param>
     /// <returns>A task that completes once the server acknowledged the registration.</returns>
     /// <remarks>
-    /// The request type differs by instance kind: the server routes a persistent instance to a
-    /// different handler, which is what makes it survive the connection. Sending the wrong type
-    /// would silently store the instance as ephemeral.
+    /// <para>
+    /// A single instance is sent as <c>InstanceRequest</c> or <c>PersistentInstanceRequest</c>: the
+    /// server routes a persistent instance to a different handler, which is what makes it survive
+    /// the connection. A batch is always ephemeral and goes out as one <c>BatchInstanceRequest</c>.
+    /// </para>
+    /// <para>
+    /// A replay is an idempotent re-assertion of intent; the header makes the distinction visible in
+    /// a server-side trace without changing the payload.
+    /// </para>
     /// </remarks>
     private async Task SendRegistrationAsync(
-        NacosServiceKey service,
-        NacosInstance instance,
+        Registration registration,
         bool isReplay,
         CancellationToken ct)
     {
+        NacosServiceKey service = registration.Service;
+
+        if (registration.IsBatch)
+        {
+            var batch = new BatchInstanceRequest
+            {
+                Namespace = service.Namespace,
+                ServiceName = service.ServiceName,
+                GroupName = service.GroupName,
+                Type = BatchInstanceRequest.RegisterType,
+                Instances = [.. registration.Instances.Select(instance => ToWireInstance(service, instance))],
+            };
+
+            if (isReplay)
+            {
+                batch.SetHeader("replay", "true");
+            }
+
+            await _connection.RequestAsync<BatchInstanceResponse>(batch, ct).ConfigureAwait(false);
+            return;
+        }
+
+        NacosInstance instance = registration.Instances[0];
         var wireInstance = ToWireInstance(service, instance);
 
         // A registration replayed after a reconnect must not be coalesced with a heartbeat, so it
@@ -778,8 +952,6 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 
         if (isReplay)
         {
-            // A replay is an idempotent re-assertion of intent; the header makes the distinction
-            // visible in a server-side trace without changing the payload.
             request.SetHeader("replay", "true");
         }
 
@@ -1578,26 +1750,62 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             service: null));
     }
 
-    private static string RegistrationId(NacosServiceKey service, NacosInstance instance) =>
-        string.Concat(
-            service.ToString(), "|", instance.IpAddress, ":",
-            instance.Port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    /// <summary>
+    /// Undoes a registration whose send failed, unless a later call for the same service has
+    /// replaced it.
+    /// </summary>
+    /// <param name="service">The service the registration belongs to.</param>
+    /// <param name="failed">The registration whose send failed.</param>
+    /// <param name="previous">
+    /// The registration the failed attempt replaced, or <see langword="null"/> when the service had
+    /// none.
+    /// </param>
+    /// <remarks>
+    /// The failed attempt never reached the server, so the set the server still holds is the one to
+    /// replay: forgetting it would silently drop an instance the next reconnect should restore.
+    /// </remarks>
+    private void Revert(NacosServiceKey service, Registration failed, Registration? previous)
+    {
+        // Revert only if the map still holds the failed attempt: a concurrent registration for the
+        // same service replaced the entry and owns it now.
+        if (previous is null)
+        {
+            ((ICollection<KeyValuePair<string, Registration>>)_registrations)
+                .Remove(new KeyValuePair<string, Registration>(service.ToString(), failed));
+        }
+        else
+        {
+            _registrations.TryUpdate(service.ToString(), previous, failed);
+        }
+    }
 
     private static string SubscriptionId(NacosServiceKey service, string? clusters) =>
         string.Concat(service.ToString(), "|", clusters ?? string.Empty);
 
     /// <summary>A registration this client owns and must replay after a reconnect.</summary>
+    /// <remarks>
+    /// Keyed by service, not by endpoint: the server keeps one published instance set per service
+    /// per connection, so the last registration for a service is the whole truth to replay.
+    /// </remarks>
     private sealed class Registration
     {
-        public Registration(NacosServiceKey service, NacosInstance instance)
+        public Registration(
+            NacosServiceKey service,
+            IReadOnlyList<NacosInstance> instances,
+            bool isBatch)
         {
             Service = service;
-            Instance = instance;
+            Instances = instances;
+            IsBatch = isBatch;
         }
 
         public NacosServiceKey Service { get; }
 
-        public NacosInstance Instance { get; }
+        /// <summary>Gets the instances the registration publishes.</summary>
+        public IReadOnlyList<NacosInstance> Instances { get; }
+
+        /// <summary>Gets a value indicating whether the instances are published as one batch.</summary>
+        public bool IsBatch { get; }
 
         /// <summary>
         /// Gets or sets a value indicating whether the server acknowledged the registration.

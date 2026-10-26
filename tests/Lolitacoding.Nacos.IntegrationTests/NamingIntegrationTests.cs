@@ -343,6 +343,66 @@ public sealed class NamingIntegrationTests
         other.Services.ShouldBeEmpty();
     }
 
+    [Fact]
+    public async Task RegisterInstances_PublishesABatchAndReplacesItThroughARealServer()
+    {
+        // The server keeps one published instance set per service per connection. The batch is what
+        // lets one connection publish several instances, and the later calls prove that a new
+        // registration replaces the set rather than adding to it.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory client = CreateClient(container);
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var service = new NacosServiceKey(NacosHttp.UniqueId("naming-batch-it"), "DEFAULT_GROUP");
+        var first = new NacosInstance("10.20.30.71", 8201);
+        var second = new NacosInstance("10.20.30.72", 8202);
+
+        await client.Naming.RegisterInstancesAsync(
+            service, [first, second], TestContext.Current.CancellationToken);
+
+        NacosServiceInfo info = await NacosEventually.BecomesAsync(
+            () => client.Naming.GetInstancesAsync(
+                service, healthyOnly: false, ct: TestContext.Current.CancellationToken),
+            result => result.Instances.Count == 2,
+            TestContext.Current.CancellationToken);
+
+        info.Instances.Select(instance => instance.Endpoint)
+            .ShouldBe([first.Endpoint, second.Endpoint], ignoreOrder: true);
+
+        // Removing one member republishes the remainder as a new batch.
+        await client.Naming.DeregisterInstancesAsync(
+            service, [first], TestContext.Current.CancellationToken);
+
+        await NacosEventually.BecomesAsync(
+            () => client.Naming.GetInstancesAsync(
+                service, healthyOnly: false, ct: TestContext.Current.CancellationToken),
+            result => result.Instances.Count == 1 && result.Instances[0].IpAddress == second.IpAddress,
+            TestContext.Current.CancellationToken);
+
+        // A single registration supersedes the batch: the server holds one set per service per
+        // connection, so the remaining batch instance disappears with it.
+        var third = new NacosInstance("10.20.30.73", 8203);
+
+        await client.Naming.RegisterInstanceAsync(
+            service, third, TestContext.Current.CancellationToken);
+
+        await NacosEventually.BecomesAsync(
+            () => client.Naming.GetInstancesAsync(
+                service, healthyOnly: false, ct: TestContext.Current.CancellationToken),
+            result => result.Instances.Count == 1 && result.Instances[0].IpAddress == third.IpAddress,
+            TestContext.Current.CancellationToken);
+
+        // Deregistering the single registration empties the set.
+        await client.Naming.DeregisterInstanceAsync(
+            service, third, TestContext.Current.CancellationToken);
+
+        await NacosEventually.BecomesAsync(
+            () => client.Naming.GetInstancesAsync(
+                service, healthyOnly: false, ct: TestContext.Current.CancellationToken),
+            result => result.Instances.Count == 0,
+            TestContext.Current.CancellationToken);
+    }
+
     private static NacosClientFactory CreateClient(NacosContainer container) =>
         NacosClientFactory.Create(
             new NacosOptions
