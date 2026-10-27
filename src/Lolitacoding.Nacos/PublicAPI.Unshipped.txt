@@ -833,7 +833,14 @@ Lolitacoding.Nacos.Locking.NacosLockResult.Success.get -> bool
 Lolitacoding.Nacos.Locking.NacosLockResult.WaitPosition.get -> int
 Lolitacoding.Nacos.Locking.NacosLockResult.Waiting.get -> bool
 Lolitacoding.Nacos.Locking.NacosLockTypes
+Lolitacoding.Nacos.NacosAgentWatchTransport
+Lolitacoding.Nacos.NacosAgentWatchTransport.Auto = 0 -> Lolitacoding.Nacos.NacosAgentWatchTransport
+Lolitacoding.Nacos.NacosAgentWatchTransport.Grpc = 1 -> Lolitacoding.Nacos.NacosAgentWatchTransport
+Lolitacoding.Nacos.NacosAgentWatchTransport.Http = 2 -> Lolitacoding.Nacos.NacosAgentWatchTransport
+Lolitacoding.Nacos.NacosAgentWatchTransport.Polling = 3 -> Lolitacoding.Nacos.NacosAgentWatchTransport
 Lolitacoding.Nacos.NacosAiOptions
+Lolitacoding.Nacos.NacosAiOptions.AgentWatchTransport.get -> Lolitacoding.Nacos.NacosAgentWatchTransport
+Lolitacoding.Nacos.NacosAiOptions.AgentWatchTransport.set -> void
 Lolitacoding.Nacos.NacosAiOptions.CacheRefreshInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosAiOptions.CacheRefreshInterval.set -> void
 Lolitacoding.Nacos.NacosAiOptions.EnableLocalCache.get -> bool

@@ -807,23 +807,54 @@ changed; the caller then reads the state again through the ordinary discovery ca
   that finds it did not has nothing to report, and reporting it would tell a caller that acts on every
   element that something happened.
 
+#### The HTTP batch long poll
+
+A watch can also be served without the connection taking a push. `POST
+/v3/client/ai/agents/watch` is a form POST (`generation`, `timeoutMillis`, `watches`) that carries
+the client's complete set — each item is `{clientWatchId, discoveryRequest,
+materializedFingerprint}` — and the server holds it until one of those fingerprints no longer matches
+the projection or the timeout elapses, then answers `{generation, changed, changedClientWatchIds}`
+inside the usual v3 `Result` envelope. `X-Nacos-Client-Id` names the client and `Request-Module: ai`
+routes the request to the AI module.
+
+- The batch is a comparison, so it needs a fingerprint: `materializedFingerprint` is
+  `sha256-canonical-json-v1:` plus the SHA-256 of the server's canonical JSON of the result the
+  caller holds. `AgentDiscoveryCanonicalizer` and `AgentEndpointCanonicalizer` define that form; this
+  client ports both, and the port is pinned against the vector the Java implementation produces.
+- A watch set change increments `generation` and cancels the in-flight request, and an answer that
+  names another generation is discarded: its identifiers may describe a set the client no longer
+  holds.
+- A watch the server reported changed leaves the next batch until the state was read and its
+  fingerprint handed back, so the same projection is not reported twice.
+- The server accepts 1–1000 watches that share one namespace, with `timeoutMillis` between 1000 and
+  60000; the read timeout is the long-poll timeout plus five seconds.
+- Failures are mapped the way the official transport maps them. A capacity rejection (`50104`, sent
+  as HTTP 503 with the detail in the result) rejects only the newest pending addition, which is
+  reported unavailable. A migration (`50105`) ends every watch on the binding without ending the
+  binding. A status the server would answer the same way for a batch — 404, -404, 501, 302, 403,
+  400, -400, or capacity with nothing pending — makes the binding unavailable, and the manager then
+  serves those watches by polling. An ordinary failure is retried after a second, and three
+  consecutive ones make the binding unavailable too.
+
 ### Where this client deviates from the official client (RAD agent watch)
 
-1. **Only the gRPC transport is implemented.** The official client routes a watch through
-   `AgentWatchTransportRouter`, which prefers gRPC, falls back to a batched HTTP long-poll and then to
-   bounded discovery polling, and upgrades a downgraded watch back to gRPC when the wire returns. This
-   client has the gRPC transport alone: a server that does not state `radWatchV1` is refused with the
-   not-implemented code rather than watched over another transport. The refusal is the same shape as
-   the registry's, and it is deliberate — a watch over a transport that is not implemented would be a
-   watch whose hints are never delivered, which is worse than being told the server cannot serve it.
-2. **No fingerprint is computed locally.** The official client canonicalises the discovery result into
-   a fingerprint, sends it as `materializedFingerprint`, and compares it to decide whether a read
-   found anything new. This client never sends one: it subscribes with `null`, adopts the server's
-   `observedFingerprint` as the value it will compare later hints against, and uses a local digest of
-   the served document — never sent anywhere — only to decide whether a read should be handed to the
-   caller. The cost is one extra discovery read per install, including after a reconnect, because a
-   server told nothing must assume the client holds nothing. What it buys is that the two sides cannot
-   disagree about what a fingerprint means: there is no second canonicaliser to keep in step.
+1. **The transport preference is a setting rather than a router.** The official client's
+   `AgentWatchTransportRouter` picks the transport per watch, upgrades a downgraded watch back to gRPC
+   when the wire returns, and decides fallback from the error code of each install. This client
+   selects the transport when a watch is installed and again after a reconnect:
+   `NacosAiOptions.AgentWatchTransport` is `Auto` by default, which prefers gRPC, falls back to the
+   HTTP batch when the gRPC install failed for a reason another transport could fix, and falls back
+   to polling when neither is usable; `Grpc`, `Http` and `Polling` pin one transport. A batch the
+   server refuses for good moves its watches to polling for the rest of the connection's life rather
+   than re-entering a binding the server already refused. A server that does not state `radWatchV1`
+   is still refused with the not-implemented code when the transport is pinned to `Grpc`, because a
+   watch whose hints are never delivered is worse than being told the server cannot serve it.
+2. **A fingerprint is computed locally only for the HTTP batch.** Over gRPC this client still
+   subscribes with `null`, adopts the server's `observedFingerprint` as the value it compares later
+   hints against, and uses a local digest of the served document — never sent anywhere — only to
+   decide whether a read should be handed to the caller. The cost is one extra discovery read per
+   install, including after a reconnect. The batch has no such option: it compares fingerprints, so
+   the result is canonicalised exactly as the server does before the watch is registered.
 3. **The observable shape is an async stream.** The official client delivers a
    `NacosAgentDiscoveryEvent` to a listener; here the watch is an
    `IAsyncEnumerable<NacosAgentDiscoveryResult?>` whose first element is the current state and whose
@@ -875,19 +906,19 @@ changed; the caller then reads the state again through the ordinary discovery ca
 The official client can serve an MCP, prompt or agent call over either the AI gRPC connection or the
 AI HTTP OpenAPI, and routes each call by the capabilities a binding advertises — `McpTransportRouter`,
 `PromptTransportRouter` and `AgentTransportRouter`, backed by `AiCapabilityCache` and
-`AiHttpClientProxy`. It routes a RAD watch the same way, through `AgentWatchTransportRouter`, which
-prefers gRPC, falls back to a batched HTTP long-poll and then to bounded discovery polling, and
-upgrades a downgraded watch back to gRPC when the wire returns. This client does not: every operation
-that has a gRPC contract travels over the AI connection — including the watch — and only the resources
-the server exposes as HTTP alone — a skill and an agent specification — are read over HTTP.
+`AiHttpClientProxy`. This client does not do that for discovery, MCP servers, prompts or agent cards:
+those travel over the AI connection, and only the resources the server exposes as HTTP alone — a
+skill and an agent specification — are read over HTTP.
 
-The difference shows only against a server whose gRPC abilities are absent while its HTTP AI surface is
-present. Such a server is answered by the request's own failure — `RequestHandler Not Found`, or an
-explicit `501` where the ability is advertised as `false` — rather than by a fallback. No published
-release has been found that exposes one surface without the other, so the fallback is left
-unimplemented rather than shipped unverified; adding it is a slice of its own and is deliberately
-deferred. For the watch the refusal is the same `501` and is documented in
-[Where this client deviates from the official client (RAD agent watch)](#where-this-client-deviates-from-the-official-client-rad-agent-watch).
+The watch is the one exception, because it has a second contract on the server:
+`NacosAiOptions.AgentWatchTransport` selects gRPC, the HTTP batch long poll, periodic polling, or
+`Auto`, which tries them in that order. The batch and the polling fallback are described in
+[RAD agent watch](#rad-agent-watch). Automatic transport selection for the other AI surfaces remains
+unimplemented: a server whose gRPC abilities are absent while its HTTP AI surface is present is
+answered by the request's own failure — `RequestHandler Not Found`, or an explicit `501` where the
+ability is advertised as `false` — rather than by a fallback. No published release has been found
+that exposes one surface without the other, so that fallback is left unshipped rather than shipped
+unverified.
 
 ## Authentication
 

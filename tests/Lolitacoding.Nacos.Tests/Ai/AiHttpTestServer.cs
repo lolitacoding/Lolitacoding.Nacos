@@ -18,7 +18,9 @@ internal sealed class AiHttpTestServer : HttpMessageHandler
 {
     private readonly List<Uri> _requests = [];
     private readonly List<string?> _tokens = [];
-    private readonly Func<int, HttpRequestMessage, HttpResponseMessage> _respond;
+    private readonly List<string?> _forms = [];
+    private readonly List<Dictionary<string, string>> _headers = [];
+    private readonly Func<int, HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _respond;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AiHttpTestServer"/> class.
@@ -26,7 +28,21 @@ internal sealed class AiHttpTestServer : HttpMessageHandler
     /// <param name="respond">
     /// Produces the answer, given the zero-based index of the request and the request itself.
     /// </param>
-    public AiHttpTestServer(Func<int, HttpRequestMessage, HttpResponseMessage> respond) =>
+    public AiHttpTestServer(Func<int, HttpRequestMessage, HttpResponseMessage> respond)
+        : this((index, request, _) => Task.FromResult(respond(index, request)))
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AiHttpTestServer"/> class whose answers may be
+    /// delayed.
+    /// </summary>
+    /// <param name="respond">
+    /// Produces the answer, given the index of the request, the request, and the token that cancels
+    /// it. A long poll has to be able to stay unanswered, which is what this overload is for.
+    /// </param>
+    public AiHttpTestServer(
+        Func<int, HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond) =>
         _respond = respond;
 
     /// <summary>Gets the URIs that were requested, in order.</summary>
@@ -72,6 +88,65 @@ internal sealed class AiHttpTestServer : HttpMessageHandler
     /// <param name="name">The parameter name.</param>
     /// <returns>The decoded value, or <see langword="null"/> when the request did not carry it.</returns>
     public string? Query(int index, string name) => ReadQuery(Requests[index], name);
+
+    /// <summary>
+    /// Reads one form field of a recorded request.
+    /// </summary>
+    /// <param name="index">The index of the request.</param>
+    /// <param name="name">The field name.</param>
+    /// <returns>The decoded value, or <see langword="null"/> when the request did not carry it.</returns>
+    /// <remarks>
+    /// The batch watch is a form POST rather than a JSON body, so the fields have to be read the way
+    /// a server would bind them.
+    /// </remarks>
+    public string? Form(int index, string name)
+    {
+        string? body;
+
+        lock (_requests)
+        {
+            body = _forms[index];
+        }
+
+        if (string.IsNullOrEmpty(body))
+        {
+            return null;
+        }
+
+        foreach (string pair in body.Split('&'))
+        {
+            int separator = pair.IndexOf('=', StringComparison.Ordinal);
+
+            if (separator < 0)
+            {
+                continue;
+            }
+
+            if (string.Equals(
+                Uri.UnescapeDataString(pair[..separator].Replace('+', ' ')),
+                name,
+                StringComparison.Ordinal))
+            {
+                return Uri.UnescapeDataString(pair[(separator + 1)..].Replace('+', ' '));
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Reads one header of a recorded request.
+    /// </summary>
+    /// <param name="index">The index of the request.</param>
+    /// <param name="name">The header name.</param>
+    /// <returns>The value, or <see langword="null"/> when the request did not carry it.</returns>
+    public string? Header(int index, string name)
+    {
+        lock (_requests)
+        {
+            return _headers[index].TryGetValue(name, out string? value) ? value : null;
+        }
+    }
 
     /// <summary>Builds an answer that carries an agent specification.</summary>
     /// <param name="specification">The specification as JSON, without the envelope.</param>
@@ -208,6 +283,36 @@ internal sealed class AiHttpTestServer : HttpMessageHandler
         };
     }
 
+    /// <summary>Builds the answer one HTTP batch long poll gets.</summary>
+    /// <param name="generation">The generation the server answered.</param>
+    /// <param name="changed">The watches whose projection changed.</param>
+    /// <returns>The response.</returns>
+    public static HttpResponseMessage WatchBatch(long generation, params string[] changed)
+    {
+        string body = string.Concat(
+            "{\"code\":200,\"message\":\"success\",\"data\":{\"generation\":",
+            generation.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ",\"changed\":",
+            changed.Length > 0 ? "true" : "false",
+            ",\"changedClientWatchIds\":",
+            JsonSerializer.Serialize(changed),
+            "}}");
+
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+    }
+
+    /// <summary>Builds the refusal a client at its watch capacity gets.</summary>
+    /// <returns>The response.</returns>
+    public static HttpResponseMessage WatchCapacity()
+        => Result(
+            HttpStatusCode.ServiceUnavailable,
+            50104,
+            "agent discovery subscription over limit",
+            "Watch capacity reached");
+
     /// <summary>
     /// Builds a ZIP archive with the given entries.
     /// </summary>
@@ -236,10 +341,13 @@ internal sealed class AiHttpTestServer : HttpMessageHandler
     }
 
     /// <inheritdoc />
-    protected override Task<HttpResponseMessage> SendAsync(
+    protected override async Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
+        string? form = request.Content is null
+            ? null
+            : await request.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         int index;
 
         lock (_requests)
@@ -250,9 +358,19 @@ internal sealed class AiHttpTestServer : HttpMessageHandler
                 request.Headers.TryGetValues("accessToken", out IEnumerable<string>? values)
                     ? string.Join(",", values)
                     : null);
+            _forms.Add(form);
+
+            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (KeyValuePair<string, IEnumerable<string>> header in request.Headers)
+            {
+                headers[header.Key] = string.Join(",", header.Value);
+            }
+
+            _headers.Add(headers);
         }
 
-        return Task.FromResult(_respond(index, request));
+        return await _respond(index, request, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

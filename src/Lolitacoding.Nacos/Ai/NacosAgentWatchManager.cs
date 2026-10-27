@@ -70,6 +70,9 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
     /// <summary>The error code Nacos uses when the client asked for more than it is allowed.</summary>
     private const int ClientOverThresholdErrorCode = -503;
 
+    /// <summary>The error code Nacos uses when a request conflicts with the current state.</summary>
+    private const int ConflictErrorCode = 409;
+
     /// <summary>The error code Nacos uses for an agent that was never published.</summary>
     /// <remarks>
     /// The agent-specific spelling is what the legacy A2A surface answers with; the RAD discovery path
@@ -106,8 +109,11 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
     private readonly object _gate = new();
     private readonly Dictionary<string, Intent> _intents = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Intent> _byWatchKey = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Intent> _byClientWatchId = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _shutdown = new();
+    private readonly NacosAgentHttpWatchTransport? _httpTransport;
 
+    private volatile bool _grpcWatchUnavailable;
     private bool _disposed;
 
     /// <summary>
@@ -118,12 +124,17 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
     /// <param name="timeProvider">The clock used for retry and timeout timing.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="random">The source of retry jitter, or <see langword="null"/> for a fresh one.</param>
+    /// <param name="httpWatch">
+    /// The HTTP batch watch binding, or <see langword="null"/> when the AI client has no HTTP
+    /// transport to offer.
+    /// </param>
     public NacosAgentWatchManager(
         NacosAiClient owner,
         NacosOptions options,
         TimeProvider timeProvider,
         ILogger logger,
-        Random? random = null)
+        Random? random = null,
+        INacosAgentHttpWatchBinding? httpWatch = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(options);
@@ -135,6 +146,19 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
         _timeProvider = timeProvider;
         _logger = logger;
         _random = random ?? Random.Shared;
+
+        if (httpWatch is not null)
+        {
+            // The batch binding is shared by every watch of the namespace: one long poll carries the
+            // whole set, so a watch does not own a request of its own.
+            _httpTransport = new NacosAgentHttpWatchTransport(
+                httpWatch,
+                timeProvider,
+                logger,
+                OnHttpInvalidated,
+                OnHttpUnavailable,
+                OnHttpWireUnavailable);
+        }
     }
 
     /// <summary>
@@ -255,13 +279,22 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
     /// <param name="ct">A token that cancels the work.</param>
     /// <returns>A task that completes once every watch has been told to re-install.</returns>
     /// <remarks>
+    /// <para>
     /// The server forgot every watch binding when the old connection closed, so the seen fingerprint
     /// is cleared along with the key: the state may have moved on during the outage, and the client
     /// has to read again rather than assume it is looking at the current answer.
+    /// </para>
+    /// <para>
+    /// Only the gRPC binding died with the connection. A watch that was routed to the HTTP batch
+    /// binding is left alone, except in <see cref="NacosAgentWatchTransport.Auto"/>, where a
+    /// reconnected connection is the moment the client can move back to the transport the server
+    /// prefers. A watch that fell back to polling is likewise offered the gRPC watch again.
+    /// </para>
     /// </remarks>
     public Task RestoreAsync(CancellationToken ct)
     {
         List<Intent> intents;
+        bool upgrade = _options.Ai.AgentWatchTransport == NacosAgentWatchTransport.Auto;
 
         lock (_gate)
         {
@@ -272,16 +305,37 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
 
             intents = [.. _intents.Values];
             _byWatchKey.Clear();
+            _grpcWatchUnavailable = false;
         }
 
         foreach (Intent intent in intents)
         {
+            bool stopHttp = false;
+
             lock (intent.Gate)
             {
                 intent.WatchKey = null;
                 intent.Fingerprint = null;
                 intent.PendingFingerprint = null;
                 intent.Dirty = true;
+
+                if (upgrade && intent.Wire is WatchWire.Http or WatchWire.Polling)
+                {
+                    // A new connection is a new chance for the transport the server prefers, so the
+                    // intent is uninstalled and the selection runs again.
+                    stopHttp = intent.Wire == WatchWire.Http;
+                    intent.Wire = WatchWire.None;
+                }
+            }
+
+            if (stopHttp)
+            {
+                _httpTransport?.Stop(intent.ClientWatchId);
+
+                lock (_gate)
+                {
+                    _byClientWatchId.Remove(intent.ClientWatchId);
+                }
             }
 
             intent.Wake();
@@ -306,6 +360,7 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
             intents = [.. _intents.Values];
             _intents.Clear();
             _byWatchKey.Clear();
+            _byClientWatchId.Clear();
         }
 
         await _shutdown.CancelAsync().ConfigureAwait(false);
@@ -323,6 +378,11 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
         foreach (Intent intent in intents)
         {
             intent.Lifetime.Dispose();
+        }
+
+        if (_httpTransport is not null)
+        {
+            await _httpTransport.DisposeAsync().ConfigureAwait(false);
         }
 
         _shutdown.Dispose();
@@ -421,6 +481,25 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
             return;
         }
 
+        bool http;
+
+        lock (intent.Gate)
+        {
+            http = intent.Wire == WatchWire.Http;
+        }
+
+        if (http)
+        {
+            // The batch binding outlives the watch loop, so the watch has to leave the set explicitly
+            // instead of being dropped with the connection.
+            _httpTransport?.Stop(intent.ClientWatchId);
+
+            lock (_gate)
+            {
+                _byClientWatchId.Remove(intent.ClientWatchId);
+            }
+        }
+
         await intent.Lifetime.CancelAsync().ConfigureAwait(false);
 
         if (watchKey is not null)
@@ -436,6 +515,11 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
     /// </summary>
     /// <param name="intent">The watch.</param>
     /// <returns>A task that completes when the watch ends.</returns>
+    /// <remarks>
+    /// The loop is the same whatever transport serves the watch: install it, read the state, then
+    /// wait for whatever the transport uses to say the state may have moved — a pushed hint, a
+    /// changed batch, or the refresh interval of the polling fallback.
+    /// </remarks>
     private async Task RunAsync(Intent intent)
     {
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(
@@ -456,11 +540,11 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
                     ReportUnavailable(intent);
                 }
 
-                if (intent.WatchKey is null)
+                if (NeedsInstall(intent))
                 {
                     try
                     {
-                        await SubscribeAsync(intent, ct).ConfigureAwait(false);
+                        await InstallAsync(intent, ct).ConfigureAwait(false);
                         failures = 0;
                     }
                     catch (Exception ex) when (IsNotFound(ex))
@@ -497,6 +581,18 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
                     {
                         await RefreshAsync(intent, ct).ConfigureAwait(false);
                         failures = 0;
+
+                        if (intent.Wire == WatchWire.Http && intent.Current is null)
+                        {
+                            // A batch watch is a comparison against the state the client holds, and
+                            // an agent that is not served has no such state. The watch leaves the
+                            // batch and is offered again once the agent is back.
+                            StopWire(intent);
+                            ReportUnavailable(intent);
+                            failures++;
+                            await WaitAsync(intent, RetryDelay(failures), ct).ConfigureAwait(false);
+                            continue;
+                        }
                     }
                     catch (Exception ex) when (IsTerminal(ex))
                     {
@@ -517,7 +613,20 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
                     break;
                 }
 
-                await WaitAsync(intent, IdleWait, ct).ConfigureAwait(false);
+                bool polling = intent.Wire == WatchWire.Polling;
+                bool woken = await WaitAsync(
+                    intent,
+                    polling ? _options.Ai.CacheRefreshInterval : IdleWait,
+                    ct).ConfigureAwait(false);
+
+                if (!woken && polling)
+                {
+                    // Nothing pushes a polling watch, so the interval expiring is its change signal.
+                    lock (intent.Gate)
+                    {
+                        intent.Dirty = true;
+                    }
+                }
             }
         }
         catch (OperationCanceledException)
@@ -529,6 +638,349 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
             Complete(intent);
         }
     }
+
+    /// <summary>
+    /// Chooses the transport of a watch and installs it there.
+    /// </summary>
+    /// <param name="intent">The watch.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>A task that completes once the watch is installed.</returns>
+    /// <exception cref="NacosException">No transport would take the watch.</exception>
+    /// <remarks>
+    /// The selection follows the configured transport, with the two fallbacks the official client
+    /// also makes: a gRPC watch the server does not implement is offered over the HTTP batch, and a
+    /// batch that cannot be installed is served by periodic discovery. A failure that asking again
+    /// cannot fix — a refused credential, a malformed request, a migration in progress — is raised
+    /// instead, because falling back would only hide it.
+    /// </remarks>
+    private async Task InstallAsync(Intent intent, CancellationToken ct)
+    {
+        NacosAgentWatchTransport mode = _options.Ai.AgentWatchTransport;
+
+        if (mode == NacosAgentWatchTransport.Polling)
+        {
+            await RefreshAsync(intent, ct).ConfigureAwait(false);
+            SetWire(intent, WatchWire.Polling);
+
+            NacosAiLog.AgentWatchTransportSelected(_logger, AgentName(intent), "polling");
+            return;
+        }
+
+        if (mode != NacosAgentWatchTransport.Http && !_grpcWatchUnavailable)
+        {
+            try
+            {
+                await SubscribeAsync(intent, ct).ConfigureAwait(false);
+                SetWire(intent, WatchWire.Grpc);
+
+                NacosAiLog.AgentWatchTransportSelected(_logger, AgentName(intent), "gRPC");
+                return;
+            }
+            catch (Exception ex) when (mode == NacosAgentWatchTransport.Auto && CanFallBackFromGrpc(ex))
+            {
+                if (ex is NacosServerException { ErrorCode: NotImplementedErrorCode })
+                {
+                    // The connection does not take the hint push at all, so no later watch on it has
+                    // to ask the same question again.
+                    _grpcWatchUnavailable = true;
+                }
+
+                NacosAiLog.AgentWatchTransportFallback(_logger, AgentName(intent), "HTTP", ex.Message);
+            }
+        }
+
+        if (mode != NacosAgentWatchTransport.Grpc
+            && !intent.TransportOverridePolling
+            && _httpTransport is { IsAvailable: true } http)
+        {
+            // The batch compares fingerprints, so the state has to be read before the watch can be
+            // registered: there is nothing to say the server's projection is still the one held.
+            await RefreshAsync(intent, ct).ConfigureAwait(false);
+
+            if (intent.Current is null)
+            {
+                throw new NacosServerException(
+                    NotFoundErrorCode,
+                    string.Concat(
+                        "The agent '",
+                        AgentName(intent),
+                        "' is not published, so the HTTP agent watch could not be installed."));
+            }
+
+            string fingerprint = NacosAgentDiscoveryCanonicalizer.Fingerprint(intent.Current);
+            bool installed = false;
+
+            lock (intent.Gate)
+            {
+                intent.Fingerprint = fingerprint;
+            }
+
+            lock (_gate)
+            {
+                _byClientWatchId[intent.ClientWatchId] = intent;
+            }
+
+            try
+            {
+                http.Start(intent.ClientWatchId, BuildDiscovery(intent), fingerprint);
+                installed = true;
+            }
+            catch (NacosException ex)
+            {
+                lock (_gate)
+                {
+                    _byClientWatchId.Remove(intent.ClientWatchId);
+                }
+
+                NacosAiLog.AgentWatchTransportFallback(_logger, AgentName(intent), "polling", ex.Message);
+            }
+            catch
+            {
+                lock (_gate)
+                {
+                    _byClientWatchId.Remove(intent.ClientWatchId);
+                }
+
+                throw;
+            }
+
+            if (installed)
+            {
+                SetWire(intent, WatchWire.Http);
+
+                NacosAiLog.AgentWatchTransportSelected(_logger, AgentName(intent), "HTTP");
+                return;
+            }
+        }
+
+        await SeedAsync(intent, ct).ConfigureAwait(false);
+        SetWire(intent, WatchWire.Polling);
+
+        NacosAiLog.AgentWatchTransportSelected(_logger, AgentName(intent), "polling");
+    }
+
+    /// <summary>
+    /// Reads the state if the watch has not been seeded yet.
+    /// </summary>
+    /// <param name="intent">The watch.</param>
+    /// <param name="ct">A token that cancels the read.</param>
+    /// <returns>A task that completes once the state was read.</returns>
+    /// <remarks>
+    /// The HTTP install reads the state to compute the fingerprint the watch is registered with, so
+    /// a batch that could not be installed already has the state a polling watch needs.
+    /// </remarks>
+    private async Task SeedAsync(Intent intent, CancellationToken ct)
+    {
+        if (!intent.Seeded)
+        {
+            await RefreshAsync(intent, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Determines whether a watch has to be installed again.
+    /// </summary>
+    /// <param name="intent">The watch.</param>
+    /// <returns><see langword="true"/> when the watch is not bound to its transport.</returns>
+    /// <remarks>
+    /// A gRPC watch is bound by the key the server issued, and the key is cleared when the server
+    /// releases the watch or the connection that carried it goes away. The other transports are
+    /// bound by the watch itself, so only an explicit removal unbinds them.
+    /// </remarks>
+    private static bool NeedsInstall(Intent intent) => intent.Wire switch
+    {
+        WatchWire.None => true,
+        WatchWire.Grpc => intent.WatchKey is null,
+        _ => false,
+    };
+
+    /// <summary>
+    /// Records the transport a watch is installed on.
+    /// </summary>
+    /// <param name="intent">The watch.</param>
+    /// <param name="wire">The transport.</param>
+    private static void SetWire(Intent intent, WatchWire wire)
+    {
+        lock (intent.Gate)
+        {
+            intent.Wire = wire;
+        }
+    }
+
+    /// <summary>
+    /// Removes a watch from the transport that is serving it.
+    /// </summary>
+    /// <param name="intent">The watch.</param>
+    private void StopWire(Intent intent)
+    {
+        bool http;
+
+        lock (intent.Gate)
+        {
+            http = intent.Wire == WatchWire.Http;
+            intent.Wire = WatchWire.None;
+        }
+
+        if (!http)
+        {
+            return;
+        }
+
+        _httpTransport?.Stop(intent.ClientWatchId);
+
+        lock (_gate)
+        {
+            _byClientWatchId.Remove(intent.ClientWatchId);
+        }
+    }
+
+    /// <summary>
+    /// Applies a batch answer that names a watch whose projection changed.
+    /// </summary>
+    /// <param name="clientWatchId">The watch identifier.</param>
+    private void OnHttpInvalidated(string clientWatchId)
+    {
+        Intent? intent;
+
+        lock (_gate)
+        {
+            _byClientWatchId.TryGetValue(clientWatchId, out intent);
+        }
+
+        if (intent is null)
+        {
+            return;
+        }
+
+        lock (intent.Gate)
+        {
+            // The batch says the projection moved, so the state is read whatever fingerprint the
+            // client thinks it holds.
+            intent.PendingFingerprint = null;
+            intent.Dirty = true;
+        }
+
+        intent.Wake();
+    }
+
+    /// <summary>
+    /// Ends a watch the batch refused for good.
+    /// </summary>
+    /// <param name="clientWatchId">The watch identifier.</param>
+    /// <param name="exception">The refusal.</param>
+    /// <remarks>
+    /// A refusal of this kind is per watch rather than per binding: the server reached its watch
+    /// capacity and rejected the newest addition, or it is migrating the agent and rejected every
+    /// watch on it. Asking again would be answered the same way.
+    /// </remarks>
+    private void OnHttpUnavailable(string clientWatchId, NacosException exception)
+    {
+        Intent? intent;
+
+        lock (_gate)
+        {
+            _byClientWatchId.Remove(clientWatchId, out intent);
+        }
+
+        if (intent is null)
+        {
+            return;
+        }
+
+        lock (intent.Gate)
+        {
+            intent.Wire = WatchWire.None;
+        }
+
+        Fail(intent, exception);
+    }
+
+    /// <summary>
+    /// Moves every watch of a batch that can no longer be used onto the next transport.
+    /// </summary>
+    /// <param name="exception">The failure that ended the binding.</param>
+    /// <remarks>
+    /// A status the server will answer the same way for a batch — a request it will not accept, a
+    /// conflict, an overload — ends the watches, while anything else falls back to periodic
+    /// discovery, which is the one transport that needs nothing from the server.
+    /// </remarks>
+    private void OnHttpWireUnavailable(NacosException exception)
+    {
+        bool terminal = IsHttpTerminal(exception);
+        List<Intent> affected = [];
+
+        lock (_gate)
+        {
+            foreach (Intent intent in _byClientWatchId.Values)
+            {
+                if (!affected.Contains(intent))
+                {
+                    affected.Add(intent);
+                }
+            }
+
+            if (terminal)
+            {
+                _byClientWatchId.Clear();
+            }
+        }
+
+        foreach (Intent intent in affected)
+        {
+            bool http;
+
+            lock (intent.Gate)
+            {
+                http = intent.Wire == WatchWire.Http;
+            }
+
+            if (!http)
+            {
+                continue;
+            }
+
+            if (terminal)
+            {
+                lock (intent.Gate)
+                {
+                    intent.Wire = WatchWire.None;
+                }
+
+                Fail(intent, exception);
+                continue;
+            }
+
+            _httpTransport?.Stop(intent.ClientWatchId);
+
+            lock (_gate)
+            {
+                // The watch no longer has a batch registration, so a late callback naming it must
+                // not find it again.
+                _byClientWatchId.Remove(intent.ClientWatchId);
+            }
+
+            lock (intent.Gate)
+            {
+                // The binding cannot be retried, so the interest is kept but served by periodic
+                // discovery from now on.
+                intent.Wire = WatchWire.Polling;
+                intent.TransportOverridePolling = true;
+                intent.Dirty = true;
+            }
+
+            intent.Wake();
+        }
+    }
+
+    /// <summary>
+    /// Determines whether a failed batch is one the server will keep refusing.
+    /// </summary>
+    /// <param name="exception">The failure.</param>
+    /// <returns><see langword="true"/> when polling is the only transport left.</returns>
+    private static bool IsHttpTerminal(NacosException exception) => exception.ErrorCode is
+        OverThresholdErrorCode or ClientOverThresholdErrorCode
+        or InvalidParamErrorCode or ClientInvalidParamErrorCode
+        or ConflictErrorCode;
 
     /// <summary>
     /// Installs the watch on the connection.
@@ -638,6 +1090,9 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
         }
 
         byte[]? digest = Digest(result);
+        string? canonical = intent.Wire == WatchWire.Http && result is not null
+            ? NacosAgentDiscoveryCanonicalizer.Fingerprint(result)
+            : null;
         bool changed;
 
         lock (intent.Gate)
@@ -650,6 +1105,13 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
             intent.Digest = digest;
             intent.UnavailableNotified = false;
 
+            if (canonical is not null)
+            {
+                // The batch carries the fingerprint of the state just read, so a watch is only
+                // reported changed once for the same projection.
+                intent.Fingerprint = canonical;
+            }
+
             // The fingerprint only advances once the state behind it was actually read, so a read
             // that fails leaves the two sides able to notice the change on the next hint.
             if (intent.PendingFingerprint is not null)
@@ -657,6 +1119,11 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
                 intent.Fingerprint = intent.PendingFingerprint;
                 intent.PendingFingerprint = null;
             }
+        }
+
+        if (canonical is not null)
+        {
+            _httpTransport?.Update(intent.ClientWatchId, canonical);
         }
 
         if (changed)
@@ -1048,6 +1515,24 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
             or MigrationInProgressErrorCode);
 
     /// <summary>
+    /// Determines whether a failed gRPC watch may be offered over another transport.
+    /// </summary>
+    /// <param name="exception">The failure.</param>
+    /// <returns><see langword="true"/> when the HTTP batch is worth trying.</returns>
+    /// <remarks>
+    /// A refused credential, a malformed request, an overload or a conflict is answered the same way
+    /// on every transport, and an agent that is not there is a state rather than a failure. Only the
+    /// rest — a server that does not implement the hint push, an internal error, a connection that
+    /// dropped — leaves the batch worth trying.
+    /// </remarks>
+    private static bool CanFallBackFromGrpc(Exception exception) =>
+        exception is not NacosAuthException
+        && !IsNotFound(exception)
+        && !(exception is NacosServerException server && server.ErrorCode is
+            NoRightErrorCode or OverThresholdErrorCode or ClientOverThresholdErrorCode
+            or InvalidParamErrorCode or ClientInvalidParamErrorCode or ConflictErrorCode);
+
+    /// <summary>
     /// Reads the agent name a watch follows.
     /// </summary>
     /// <param name="intent">The watch.</param>
@@ -1117,6 +1602,24 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
     }
 
     /// <summary>
+    /// The transport a watch is installed on.
+    /// </summary>
+    private enum WatchWire
+    {
+        /// <summary>The watch is not installed anywhere.</summary>
+        None,
+
+        /// <summary>The watch is installed on the AI registry connection.</summary>
+        Grpc,
+
+        /// <summary>The watch is part of the HTTP batch long poll.</summary>
+        Http,
+
+        /// <summary>The watch is re-read on the refresh interval.</summary>
+        Polling,
+    }
+
+    /// <summary>
     /// One watch, shared by the callers following the same discovery.
     /// </summary>
     private sealed class Intent
@@ -1171,6 +1674,20 @@ internal sealed class NacosAgentWatchManager : IAsyncDisposable
 
         /// <summary>Gets or sets the key the server issued, once the watch is installed.</summary>
         public string? WatchKey { get; set; }
+
+        /// <summary>Gets or sets the transport the watch is installed on.</summary>
+        public WatchWire Wire { get; set; }
+
+        /// <summary>
+        /// Gets or sets a value indicating whether the HTTP batch must not be tried again for this
+        /// watch.
+        /// </summary>
+        /// <remarks>
+        /// The batch binding is shared, so a failure that ends it ends it for every watch at once.
+        /// A watch that was on it keeps polling for the rest of the connection's life instead of
+        /// re-entering a binding the server already refused.
+        /// </remarks>
+        public bool TransportOverridePolling { get; set; }
 
         /// <summary>Gets or sets the fingerprint of the state last read.</summary>
         public string? Fingerprint { get; set; }

@@ -75,6 +75,50 @@ public sealed class AgentWatchIntegrationTests
     }
 
     [Fact]
+    public async Task WatchAgentAsync_ReportsAChangeOverTheHttpBatch()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AgentImage);
+        await using NacosClientFactory client = CreateClient(
+            container,
+            NacosAgentWatchTransport.Http);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string agentName = NacosHttp.UniqueId("rad-http-watch");
+
+        await NacosEventually.WritesAsync(
+            () => client.Ai.Agent.PublishAgentAsync(Publish(agentName, "1.0.0"), ct),
+            ct);
+
+        await NacosEventually.BecomesAsync(
+            () => client.Ai.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName }, ct: ct),
+            value => value.Version == "1.0.0",
+            ct,
+            tolerateFailures: true);
+
+        await using IAsyncEnumerator<NacosAgentDiscoveryResult?> changes =
+            client.Ai.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
+                .GetAsyncEnumerator(ct);
+
+        // The batch is registered against the fingerprint of the state just read, so this also proves
+        // the client and the server compute the same canonical form: a fingerprint the server cannot
+        // parse is refused, and one it computes differently would report every poll as a change.
+        await NacosEventually.ReportsAsync(changes, value => value?.Version == "1.0.0", ct);
+
+        changes.Current.ShouldNotBeNull();
+        changes.Current.Version.ShouldBe("1.0.0");
+
+        await NacosEventually.PushedAsync(
+            changeCt => client.Ai.Agent.PublishAgentAsync(Publish(agentName, "2.0.0"), changeCt),
+            changes,
+            value => value?.Version == "2.0.0",
+            ct);
+
+        changes.Current!.Version.ShouldBe("2.0.0");
+    }
+
+    [Fact]
     public async Task WatchAgentAsync_ReportsAnAgentThatIsNotPublished()
     {
         await using NacosContainer container =
@@ -136,7 +180,9 @@ public sealed class AgentWatchIntegrationTests
         EndpointSourceOrder = ["RUNTIME", "DECLARED"],
     };
 
-    private static NacosClientFactory CreateClient(NacosContainer container) =>
+    private static NacosClientFactory CreateClient(
+        NacosContainer container,
+        NacosAgentWatchTransport transport = NacosAgentWatchTransport.Auto) =>
         NacosClientFactory.Create(
             new NacosOptions
             {
@@ -147,6 +193,7 @@ public sealed class AgentWatchIntegrationTests
                     // The interval is the base of the watch's retry backoff, and a short one keeps a
                     // retried read from slowing a test down.
                     CacheRefreshInterval = TimeSpan.FromMilliseconds(500),
+                    AgentWatchTransport = transport,
                 },
                 Reconnect = new NacosReconnectOptions
                 {

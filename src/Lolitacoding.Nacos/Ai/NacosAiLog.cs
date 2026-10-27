@@ -633,4 +633,93 @@ internal static partial class NacosAiLog
         string resource,
         string name,
         string reason);
+
+    /// <summary>Logs which transport a watch was installed on.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="transport">The selected transport.</param>
+    [LoggerMessage(
+        EventId = 8043,
+        Level = LogLevel.Debug,
+        Message = "The watch of agent {AgentName} is served over {Transport}.")]
+    public static partial void AgentWatchTransportSelected(
+        ILogger logger,
+        string agentName,
+        string transport);
+
+    /// <summary>Logs that a watch joined the HTTP batch long poll.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="clientWatchId">The watch identifier.</param>
+    [LoggerMessage(
+        EventId = 8044,
+        Level = LogLevel.Debug,
+        Message = "Registered the HTTP watch {ClientWatchId}.")]
+    public static partial void AgentWatchHttpRegistered(
+        ILogger logger,
+        string clientWatchId);
+
+    /// <summary>Logs that a watch left the HTTP batch long poll.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="clientWatchId">The watch identifier.</param>
+    [LoggerMessage(
+        EventId = 8045,
+        Level = LogLevel.Debug,
+        Message = "Removed the HTTP watch {ClientWatchId}.")]
+    public static partial void AgentWatchHttpStopped(
+        ILogger logger,
+        string clientWatchId);
+
+    /// <summary>Logs that an HTTP long poll reported changed watches.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">How many watches changed.</param>
+    [LoggerMessage(
+        EventId = 8046,
+        Level = LogLevel.Debug,
+        Message = "The HTTP agent watch reported {Count} changed watches.")]
+    public static partial void AgentWatchHttpInvalidated(
+        ILogger logger,
+        int count);
+
+    /// <summary>Logs that an HTTP long poll failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="errorCode">The error code reported.</param>
+    /// <param name="failures">How many failures happened in a row.</param>
+    /// <param name="fallback">Whether the binding was abandoned.</param>
+    [LoggerMessage(
+        EventId = 8047,
+        Level = LogLevel.Warning,
+        Message = "The HTTP agent watch failed with error code {ErrorCode} after {Failures} consecutive failures; fallback={Fallback}.")]
+    public static partial void AgentWatchHttpFailed(
+        ILogger logger,
+        int errorCode,
+        int failures,
+        bool fallback);
+
+    /// <summary>Logs that a failed HTTP long poll will be tried again.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="errorCode">The error code reported.</param>
+    /// <param name="failures">How many failures happened in a row.</param>
+    [LoggerMessage(
+        EventId = 8048,
+        Level = LogLevel.Debug,
+        Message = "The HTTP agent watch will retry after error code {ErrorCode} ({Failures} consecutive failures).")]
+    public static partial void AgentWatchHttpRetryScheduled(
+        ILogger logger,
+        int errorCode,
+        int failures);
+
+    /// <summary>Logs that a watch is served by a fallback transport.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="transport">The transport the watch fell back to.</param>
+    /// <param name="reason">Why the preferred transport could not serve the watch.</param>
+    [LoggerMessage(
+        EventId = 8049,
+        Level = LogLevel.Warning,
+        Message = "The watch of agent {AgentName} fell back to {Transport}: {Reason}")]
+    public static partial void AgentWatchTransportFallback(
+        ILogger logger,
+        string agentName,
+        string transport,
+        string reason);
 }

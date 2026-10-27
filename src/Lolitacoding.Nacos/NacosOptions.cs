@@ -473,6 +473,25 @@ public sealed class NacosAiOptions
     public TimeSpan CacheRefreshInterval { get; set; } = TimeSpan.FromSeconds(10);
 
     /// <summary>
+    /// Gets or sets how an agent watch is kept current.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A watch has two server-side push contracts. The gRPC one installs a watch on the AI registry
+    /// connection and is what Nacos 3.3 prefers, while the HTTP one sends the client's whole watch set
+    /// as a batch long poll. The official client routes between them, and falls back to periodic
+    /// discovery when neither is available; <see cref="NacosAgentWatchTransport.Auto"/> is that
+    /// routing, and the other values pin one transport for deployments that need to.
+    /// </para>
+    /// <para>
+    /// Only the watch is affected. Reading, publishing and searching an agent stay on the AI registry
+    /// connection whatever this value says, because the HTTP batch is a watch binding rather than a
+    /// second implementation of discovery.
+    /// </para>
+    /// </remarks>
+    public NacosAgentWatchTransport AgentWatchTransport { get; set; } = NacosAgentWatchTransport.Auto;
+
+    /// <summary>
     /// Validates the AI options.
     /// </summary>
     /// <exception cref="NacosConfigurationException">A value is invalid.</exception>
@@ -483,7 +502,45 @@ public sealed class NacosAiOptions
             throw new NacosConfigurationException(
                 "NacosAiOptions.CacheRefreshInterval must be greater than zero.");
         }
+
+        if (!Enum.IsDefined(AgentWatchTransport))
+        {
+            throw new NacosConfigurationException(
+                "NacosAiOptions.AgentWatchTransport is not a defined value.");
+        }
     }
+}
+
+/// <summary>
+/// Selects the server push contract an agent watch is installed on.
+/// </summary>
+public enum NacosAgentWatchTransport
+{
+    /// <summary>
+    /// Uses the gRPC watch when the server advertises it, otherwise the HTTP batch long poll, and
+    /// periodic discovery when neither works.
+    /// </summary>
+    Auto,
+
+    /// <summary>
+    /// Requires the gRPC watch and fails a watch when the server does not implement it.
+    /// </summary>
+    Grpc,
+
+    /// <summary>
+    /// Uses the HTTP batch long poll without trying the gRPC watch.
+    /// </summary>
+    Http,
+
+    /// <summary>
+    /// Re-reads the agent on <see cref="NacosAiOptions.CacheRefreshInterval"/> without asking the
+    /// server for a push.
+    /// </summary>
+    /// <remarks>
+    /// This is the compatibility fallback the official client keeps internal. It is exposed because a
+    /// deployment behind a proxy that buffers long polls has no other way to keep a watch alive.
+    /// </remarks>
+    Polling,
 }
 
 /// <summary>

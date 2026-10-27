@@ -30,7 +30,7 @@ the bottom with the reason it is not implemented here.
 | P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | **Done** — `INacosConfigFilter`, `INacosConfigClient.AddConfigFilter`, `NacosConfigEncryptionFilter`, `INacosConfigEncryptionProvider`, `NacosConfigResult.EncryptedDataKey` | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
 | P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | **Done** — `INacosNamingClient.GetServicesAsync`, `NacosServiceListPage` (selector omitted: the server ignores it) | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
 | P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` / `batchDeregisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | **Done** — `INacosNamingClient.RegisterInstancesAsync` / `DeregisterInstancesAsync` | Registers many instances of one service in one round trip. |
-| P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | Missing; only the gRPC watch is implemented | The watch path for deployments where the gRPC push channel is unavailable. |
+| P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | **Done** — `NacosAiOptions.AgentWatchTransport`, `NacosAgentWatchTransport`, `NacosAgentDiscoveryCanonicalizer` | The watch path for deployments where the gRPC push channel is unavailable. |
 | P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | **Addressed by P1-4** — a snapshot keeps the stored ciphertext and the wrapped key | A process that fails over to disk must not write the plaintext of an encrypted configuration there. |
 | P2-9 | Address-server discovery | `PropertyKeyConst.ENDPOINT`, `ServerListManager` address-server polling | Missing; server addresses are configured explicitly | Deployments that hand out the server list through an address server cannot use this client. |
 | P2-10 | Server status | `ConfigService.getServerStatus()`, `NamingService.getServerStatus()` | Missing; the transport state exists but is not exposed | A health check needs to answer "am I connected" without issuing a request. |
@@ -280,11 +280,47 @@ The .NET surface is `RegisterInstancesAsync(service, instances, ct)`, with
   in that case; when nothing remains it sends an ordinary deregistration instead of Java's empty
   batch, which leaves the same server state without a lingering empty published set.
 
+## P2-7: AI agent batch watch over HTTP long-poll
+
+The gRPC watch needs the connection to accept a server-initiated hint. A deployment can lose that
+ability without losing discovery — a proxy that drops the push stream, a server that states no
+`radWatchV1` — so Java adds a second way to follow an agent: one HTTP request carrying the client's
+**whole** watch set, held open by the server until one of the fingerprints the client sent no longer
+matches, or until the timeout elapses.
+
+The .NET surface is the same `WatchAgentAsync` with a transport preference:
+
+| Java | Here |
+| --- | --- |
+| `AgentTransportMode` (`GRPC`, `HTTP`, `AUTO`) on the AI client config | `NacosAiOptions.AgentWatchTransport` (`NacosAgentWatchTransport.Auto`, `Grpc`, `Http`, `Polling`) |
+| `AgentWatchBatchRequest` / `AgentWatchBatchResponse` | internal `AgentWatchBatchItem` / `AgentWatchBatchResponse` |
+| `AgentDiscoveryCanonicalizer` / `EndpointCanonicalizer` | `NacosAgentDiscoveryCanonicalizer` / `NacosAgentEndpointCanonicalizer` |
+| `PollingAgentWatchTransport` | `Polling` mode: re-read at `Ai.CacheRefreshInterval` |
+
+- `Auto` (the default) installs the gRPC watch when the connection advertises `radWatchV1`, falls
+  back to the batch when the gRPC install fails for a reason another transport could fix, and falls
+  back to polling when neither is usable. `Grpc` refuses a server without the ability (501) instead
+  of falling back, `Http` never subscribes over gRPC, and `Polling` never installs a watch at all.
+- The batch is `POST /v3/client/ai/agents/watch` as `application/x-www-form-urlencoded`, with
+  `generation`, `timeoutMillis` and `watches` (a JSON list of
+  `{clientWatchId, discoveryRequest, materializedFingerprint}`), plus the `X-Nacos-Client-Id` and
+  `Request-Module: ai` headers. It is answered with the usual v3 `Result` envelope around
+  `{generation, changed, changedClientWatchIds}`.
+- The fingerprint is the part that has to be exact: `materializedFingerprint` is
+  `sha256-canonical-json-v1:` followed by the SHA-256 of the server's canonical JSON of the result
+  the caller holds. The canonical form is a port of `AgentDiscoveryCanonicalizer`, including its
+  key ordering, number normalisation, string escaping and URI canonicalisation, and it is pinned by
+  a test against the vector the Java implementation produces. A fingerprint the client computes
+  differently from the server would make every poll report a change.
+- Only the changes the server names are acted on: the manager reads the state again, and the
+  fingerprint of that read is handed back with `Update`. A watch whose change is still being read is
+  left out of the next batch, so the same projection is not reported twice.
+- A watch set change increments the generation and cancels the in-flight request; an answer carrying
+  another generation is discarded and retried, because its identifiers may describe a set the client
+  no longer has.
+
 ## P2 items
 
-- **AI batch watch** is the HTTP long-poll fallback: a request carrying the client watch ids and
-  the fingerprints the client holds, answered when one of them changes. It only makes sense
-  together with P3-14, so it is ranked below the gRPC-only watch this library already has.
 - **Snapshot encryption** reuses the filter's key material; it is only meaningful once P1-4
   exists.
 - **Address-server discovery** replaces the static server list with an HTTP endpoint that answers
@@ -301,7 +337,7 @@ These are not gaps to close; they are surfaces this library deliberately does no
 | `NamingMaintainService` and `/v3/admin/ns/*` | Administrative API, not a runtime client; needs a bearer token. |
 | AI drafts, labels, versions, import, resource search, pipelines, MCP registry models | `maintainer-client` and console surface. The runtime `AiService` is already covered. |
 | Spring annotations, JMX, logging adapters | Replaced by `IConfiguration`, DI, `ILogger` and OpenTelemetry. |
-| Automatic gRPC to HTTP AI transport fallback | Requires the HTTP publication contract; see `protocol-notes.md`. |
+| Automatic gRPC to HTTP AI transport fallback for discovery, MCP and prompts | Requires the HTTP publication contract; the agent watch is the one surface with an HTTP transport, and it is covered by P2-7. See `protocol-notes.md`. |
 | Nacos 2.x protocol compatibility | The project targets Nacos 3.x only. |
 
 ## Already at parity

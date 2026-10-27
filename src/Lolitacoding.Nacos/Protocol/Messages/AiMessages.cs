@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Lolitacoding.Nacos.Ai;
 
 namespace Lolitacoding.Nacos.Protocol.Messages;
@@ -584,4 +585,58 @@ internal sealed class AgentDiscoveryNotifyResponse : NacosResponse
 
     /// <summary>Gets or sets a value indicating whether the hint was accepted.</summary>
     public bool Accepted { get; set; }
+}
+
+/// <summary>
+/// One watch in an HTTP batch long poll.
+/// </summary>
+/// <remarks>
+/// The batch is the complete watch set of one client generation rather than a delta: the server
+/// compares every item's fingerprint with the projection it holds and answers with the identifiers
+/// whose projection no longer matches.
+/// </remarks>
+internal sealed class AgentWatchBatchItem
+{
+    /// <summary>Gets or sets the client's stable identifier for the watch.</summary>
+    public string? ClientWatchId { get; set; }
+
+    /// <summary>Gets or sets the discovery the watch follows.</summary>
+    public NacosAgentDiscoveryRequest? DiscoveryRequest { get; set; }
+
+    /// <summary>Gets or sets the fingerprint of the state the client already holds.</summary>
+    public string? MaterializedFingerprint { get; set; }
+}
+
+/// <summary>
+/// The answer to one HTTP batch long poll.
+/// </summary>
+internal sealed class AgentWatchBatchResponse
+{
+    /// <summary>Gets or sets the client generation the server answered.</summary>
+    public long Generation { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether any watch changed before the timeout.</summary>
+    public bool Changed { get; set; }
+
+    /// <summary>Gets or sets the watches whose projection changed.</summary>
+    public List<string>? ChangedClientWatchIds { get; set; }
+}
+
+/// <summary>
+/// A v3 API result envelope, used by the HTTP client endpoints.
+/// </summary>
+/// <remarks>
+/// The AI module answers an error with a result whose <c>code</c> is the business code rather than
+/// the HTTP status, so the body has to be read even when the status already says the request failed.
+/// </remarks>
+internal sealed class NacosApiResult
+{
+    /// <summary>Gets or sets the business code.</summary>
+    public int? Code { get; set; }
+
+    /// <summary>Gets or sets the message that names the failure.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>Gets or sets the payload, or the detail of a failure.</summary>
+    public JsonElement? Data { get; set; }
 }

@@ -42,12 +42,17 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
     /// <param name="timeProvider">The clock used for retry and timeout timing.</param>
     /// <param name="loggerFactory">The logger factory.</param>
     /// <param name="random">The source of retry jitter, or <see langword="null"/> for a shared one.</param>
+    /// <param name="httpWatch">
+    /// The HTTP batch watch binding, or <see langword="null"/> when the AI client has no HTTP
+    /// transport to offer.
+    /// </param>
     public NacosAgentRegistryClient(
         NacosAiClient owner,
         NacosOptions options,
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
-        Random? random = null)
+        Random? random = null,
+        INacosAgentHttpWatchBinding? httpWatch = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(options);
@@ -62,7 +67,8 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
             options,
             timeProvider,
             loggerFactory.CreateLogger<NacosAgentWatchManager>(),
-            random);
+            random,
+            httpWatch);
     }
 
     /// <summary>

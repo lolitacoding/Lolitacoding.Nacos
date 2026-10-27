@@ -139,9 +139,9 @@ INacosClientFactory / NacosClient
   - M4 验收：`samples/Sample.AspNetCore` 可运行，修改 Nacos 配置后应用内 `IOptionsMonitor` 值实时变化。
 
 ### M5 · 发布前打磨
-- [ ] **T5.1** Native AOT 发布 sample 验证；确认无 trim/AOT 警告。
-- [ ] **T5.2** 可观测性：`ActivitySource` + `Meter`（连接状态、请求耗时、重连次数、推送数量）。
-- [ ] **T5.3** 文档：快速开始、配置项说明、从 `nacos-sdk-csharp` 迁移指南、FAQ。
+- [x] **T5.1** Native AOT 发布 sample 验证；确认无 trim/AOT 警告。（`samples/Sample.Aot`；CI 的 `aot` job 在带 MSVC 工具链的 Windows runner 上发布，IL2xxx/IL3xxx 按错误处理）
+- [x] **T5.2** 可观测性：`ActivitySource` + `Meter`（连接状态、请求耗时、重连次数、推送数量）。（`NacosDiagnostics` / `NacosMetrics`）
+- [x] **T5.3** 文档：快速开始、配置项说明、从 `nacos-sdk-csharp` 迁移指南、FAQ。（`docs/quickstart.md`、`docs/configuration.md`、`docs/migration-from-nacos-sdk-csharp.md`、`docs/faq.md`）
 - [ ] **T5.4** 发布 `0.1.0-preview` 到 NuGet，申请保留前缀 `Lolitacoding.*`。
 
 ### 后续（v1 之后）
@@ -521,5 +521,18 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增 14 个：批次请求字段与默认集群、空批次、持久化实例、`null` 元素、服务端拒绝后不再重放、替换失败时恢复上一份注册、重连重放整个批次、单条注册替换批次后的重放、批次替换单条后的重放、批量注销发布剩余部分并重放、全部移除时发普通注销且不重放、未批量注册时拒绝、空列表拒绝、释放后抛 `ObjectDisposedException`。
 - 验收：Release 构建零警告零错误；单元测试 **790 个全绿**（新增 14 个）；集成测试新增 `NamingIntegrationTests.RegisterInstances_PublishesABatchAndReplacesItThroughARealServer`（真实容器 `v3.0.2`：一条请求发布两个实例 → 查询两条 → 批量注销一个 → 只剩另一个 → 单条注册替换整个批次 → 只剩新实例 → 注销后为空），整套 **61 个全绿**。
 
+#### P2-7 · AI agent 批量 watch（HTTP 长轮询，✅ 已完成）
+
+- **缺口**：RAD watch 此前只走 AI 模块的 gRPC 推送（`AgentSubscribeRpcRequest` + `radWatchV1`）。3.3 的 Java 客户端还有一条 HTTP 批量长轮询：一次请求携带本客户端**当前全部** watch 的 `{clientWatchId, discoveryRequest, materializedFingerprint}`，服务端挂起至多 `timeoutMillis`，任一 watch 的投影变化就返回变化 id；客户端再逐个重新 Discover。它对只开放 HTTP 的部署、以及 gRPC watch 能力未协商成功的服务端是唯一可用的推送通道。
+- **公共面**：`NacosAiOptions.AgentWatchTransport`，类型 `NacosAgentWatchTransport { Auto, Grpc, Http, Polling }`，默认 `Auto`。`Auto` 优先 gRPC watch（服务端声明 `radWatchV1`），否则 HTTP 批量长轮询，再否则轮询 Discover；`Grpc` 只接受 gRPC（服务端未声明时按 501 拒绝）；`Http` 跳过 gRPC；`Polling` 按 `Ai.CacheRefreshInterval` 重新读取。`Polling` 是本客户端对 Java 内部兼容回退的显式暴露，Java 公开的 `AgentTransportMode` 只有 `GRPC/HTTP/AUTO`。
+- **HTTP 协议（读 `AgentClientController.watch`、`AgentWatchBatchForm`、`AiHttpClientProxy.watchAgents` 确认）**：`POST /v3/client/ai/agents/watch`，`application/x-www-form-urlencoded`，字段 `generation`、`timeoutMillis`、`watches`（JSON 数组）；请求头 `X-Nacos-Client-Id`（本进程的 AI 发布者标识）与 `Request-Module: ai`；响应是 v3 `Result<AgentWatchBatchResponse>{generation, changed, changedClientWatchIds}`。服务端要求 `materializedFingerprint` 匹配 `sha256-canonical-json-v1:[0-9a-f]{64}`、`clientWatchId` 匹配 `[A-Za-z0-9._:-]{1,128}`、一批 1–1000 项、同一批只能有一个有效命名空间，且 `timeoutMillis` 在 1000–60000。
+- **指纹（逐行移植 `AgentDiscoveryCanonicalizer` 与 `EndpointCanonicalizer`）**：`NacosAgentDiscoveryCanonicalizer.Fingerprint(result)` 先把结果规范化成 Java 的 frame，再以 `appendJson` 的规则（对象键按 UTF-16 序、字符串转义、数字按 `BigDecimal.stripTrailingZeros().toPlainString()`、孤立代理项转 `\uXXXX`）写出 canonical JSON，最后取 SHA-256 小写十六进制。frame 只含 `agentName`、`callInterfaces`、`contentDigest`、可选 `description`、可选 `tags`（排序后）、`namespaceId`（空则 `public`）、`version`；接口 frame 含 `descriptorMediaType`、`endpointSets`、`nativeDescriptor`、`protocol`、`protocolVersion`；端点 frame 含 `bindings`、`healthy`、`metadata`、`priority`、`transport`、`uri`、`weight`。`enabled`、`endpointSets[].lastUpdatedTime`、`endpointSourceOrder` 不参与指纹；数组顺序（接口、端点集、端点、绑定、tags 之外的列表）保留，因为服务端把它当作契约顺序。
+- **URI 规范化**：小写 scheme；主机做 IDN/小写（IPv4 去前导零、IPv6 压缩并加方括号）；有效端口必须显式（`http`/`ws` 缺省 80，`https`/`wss` 缺省 443，其它 scheme 必须写端口）；原始 path/query 原样保留（不能交给 `System.Uri`，它会把非 ASCII 路径百分号编码）；拒绝 fragment、userinfo、opaque URI、空主机、越界端口与超过 2048 个码点的 URI。已知夹具 `{"agentName":"AgentA","callInterfaces":[],"contentDigest":"sha256:aaaa…","namespaceId":"public","version":"1.0.0"}` → `sha256-canonical-json-v1:3362e4414540623a15d86c0c0b99a0b76f82a203c3f26eb905b9db43444436d5`，与 Java 测试一致。
+- **HTTP 协调器（移植 `HttpAgentWatchTransport`）**：一个命名空间一个绑定；每次 watch 集合变化递增 generation 并取消在途请求；`awaitingRefresh` 中的 watch 不进入下一批，直到客户端用新指纹 `Update`；成功响应清空 `pendingAdditions`；容量错误 `50104`（HTTP 503 + detail 50104）只拒绝**最新加入**的 watch 并标记终止，迁移中 `50105` 使整批终止；`404/-404/501/302/403/400/-400/容量` 立即把绑定标记为不可用，其它错误连续 3 次后同样降级；绑定不可用后不再使用 HTTP。请求读超时为长轮询超时 + 5 秒，失败重试间隔 1 秒。
+- **管理器整合**：每个 intent 记录当前 `WireKind`（`None/Grpc/Http/Polling`）。HTTP 路径先 Discover 得到指纹再注册（服务端要求指纹非空），gRPC 路径保持原来的“先订阅再读取”；每次读取成功后把新指纹 `Update` 回协调器；HTTP 失效回调只置 dirty 并唤醒 intent，真正的重新读取仍在 intent 自己的循环里；HTTP 绑定整体不可用时，非终止错误把该 intent 切到轮询（`TransportOverride = Polling`），`503/-503/400/-400/409` 终止该 watch；gRPC 重连时 `RestoreAsync` 只把 `Auto`/`Grpc` 下的非 gRPC intent 重置为重新选择，`Http`/`Polling` 的注册不受影响。HTTP 绑定返回 501 时按 Java 路由器的规则回退到轮询，而不是让 watch 失败。
+- **日志**：新增 8043–8049（传输选择、HTTP 注册/停止/失效、HTTP 失败与重试、回退），HTTP 成功的长轮询结果只记 Debug。
+- **文档**：`docs/java-parity.md` 的 P2-7 标记完成并给出与 Java 的对照表与取舍；`docs/protocol-notes.md` 记录 watch 端点、表单字段、指纹算法与容量/迁移错误；`docs/configuration.md` 记录 `AgentWatchTransport` 的四种取值与默认；`docs/faq.md` 新增「Why does an agent watch need HTTP long polling?」。
+- 单元测试新增：指纹已知夹具、tags/description/namespace、排除字段、map 顺序与数组顺序、URI（默认端口/IDN/IPv4/IPv6/Unicode/非法）、descriptor 数字与转义；HTTP 请求形状与头、变化回调、awaitingRefresh、generation 取消、容量拒绝、迁移终止、回退集合、三次失败降级；管理器 Auto→HTTP、Auto→Polling、Grpc 501 拒绝、Http 跳过 gRPC。
+- 验收：Release 构建零警告零错误；单元测试 **852 个全绿**（新增 62 个：指纹/URI 规范化 31 个、HTTP 绑定 9 个、协调器 17 个、管理器传输选择 5 个）；集成测试新增 `AgentWatchIntegrationTests.WatchAgentAsync_ReportsAChangeOverTheHttpBatch`（真实容器 `v3.3.0-RC`，`Http` 模式：发布 agent → watch 收到初始状态 → 重新发布 → watch 收到新版本，且证明两侧算出的指纹一致），整套 **62 个全绿**。
 
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

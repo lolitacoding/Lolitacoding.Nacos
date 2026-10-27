@@ -1,3 +1,4 @@
+using System.Net;
 using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 using Lolitacoding.Nacos.Ai;
@@ -388,7 +389,8 @@ public sealed class NacosAgentWatchTests
             [NacosAiServerAbility.RadV1] = true,
         });
 
-        await using NacosAiClient client = server.CreateClient(FastOptions());
+        await using NacosAiClient client = server.CreateClient(
+            FastOptions(NacosAgentWatchTransport.Grpc));
 
         await using var watch = new WatchSubscription(Watch(client, "planner"));
 
@@ -399,6 +401,7 @@ public sealed class NacosAgentWatchTests
 
         // A server that cannot take the hint push is refused rather than watched silently: hints
         // that are never delivered would make the watch stop reporting changes without saying so.
+        // The gRPC transport is pinned because the default one would fall back instead.
         server.AgentSubscribes.ShouldBeEmpty();
     }
 
@@ -411,7 +414,8 @@ public sealed class NacosAgentWatchTests
             [NacosAiServerAbility.RadWatchV1] = false,
         });
 
-        await using NacosAiClient client = server.CreateClient(FastOptions());
+        await using NacosAiClient client = server.CreateClient(
+            FastOptions(NacosAgentWatchTransport.Grpc));
 
         await using var watch = new WatchSubscription(Watch(client, "planner"));
 
@@ -419,6 +423,127 @@ public sealed class NacosAgentWatchTests
             () => watch.NextAsync(Timeout));
 
         exception.ErrorCode.ShouldBe(501);
+        server.AgentSubscribes.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task WatchAgentAsync_FallsBackToTheHttpBatchWhenTheServerDoesNotTakeTheHintPush()
+    {
+        var http = new AiHttpTestServer((_, _, ct) => PendingAnswerAsync(ct));
+        var server = WatchServer(
+            new Dictionary<string, bool>(StringComparer.Ordinal)
+            {
+                [NacosAiServerAbility.RadV1] = true,
+            },
+            http);
+        server.OnAgentDiscovery = _ => AiTest.AgentDiscovery(AiTest.AgentResult());
+
+        await using NacosAiClient client = server.CreateClient(FastOptions());
+
+        await using var watch = new WatchSubscription(Watch(client, "planner"));
+
+        NacosAgentDiscoveryResult? state = await watch.NextAsync(Timeout);
+
+        state.ShouldNotBeNull();
+        state.AgentName.ShouldBe("planner");
+
+        await AiTestServer.WaitForAsync(() => http.Requests.Count > 0);
+
+        // A server that does not take the hint push is watched over the batch instead of being
+        // refused, because the batch needs nothing from the connection beyond discovery.
+        http.Requests[0].AbsolutePath.ShouldEndWith("/v3/client/ai/agents/watch");
+        http.Header(0, "X-Nacos-Client-Id").ShouldNotBeNullOrEmpty();
+        server.AgentSubscribes.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task WatchAgentAsync_FallsBackToPollingWhenTheBatchCannotBeUsed()
+    {
+        var server = WatchServer(new Dictionary<string, bool>(StringComparer.Ordinal)
+        {
+            [NacosAiServerAbility.RadV1] = true,
+        });
+        server.OnAgentDiscovery = _ => AiTest.AgentDiscovery(
+            AiTest.AgentResult(
+                "planner",
+                "1.0.0",
+                server.AgentDiscoveries.Count <= 1 ? "before" : "after"));
+
+        await using NacosAiClient client = server.CreateClient(FastOptions());
+
+        await using var watch = new WatchSubscription(Watch(client, "planner"));
+
+        NacosAgentDiscoveryResult? first = await watch.NextAsync(Timeout);
+        first!.Description.ShouldBe("before");
+
+        // With no HTTP transport and no hint push, the interest is still served: the state is read
+        // again on the refresh interval, which is the one transport that needs nothing from the
+        // server.
+        NacosAgentDiscoveryResult? second = await watch.NextAsync(Timeout);
+        second!.Description.ShouldBe("after");
+
+        server.AgentSubscribes.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task WatchAgentAsync_UsesTheHttpBatchWhenTheTransportIsPinnedToHttp()
+    {
+        var http = new AiHttpTestServer((_, _, ct) => PendingAnswerAsync(ct));
+        var server = WatchServer(httpHandler: http);
+        server.OnAgentDiscovery = _ => AiTest.AgentDiscovery(AiTest.AgentResult());
+
+        await using NacosAiClient client = server.CreateClient(
+            FastOptions(NacosAgentWatchTransport.Http));
+
+        await using var watch = new WatchSubscription(Watch(client, "planner"));
+
+        await watch.NextAsync(Timeout);
+        await AiTestServer.WaitForAsync(() => http.Requests.Count > 0);
+
+        // The pinned transport is the only one tried, so a server that would take the hint push is
+        // never asked to.
+        http.Requests[0].AbsolutePath.ShouldEndWith("/v3/client/ai/agents/watch");
+        server.AgentSubscribes.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task WatchAgentAsync_RefusesAServerWithoutTheHintPushWhenTheTransportIsPinnedToGrpc()
+    {
+        var http = new AiHttpTestServer((_, _, ct) => PendingAnswerAsync(ct));
+        var server = WatchServer(
+            new Dictionary<string, bool>(StringComparer.Ordinal)
+            {
+                [NacosAiServerAbility.RadV1] = true,
+            },
+            http);
+        server.OnAgentDiscovery = _ => AiTest.AgentDiscovery(AiTest.AgentResult());
+
+        await using NacosAiClient client = server.CreateClient(
+            FastOptions(NacosAgentWatchTransport.Grpc));
+
+        await using var watch = new WatchSubscription(Watch(client, "planner"));
+
+        NacosServerException exception = await Should.ThrowAsync<NacosServerException>(
+            () => watch.NextAsync(Timeout));
+
+        exception.ErrorCode.ShouldBe(501);
+        server.AgentSubscribes.ShouldBeEmpty();
+        http.Requests.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task WatchAgentAsync_NeverSubscribesWhenTheTransportIsPinnedToPolling()
+    {
+        var server = WatchServer();
+        server.OnAgentDiscovery = _ => AiTest.AgentDiscovery(AiTest.AgentResult());
+
+        await using NacosAiClient client = server.CreateClient(
+            FastOptions(NacosAgentWatchTransport.Polling));
+
+        await using var watch = new WatchSubscription(Watch(client, "planner"));
+
+        await watch.NextAsync(Timeout);
+
         server.AgentSubscribes.ShouldBeEmpty();
     }
 
@@ -490,11 +615,16 @@ public sealed class NacosAgentWatchTests
     /// The retry interval doubles as the backoff base, so a short one keeps a retried read from
     /// slowing a test down.
     /// </remarks>
-    private static NacosOptions FastOptions() => new()
+    private static NacosOptions FastOptions(
+        NacosAgentWatchTransport transport = NacosAgentWatchTransport.Auto) => new()
     {
         ServerAddresses = ["127.0.0.1:8848"],
         AppName = "ai-tests",
-        Ai = new NacosAiOptions { CacheRefreshInterval = TimeSpan.FromMilliseconds(20) },
+        Ai = new NacosAiOptions
+        {
+            CacheRefreshInterval = TimeSpan.FromMilliseconds(20),
+            AgentWatchTransport = transport,
+        },
     };
 
     /// <summary>
@@ -512,13 +642,32 @@ public sealed class NacosAgentWatchTests
     /// Builds a server that speaks the RAD contract and takes the watch hint push.
     /// </summary>
     /// <param name="abilities">The ability table to state instead, when a test is about negotiation.</param>
+    /// <param name="httpHandler">
+    /// The handler the AI module's HTTP endpoints are read through, or <see langword="null"/> for a
+    /// client that has no HTTP transport to fall back to.
+    /// </param>
     /// <returns>The server.</returns>
-    private static AiTestServer WatchServer(Dictionary<string, bool>? abilities = null) =>
-        new(abilities ?? new Dictionary<string, bool>(StringComparer.Ordinal)
-        {
-            [NacosAiServerAbility.RadV1] = true,
-            [NacosAiServerAbility.RadWatchV1] = true,
-        });
+    private static AiTestServer WatchServer(
+        Dictionary<string, bool>? abilities = null,
+        HttpMessageHandler? httpHandler = null) =>
+        new(
+            abilities ?? new Dictionary<string, bool>(StringComparer.Ordinal)
+            {
+                [NacosAiServerAbility.RadV1] = true,
+                [NacosAiServerAbility.RadWatchV1] = true,
+            },
+            httpHandler);
+
+    /// <summary>
+    /// Builds a long poll that the server never answers, which keeps a batch watch in flight.
+    /// </summary>
+    /// <param name="ct">A token that cancels the answer.</param>
+    /// <returns>The answer, which never arrives.</returns>
+    private static async Task<HttpResponseMessage> PendingAnswerAsync(CancellationToken ct)
+    {
+        await Task.Delay(System.Threading.Timeout.Infinite, ct);
+        throw new InvalidOperationException("A pending long poll cannot complete.");
+    }
 
     /// <summary>
     /// Runs a watch on a background pump so a test can wait for one state at a time.

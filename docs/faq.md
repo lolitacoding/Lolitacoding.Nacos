@@ -353,6 +353,26 @@ The official Java client keeps all of these caches in memory only, so this is an
 a port; [the protocol notes](protocol-notes.md#the-local-failover-cache) record it as the intended
 deviation.
 
+## Why does an agent watch need HTTP long polling?
+
+Because the push half of discovery needs a channel the server can write to, and some deployments do
+not have one: a proxy can drop server-initiated messages, and a server can state that it does not
+implement the `radWatchV1` hint push at all. Refusing to watch there would leave the caller with
+nothing; watching silently would leave it with a watch whose hints never arrive.
+
+The HTTP batch is the second contract: one `POST /v3/client/ai/agents/watch` carries the client's
+whole watch set together with the fingerprint of the state it holds, and the server holds the request
+open until one of those fingerprints no longer matches or the long-poll timeout elapses. It is the
+same interest expressed in a way that survives a channel that cannot be pushed to.
+
+`NacosAiOptions.AgentWatchTransport` decides which one is used. `Auto` (the default) prefers gRPC,
+falls back to the batch when the push is not available, and falls back to re-reading at
+`Ai.CacheRefreshInterval` when neither is; `Grpc`, `Http` and `Polling` pin one. Pin `Http` when the
+push channel is unreliable but a long poll passes through the proxy, pin `Polling` when the proxy
+holds long polls open or blocks them, and leave `Auto` alone otherwise. See
+[the protocol notes](protocol-notes.md#rad-agent-watch) for the endpoint, the fingerprint and the
+failure rules.
+
 ## How do I resolve services with `Microsoft.Extensions.ServiceDiscovery`?
 
 Add the integration and use a service name as the request URI's host:

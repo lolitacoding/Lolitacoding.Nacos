@@ -131,7 +131,12 @@ internal sealed class NacosAiClient : INacosAiClient, IDisposable
             this, options, timeProvider, loggerFactory.CreateLogger<NacosAgentCardClient>(), snapshots);
 
         _agent = new NacosAgentRegistryClient(
-            this, options, timeProvider, loggerFactory, random);
+            this,
+            options,
+            timeProvider,
+            loggerFactory,
+            random,
+            new NacosAgentHttpWatchClient(http, _clientUuid));
     }
 
     /// <inheritdoc />

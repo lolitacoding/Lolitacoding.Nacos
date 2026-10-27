@@ -92,6 +92,73 @@ internal sealed class NacosAiHttpClient
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(query);
 
+        return await SendWithFailoverAsync(
+            HttpMethod.Get,
+            path,
+            query,
+            form: null,
+            headers: null,
+            _timeout,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Issues a form POST and returns the response, whatever its status.
+    /// </summary>
+    /// <param name="path">The absolute path of the endpoint.</param>
+    /// <param name="form">The form fields, in order.</param>
+    /// <param name="timeout">How long this request may take.</param>
+    /// <param name="headers">Extra request headers, or <see langword="null"/> for none.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The response, with the body already read.</returns>
+    /// <exception cref="NacosConnectionException">No configured server could be reached.</exception>
+    /// <remarks>
+    /// The timeout is a parameter because the batch watch long poll is deliberately longer than an
+    /// ordinary read: the server holds the request for the timeout the caller asked for, so the
+    /// transport has to allow for that plus a margin instead of the configured read timeout.
+    /// </remarks>
+    public async Task<NacosAiHttpResponse> PostFormAsync(
+        string path,
+        IReadOnlyList<KeyValuePair<string, string>> form,
+        TimeSpan timeout,
+        IReadOnlyList<KeyValuePair<string, string>>? headers,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(form);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(timeout, TimeSpan.Zero);
+
+        return await SendWithFailoverAsync(
+            HttpMethod.Post,
+            path,
+            query: [],
+            form,
+            headers,
+            timeout,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Sends one request, moving to the next server when a server cannot be reached.
+    /// </summary>
+    /// <param name="method">The method.</param>
+    /// <param name="path">The path of the endpoint.</param>
+    /// <param name="query">The query parameters.</param>
+    /// <param name="form">The form body, or <see langword="null"/> for none.</param>
+    /// <param name="headers">Extra request headers, or <see langword="null"/> for none.</param>
+    /// <param name="timeout">How long one attempt may take.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The response.</returns>
+    /// <exception cref="NacosConnectionException">No configured server could be reached.</exception>
+    private async Task<NacosAiHttpResponse> SendWithFailoverAsync(
+        HttpMethod method,
+        string path,
+        IReadOnlyList<KeyValuePair<string, string?>> query,
+        IReadOnlyList<KeyValuePair<string, string>>? form,
+        IReadOnlyList<KeyValuePair<string, string>>? headers,
+        TimeSpan timeout,
+        CancellationToken ct)
+    {
         NacosException? failure = null;
         int start = NextServer();
 
@@ -101,8 +168,16 @@ internal sealed class NacosAiHttpClient
 
             try
             {
-                return await SendAsync(server, path, query, retryOnAuthRejection: true, ct)
-                    .ConfigureAwait(false);
+                return await SendAsync(
+                    server,
+                    method,
+                    path,
+                    query,
+                    form,
+                    headers,
+                    timeout,
+                    retryOnAuthRejection: true,
+                    ct).ConfigureAwait(false);
             }
             catch (NacosConnectionException ex)
             {
@@ -143,8 +218,12 @@ internal sealed class NacosAiHttpClient
     /// Issues one request against one server.
     /// </summary>
     /// <param name="server">The server to address.</param>
+    /// <param name="method">The method.</param>
     /// <param name="path">The path of the endpoint.</param>
     /// <param name="query">The query parameters.</param>
+    /// <param name="form">The form body, or <see langword="null"/> for none.</param>
+    /// <param name="headers">Extra request headers, or <see langword="null"/> for none.</param>
+    /// <param name="timeout">How long this attempt may take.</param>
     /// <param name="retryOnAuthRejection">
     /// Whether a 403 may still be retried once with a fresh token.
     /// </param>
@@ -153,14 +232,31 @@ internal sealed class NacosAiHttpClient
     /// <exception cref="NacosConnectionException">The server could not be reached.</exception>
     private async Task<NacosAiHttpResponse> SendAsync(
         NacosServerAddress server,
+        HttpMethod method,
         string path,
         IReadOnlyList<KeyValuePair<string, string?>> query,
+        IReadOnlyList<KeyValuePair<string, string>>? form,
+        IReadOnlyList<KeyValuePair<string, string>>? headers,
+        TimeSpan timeout,
         bool retryOnAuthRejection,
         CancellationToken ct)
     {
         Uri uri = server.BuildHttpUri(BuildQueryString(path, query));
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        using var request = new HttpRequestMessage(method, uri);
+
+        if (form is not null)
+        {
+            request.Content = new FormUrlEncodedContent(form);
+        }
+
+        if (headers is not null)
+        {
+            foreach (KeyValuePair<string, string> header in headers)
+            {
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
 
         if (_authProvider is not null)
         {
@@ -172,15 +268,15 @@ internal sealed class NacosAiHttpClient
             }
         }
 
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        timeout.CancelAfter(_timeout);
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeoutSource.CancelAfter(timeout);
 
         HttpResponseMessage response;
 
         try
         {
             response = await _httpClient
-                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token)
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutSource.Token)
                 .ConfigureAwait(false);
         }
         catch (HttpRequestException ex)
@@ -199,7 +295,7 @@ internal sealed class NacosAiHttpClient
                     "The AI registry request to ",
                     server.Original,
                     " timed out after ",
-                    _timeout.TotalSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    timeout.TotalSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     " seconds."),
                 ex);
         }
@@ -213,8 +309,16 @@ internal sealed class NacosAiHttpClient
             {
                 _authProvider.Invalidate();
 
-                return await SendAsync(server, path, query, retryOnAuthRejection: false, ct)
-                    .ConfigureAwait(false);
+                return await SendAsync(
+                    server,
+                    method,
+                    path,
+                    query,
+                    form,
+                    headers,
+                    timeout,
+                    retryOnAuthRejection: false,
+                    ct).ConfigureAwait(false);
             }
 
             byte[] body = response.StatusCode == (HttpStatusCode)NotModifiedStatusCode
