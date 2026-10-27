@@ -166,6 +166,18 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _refreshes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Serializes storing a state, writing its snapshot and announcing it.
+    /// </summary>
+    /// <remarks>
+    /// A subscription's opening read takes its first element from the cache, and a change is
+    /// announced to the consumers that are already past that first element. Both sides take this
+    /// gate, so a change that is being stored while an opening read is in flight is either already
+    /// part of the state that read takes or is announced after the consumer is past its first
+    /// element — never both, which would hand the subscriber the same state twice.
+    /// </remarks>
+    private readonly SemaphoreSlim _publishGate = new(1, 1);
+
     private volatile bool _disposed;
 
     /// <summary>
@@ -225,19 +237,30 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
 
             // The cached copy answers a subscription that is already current, so the first read only
             // goes to the server when nothing was cached for this selector yet.
-            T? current = Lookup(key);
-
-            if (current is null)
+            if (Lookup(key) is null)
             {
-                current = await TryQueryAsync(name, version, label, key, ct).ConfigureAwait(false);
+                await TryQueryAsync(name, version, label, key, ct).ConfigureAwait(false);
             }
 
-            // The read above publishes through the same path a refresh does, so it may already have
-            // delivered this state to this consumer; the flag keeps it from seeing it twice.
-            if (consumer.TryMarkDelivered())
+            // The first element is taken from the cache under the gate that stores and announces a
+            // change. A change that is being stored while this read is in flight is therefore either
+            // already part of the state taken here or announced after this consumer is past its
+            // first element, never both.
+            T? seed;
+
+            await _publishGate.WaitAsync(ct).ConfigureAwait(false);
+
+            try
             {
-                yield return current;
+                consumer.MarkSeeded();
+                seed = Lookup(key);
             }
+            finally
+            {
+                _publishGate.Release();
+            }
+
+            yield return seed;
 
             await foreach (T? change in queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
             {
@@ -489,26 +512,37 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     /// A resource that is not served removes the cached copy and announces the removal, which is how
     /// a subscriber learns that what it was using is gone. Nothing is announced when the state did
     /// not change, so a resource that was never there does not produce a stream of empty updates.
+    /// The store, the snapshot and the announcement are one step: a subscriber that is handed a
+    /// state, or told that it is gone, has the matching failover copy on disk by then.
     /// </remarks>
     private async Task ProcessAsync(string key, T? resource, CancellationToken ct)
     {
-        bool changed = Store(key, resource);
+        await _publishGate.WaitAsync(ct).ConfigureAwait(false);
 
-        if (resource is null)
+        try
         {
-            // Removed whether or not the absence is news: a snapshot left behind by an earlier
-            // process would otherwise be served during the next outage for a resource the server
-            // says is gone.
-            RemoveSnapshot(key);
-        }
-        else if (changed)
-        {
-            await SaveSnapshotAsync(key, resource, ct).ConfigureAwait(false);
-        }
+            bool changed = Store(key, resource);
 
-        if (changed)
+            if (resource is null)
+            {
+                // Removed whether or not the absence is news: a snapshot left behind by an earlier
+                // process would otherwise be served during the next outage for a resource the
+                // server says is gone.
+                RemoveSnapshot(key);
+            }
+            else if (changed)
+            {
+                await SaveSnapshotAsync(key, resource, ct).ConfigureAwait(false);
+            }
+
+            if (changed)
+            {
+                Publish(key, resource);
+            }
+        }
+        finally
         {
-            Publish(key, resource);
+            _publishGate.Release();
         }
     }
 
@@ -521,11 +555,10 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     /// <see langword="true"/> when the cache changed, so the state is news to a subscriber.
     /// </returns>
     /// <remarks>
-    /// The comparison and the store are one step. The read a subscription makes when it opens and the
-    /// first read of its refresh loop can be in flight at the same time; comparing against a value
-    /// another read is about to store would make both report the same resource as a change, which
-    /// hands the subscriber a duplicate. The loser of the race retries against what the winner
-    /// stored, so exactly one of them reports the resource.
+    /// The comparison and the store are one step. Restoring a snapshot seeds the cache without
+    /// going through <see cref="ProcessAsync"/>, so it can add a copy between the lookup and the
+    /// store here; the loser of that race retries against what the winner stored, so the cache and
+    /// the reported change stay in agreement.
     /// </remarks>
     private bool Store(string key, T? resource)
     {
@@ -812,7 +845,7 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
     /// </remarks>
     private sealed class Consumer
     {
-        private int _delivered;
+        private int _seeded;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Consumer"/> class.
@@ -824,22 +857,25 @@ internal sealed class NacosAiResourceCache<T> : IAsyncDisposable
         public ChannelWriter<T?> Writer { get; }
 
         /// <summary>
-        /// Claims the right to hand the first state to the consumer.
+        /// Records that the consumer's first element was taken from the cache.
         /// </summary>
-        /// <returns>
-        /// <see langword="true"/> when nothing was delivered yet; <see langword="false"/> when a
-        /// change was already published and will arrive through the queue.
-        /// </returns>
-        public bool TryMarkDelivered() => Interlocked.Exchange(ref _delivered, 1) == 0;
+        public void MarkSeeded() => Volatile.Write(ref _seeded, 1);
 
         /// <summary>
-        /// Queues a changed state and records that this consumer is now past its first element.
+        /// Queues a changed state for a consumer that is past its first element.
         /// </summary>
         /// <param name="resource">The changed resource, or <see langword="null"/> when it was removed.</param>
+        /// <remarks>
+        /// Called under the cache's publish gate. A consumer that has not taken its first element
+        /// yet is skipped: its opening read takes the state from the cache instead, so the same
+        /// change would otherwise arrive twice.
+        /// </remarks>
         public void Deliver(T? resource)
         {
-            Interlocked.Exchange(ref _delivered, 1);
-            Writer.TryWrite(resource);
+            if (Volatile.Read(ref _seeded) != 0)
+            {
+                Writer.TryWrite(resource);
+            }
         }
     }
 }

@@ -50,6 +50,18 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     private readonly ConcurrentDictionary<string, CancellationTokenSource> _refreshes = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Serializes storing a detail, writing its snapshot and announcing it.
+    /// </summary>
+    /// <remarks>
+    /// A subscription's opening read takes its first element from the cache, and a change is
+    /// announced to the consumers that are already past that first element. Both sides take this
+    /// gate, so a change that is being stored while an opening read is in flight is either already
+    /// part of the state this read takes or is announced after the consumer is past its first
+    /// element — never both, which would hand the subscriber the same detail twice.
+    /// </remarks>
+    private readonly SemaphoreSlim _publishGate = new(1, 1);
+
     private volatile bool _disposed;
 
     /// <summary>
@@ -129,11 +141,27 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
                 current = await TryQueryAsync(name, version, ct).ConfigureAwait(false);
             }
 
-            // The query above publishes through the same path a refresh does, so it may already have
-            // delivered this detail to this consumer; the flag keeps it from seeing it twice.
-            if (current is not null && consumer.TryMarkDelivered())
+            // The first element is taken from the cache under the gate that stores and announces a
+            // change. A change that is being stored while this read is in flight is therefore either
+            // already part of the state taken here or announced after this consumer is past its
+            // first element, never both.
+            NacosMcpServerDetail? seed;
+
+            await _publishGate.WaitAsync(ct).ConfigureAwait(false);
+
+            try
             {
-                yield return current;
+                consumer.MarkSeeded();
+                seed = Lookup(key) ?? current;
+            }
+            finally
+            {
+                _publishGate.Release();
+            }
+
+            if (seed is not null)
+            {
+                yield return seed;
             }
 
             await foreach (NacosMcpServerDetail change in queue.Reader.ReadAllAsync(ct).ConfigureAwait(false))
@@ -333,7 +361,8 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     /// <returns>A task that completes once the detail, its snapshot and its subscribers are updated.</returns>
     /// <remarks>
     /// A detail that carries no name or version cannot be keyed, so it is dropped rather than cached
-    /// under a key nothing can look up.
+    /// under a key nothing can look up. The store, the snapshot and the announcement are one step:
+    /// a subscriber that is handed a detail has the matching failover copy on disk by then.
     /// </remarks>
     private async Task ProcessAsync(NacosMcpServerDetail detail, CancellationToken ct)
     {
@@ -349,14 +378,23 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
         string latestKey = Key(name, null);
         bool isLatest = detail.VersionDetail?.IsLatest == true;
 
-        if (await CompareAndStoreAsync(versionedKey, detail, ct).ConfigureAwait(false))
-        {
-            Publish(versionedKey, detail);
-        }
+        await _publishGate.WaitAsync(ct).ConfigureAwait(false);
 
-        if (isLatest && await CompareAndStoreAsync(latestKey, detail, ct).ConfigureAwait(false))
+        try
         {
-            Publish(latestKey, detail);
+            if (await CompareAndStoreAsync(versionedKey, detail, ct).ConfigureAwait(false))
+            {
+                Publish(versionedKey, detail);
+            }
+
+            if (isLatest && await CompareAndStoreAsync(latestKey, detail, ct).ConfigureAwait(false))
+            {
+                Publish(latestKey, detail);
+            }
+        }
+        finally
+        {
+            _publishGate.Release();
         }
     }
 
@@ -612,7 +650,7 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
     /// </remarks>
     private sealed class Consumer
     {
-        private int _delivered;
+        private int _seeded;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="Consumer"/> class.
@@ -624,22 +662,25 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
         public ChannelWriter<NacosMcpServerDetail> Writer { get; }
 
         /// <summary>
-        /// Claims the right to hand the first detail to the consumer.
+        /// Records that the consumer's first element was taken from the cache.
         /// </summary>
-        /// <returns>
-        /// <see langword="true"/> when nothing was delivered yet; <see langword="false"/> when a
-        /// change was already published and will arrive through the queue.
-        /// </returns>
-        public bool TryMarkDelivered() => Interlocked.Exchange(ref _delivered, 1) == 0;
+        public void MarkSeeded() => Volatile.Write(ref _seeded, 1);
 
         /// <summary>
-        /// Queues a changed detail and records that this consumer is now past its first element.
+        /// Queues a changed detail for a consumer that is past its first element.
         /// </summary>
         /// <param name="detail">The changed detail.</param>
+        /// <remarks>
+        /// Called under the cache's publish gate. A consumer that has not taken its first element
+        /// yet is skipped: its opening read takes the detail from the cache instead, so the same
+        /// change would otherwise arrive twice.
+        /// </remarks>
         public void Deliver(NacosMcpServerDetail detail)
         {
-            Interlocked.Exchange(ref _delivered, 1);
-            Writer.TryWrite(detail);
+            if (Volatile.Read(ref _seeded) != 0)
+            {
+                Writer.TryWrite(detail);
+            }
         }
     }
 }

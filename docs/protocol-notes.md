@@ -896,6 +896,11 @@ routes the request to the AI module.
 - A subscription whose first read cannot open the connection is answered from the copy instead: the
   connection is not needed to hand out what was already read. Without a copy the failure stays the
   caller's, exactly as it was.
+- A subscriber is handed each state once. Storing a state, writing its snapshot and announcing it are
+  a single step, and a subscription's first element is taken from the cache under the same gate: an
+  opening read that overlaps a refresh sees the change either as its first element or as a later one,
+  never as both. The snapshot is written before the announcement, so a subscriber that is handed a
+  state can also rely on the failover copy being the one it holds.
 - The RAD agent watch has no disk cache of its own. Its recovery contract — a snapshot plus a redo of
   the subscription — is the official client's in-memory one here, and
   `specs/en/client/client-local-cache-redo-spec.md` §8 marks the disk part of the RAD recovery as a

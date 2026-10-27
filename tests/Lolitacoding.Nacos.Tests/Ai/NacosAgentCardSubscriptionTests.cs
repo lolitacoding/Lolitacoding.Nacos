@@ -65,10 +65,17 @@ public sealed class NacosAgentCardSubscriptionTests
     {
         var server = new AiTestServer();
 
-        server.OnCard = request => AiTest.Card(
-            request.Version is null && server.Cards.Count == 1
-                ? AiTest.CreateCard("planner", "1.0.0", "before")
-                : AiTest.CreateCard("planner", "2.0.0", "after"));
+        // The server serves whatever the test has published so far. Counting reads would make the
+        // answer depend on whether the read that opens the subscription or the first read of its
+        // refresh loop is served first — that is a race, not a change.
+        int state = 0;
+
+        server.OnCard = _ => AiTest.Card(Volatile.Read(ref state) switch
+        {
+            0 => AiTest.CreateCard("planner", "1.0.0", "before"),
+            1 => AiTest.CreateCard("planner", "2.0.0", "after"),
+            _ => AiTest.CreateCard("planner", "3.0.0", "later"),
+        });
 
         await using NacosAiClient client = server.CreateClient(FastOptions());
 
@@ -76,11 +83,21 @@ public sealed class NacosAgentCardSubscriptionTests
             new CardSubscription(Subscribe(client.AgentCard, "planner"));
 
         NacosAgentCardDetail? first = await subscription.NextAsync(Timeout);
-        NacosAgentCardDetail? second = await subscription.NextAsync(Timeout);
-
         first!.Description.ShouldBe("before");
+
+        Volatile.Write(ref state, 1);
+
+        NacosAgentCardDetail? second = await subscription.NextAsync(Timeout);
         second!.Description.ShouldBe("after");
         second.Version.ShouldBe("2.0.0");
+
+        // A second change is reported the same way, so the subscription is still reading rather
+        // than having stopped after the first one it saw.
+        Volatile.Write(ref state, 2);
+
+        NacosAgentCardDetail? third = await subscription.NextAsync(Timeout);
+        third!.Description.ShouldBe("later");
+        third.Version.ShouldBe("3.0.0");
     }
 
     [Fact]
@@ -124,11 +141,14 @@ public sealed class NacosAgentCardSubscriptionTests
     {
         var server = new AiTestServer();
 
-        int reads = 0;
+        // A flag rather than a read count: the read that opens the subscription and the first read
+        // of its refresh loop can be served in either order, so counting them would make the first
+        // element depend on which one arrived first.
+        bool withdrawn = false;
 
-        server.OnCard = _ => Interlocked.Increment(ref reads) == 1
-            ? AiTest.Card(AiTest.CreateCard("planner"))
-            : AiTest.CardFailure(404, "Agent not found: planner");
+        server.OnCard = _ => Volatile.Read(ref withdrawn)
+            ? AiTest.CardFailure(404, "Agent not found: planner")
+            : AiTest.Card(AiTest.CreateCard("planner"));
 
         await using NacosAiClient client = server.CreateClient(FastOptions());
 
@@ -136,10 +156,14 @@ public sealed class NacosAgentCardSubscriptionTests
             new CardSubscription(Subscribe(client.AgentCard, "planner"));
 
         NacosAgentCardDetail? first = await subscription.NextAsync(Timeout);
+
+        first.ShouldNotBeNull();
+
+        Volatile.Write(ref withdrawn, true);
+
         NacosAgentCardDetail? second = await subscription.NextAsync(Timeout);
 
         // A subscriber that was never told would keep calling an agent that is no longer published.
-        first.ShouldNotBeNull();
         second.ShouldBeNull();
     }
 
