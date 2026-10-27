@@ -134,7 +134,7 @@ INacosClientFactory / NacosClient
 - [ ] **T4.3** `AspNetCore`：`app.UseNacosRegistration()` 或 `AddNacosServiceRegistration()`，启动后自动注册（地址从 `IServer` 绑定地址推断，可手动覆盖），关闭时注销；健康检查元数据。
 - [ ] **T4.4** `Extensions.ServiceDiscovery`：`services.AddNacosServiceDiscovery()` 注册 `IServiceEndpointProvider`，使 `Microsoft.Extensions.ServiceDiscovery` 的 `ServiceEndpointResolver` / `HttpClient` 能解析 Nacos 服务名（`nacos://service` 或裸名）；订阅服务变更触发端点重新解析。
   - 验收：`AddNacosServiceDiscovery` 后 `http://nacos://service/` 可解析为 Nacos 实例；服务上下线推送能在无需轮询下刷新端点。
-- [ ] **T4.5** `Aspire.Hosting.Nacos` + `Aspire.Nacos`：`builder.AddNacos("nacos")` 在 Aspire AppHost 中编排 Nacos 容器（standalone、可选鉴权、数据卷、就绪健康检查，固定发布 8848/9848/9849 并保持客户端端口偏移）；`AddNacosClient()` 从注入的连接字符串配置客户端。
+- [ ] **T4.5** `Aspire.Hosting.Nacos` + `Aspire.Nacos`：`builder.AddNacos("nacos")` 在 Aspire AppHost 中编排 Nacos 容器（standalone、可选鉴权、数据卷、就绪健康检查，固定发布 8848/9848/9849 并保持客户端端口偏移，另发布 3.x 独立 Web 控制台的 8080）；`AddNacosClient()` 从注入的连接字符串配置客户端。
   - 验收：`samples/Sample.Aspire.AppHost` 生成的 manifest 含 `nacos` 容器资源与 `sample-api` 的 `ConnectionStrings__nacos`；`WaitFor(nacos)` 在就绪健康检查通过后再启动依赖服务。
   - M4 验收：`samples/Sample.AspNetCore` 可运行，修改 Nacos 配置后应用内 `IOptionsMonitor` 值实时变化。
 
