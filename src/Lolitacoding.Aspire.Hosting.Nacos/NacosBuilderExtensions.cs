@@ -58,6 +58,10 @@ public static class NacosBuilderExtensions
     /// The host port for the server gRPC endpoint. Defaults to <paramref name="httpPort"/> plus
     /// <c>1001</c>.
     /// </param>
+    /// <param name="consolePort">
+    /// The host port for the web console. Defaults to <c>8080</c>, which is the port the console
+    /// listens on inside the container.
+    /// </param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> is null.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> is null or empty.</exception>
@@ -70,6 +74,11 @@ public static class NacosBuilderExtensions
     /// <c>WithEnvironment</c> for anything but local development.
     /// </para>
     /// <para>
+    /// Nacos 3.x serves the web console from a separate application on port 8080, not under the main
+    /// port's context path as 2.x did. The console is published as its own endpoint so the
+    /// dashboard's link opens the UI rather than the API root, which answers 404.
+    /// </para>
+    /// <para>
     /// The container includes a health check against the readiness endpoint, so a resource added
     /// with <c>WaitFor</c> starts only once Nacos can serve requests.
     /// </para>
@@ -79,7 +88,8 @@ public static class NacosBuilderExtensions
         [ResourceName] string name,
         int? httpPort = null,
         int? grpcPort = null,
-        int? grpcServerPort = null)
+        int? grpcServerPort = null,
+        int? consolePort = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrEmpty(name);
@@ -87,6 +97,7 @@ public static class NacosBuilderExtensions
         int mainPort = httpPort ?? NacosPorts.Http;
         int clientGrpcPort = grpcPort ?? mainPort + NacosPorts.ClientGrpcOffset;
         int serverGrpcPort = grpcServerPort ?? mainPort + NacosPorts.ServerGrpcOffset;
+        int webConsolePort = consolePort ?? NacosPorts.Console;
 
         var resource = new NacosResource(name);
 
@@ -107,6 +118,10 @@ public static class NacosBuilderExtensions
                 targetPort: NacosPorts.Http + NacosPorts.ServerGrpcOffset,
                 name: NacosResource.GrpcServerEndpointName,
                 scheme: "tcp")
+            .WithHttpEndpoint(
+                port: webConsolePort,
+                targetPort: NacosPorts.Console,
+                name: NacosResource.ConsoleEndpointName)
             .WithEnvironment(NacosEnvironmentVariables.Mode, "standalone")
             .WithEnvironment(NacosEnvironmentVariables.AuthToken, DevelopmentAuthToken)
             .WithEnvironment(NacosEnvironmentVariables.AuthIdentityKey, DevelopmentAuthIdentityKey)

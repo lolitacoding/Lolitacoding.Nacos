@@ -5,6 +5,7 @@ IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(ar
 // A standalone Nacos server for local development. Its data lives in a named volume so
 // configuration survives a restart of the AppHost.
 IResourceBuilder<NacosResource> nacos = builder.AddNacos("nacos")
+    .WithImageTag("v3.2.4")
     .WithDataVolume();
 
 // The sample API registers itself with Nacos and pulls its application settings from it. Referencing

@@ -36,7 +36,8 @@ public sealed class NacosBuilderExtensionsTests
             .OfType<EndpointAnnotation>()
             .ToDictionary(endpoint => endpoint.Name!);
 
-        endpoints.Keys.ShouldBe(new[] { "http", "grpc", "grpc-server" }, ignoreOrder: true);
+        endpoints.Keys.ShouldBe(
+            new[] { "http", "grpc", "grpc-server", "console" }, ignoreOrder: true);
 
         endpoints["http"].TargetPort.ShouldBe(8848);
         endpoints["http"].Port.ShouldBe(8848);
@@ -47,6 +48,24 @@ public sealed class NacosBuilderExtensionsTests
 
         endpoints["grpc-server"].TargetPort.ShouldBe(9849);
         endpoints["grpc-server"].Port.ShouldBe(9849);
+    }
+
+    [Fact]
+    public void AddNacos_publishes_the_console_on_its_own_port()
+    {
+        // In Nacos 3.x the console is a separate application on 8080; the main port answers 404 at
+        // its root, so a dashboard link to it does not open the UI.
+        IResourceBuilder<NacosResource> nacos = DistributedApplication.CreateBuilder().AddNacos("nacos");
+
+        EndpointAnnotation console = nacos.Resource.Annotations
+            .OfType<EndpointAnnotation>()
+            .Single(endpoint => endpoint.Name == "console");
+
+        console.TargetPort.ShouldBe(8080);
+        console.Port.ShouldBe(8080);
+        console.UriScheme.ShouldBe("http");
+
+        nacos.Resource.ConsoleEndpoint.EndpointName.ShouldBe("console");
     }
 
     [Fact]
@@ -61,6 +80,24 @@ public sealed class NacosBuilderExtensionsTests
         endpoints["http"].Port.ShouldBe(18848);
         endpoints["grpc"].Port.ShouldBe(19848);
         endpoints["grpc-server"].Port.ShouldBe(19849);
+
+        // The console is not derived from the main port, so moving the server does not move it.
+        endpoints["console"].Port.ShouldBe(8080);
+    }
+
+    [Fact]
+    public void AddNacos_moves_the_console_when_a_console_port_is_given()
+    {
+        IResourceBuilder<NacosResource> nacos = DistributedApplication.CreateBuilder()
+            .AddNacos("nacos", consolePort: 18080);
+
+        EndpointAnnotation console = nacos.Resource.Annotations
+            .OfType<EndpointAnnotation>()
+            .Single(endpoint => endpoint.Name == "console");
+
+        // Only the host side moves; the container keeps listening on 8080.
+        console.Port.ShouldBe(18080);
+        console.TargetPort.ShouldBe(8080);
     }
 
     [Fact]

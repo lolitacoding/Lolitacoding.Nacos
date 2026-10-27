@@ -13,14 +13,20 @@ namespace Lolitacoding.Aspire.Hosting.Nacos;
 /// <see cref="NacosBuilderExtensions.AddNacos"/> keeps the three published ports a fixed distance
 /// apart.
 /// </para>
+/// <para>
+/// The web console is a separate application in Nacos 3.x and is published on its own endpoint,
+/// <see cref="ConsoleEndpoint"/>, so the dashboard link opens the UI instead of the API root.
+/// </para>
 /// </remarks>
 public sealed class NacosResource : ContainerResource, IResourceWithConnectionString
 {
     internal const string HttpEndpointName = "http";
     internal const string GrpcEndpointName = "grpc";
     internal const string GrpcServerEndpointName = "grpc-server";
+    internal const string ConsoleEndpointName = "console";
 
     private EndpointReference? _httpEndpoint;
+    private EndpointReference? _consoleEndpoint;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NacosResource"/> class.
@@ -32,9 +38,19 @@ public sealed class NacosResource : ContainerResource, IResourceWithConnectionSt
     }
 
     /// <summary>
-    /// Gets the HTTP endpoint. It also serves the Nacos console under <c>/nacos</c>.
+    /// Gets the HTTP endpoint of the server API.
     /// </summary>
+    /// <remarks>
+    /// This is the address a Nacos client connects to. It does not serve the web console in Nacos
+    /// 3.x; use <see cref="ConsoleEndpoint"/> for that.
+    /// </remarks>
     public EndpointReference HttpEndpoint => _httpEndpoint ??= new EndpointReference(this, HttpEndpointName);
+
+    /// <summary>
+    /// Gets the HTTP endpoint of the web console.
+    /// </summary>
+    public EndpointReference ConsoleEndpoint =>
+        _consoleEndpoint ??= new EndpointReference(this, ConsoleEndpointName);
 
     /// <summary>
     /// Gets the gRPC endpoint used by Nacos clients, published at the main port plus <c>1000</c>.

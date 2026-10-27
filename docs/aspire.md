@@ -119,17 +119,18 @@ wait queue and reentrancy belong to the 3.3 lock service. See
 
 ## 4. Ports
 
-`AddNacos` publishes three fixed host ports so that a Nacos client can reach the server:
+`AddNacos` publishes four fixed host ports:
 
-| Endpoint | Container port | Default host port |
-| --- | --- | --- |
-| `http` | 8848 | 8848 |
-| `grpc` | 9848 | 9848 |
-| `grpc-server` | 9849 | 9849 |
+| Endpoint | Container port | Default host port | What it is |
+| --- | --- | --- | --- |
+| `http` | 8848 | 8848 | Server API; what a Nacos client connects to. |
+| `grpc` | 9848 | 9848 | Client gRPC (main port + 1000). |
+| `grpc-server` | 9849 | 9849 | Server-to-server gRPC (main port + 1001). |
+| `console` | 8080 | 8080 | Web console. |
 
-The ports are not random because a Nacos client derives the gRPC port from the HTTP address it was
-given: it adds `1000` to the main port. If the HTTP endpoint were mapped to an arbitrary port, the
-derived gRPC port would not match the published one and clients could not connect. `AddNacos`
+The server ports are not random because a Nacos client derives the gRPC port from the HTTP address
+it was given: it adds `1000` to the main port. If the HTTP endpoint were mapped to an arbitrary port,
+the derived gRPC port would not match the published one and clients could not connect. `AddNacos`
 therefore keeps the offsets in place and lets you move the whole set with `httpPort`:
 
 ```csharp
@@ -140,13 +141,17 @@ builder.AddNacos("nacos", httpPort: 18848);
 Override `grpcPort` and `grpcServerPort` independently only if something else manages the client's
 port derivation.
 
-In Nacos 3.x the web console runs on its own port (`nacos.console.port`, default `8080`) inside the
-container. `AddNacos` publishes only the server endpoints, so expose the console explicitly if you
-need it:
+The console is a separate application in Nacos 3.x, configured by `nacos.console.port` and listening
+on `8080`; in 2.x it was part of the server and served under the main port's context path. Its host
+port is independent of `httpPort`, so a moved server keeps the console at `8080`; override it with
+`consolePort`:
 
 ```csharp
-builder.AddNacos("nacos").WithHttpEndpoint(port: 8080, targetPort: 8080, name: "console");
+builder.AddNacos("nacos", httpPort: 18848, consolePort: 18080);
 ```
+
+The dashboard's `console` link opens `http://localhost:8080` and is the one that shows the UI. The
+`http` link points at the API root, which answers 404 by design, so use it for API calls only.
 
 ## 5. Run the sample
 
@@ -157,4 +162,6 @@ dotnet run --project samples/Sample.Aspire.AppHost
 ```
 
 The AppHost starts Nacos, waits for it to become ready, then starts the API and passes it the Nacos
-address. See `Program.cs` in both projects for the full wiring.
+address. Open the console from the dashboard's `console` link (http://localhost:8080) to inspect
+configurations and services; the `http` link is the API root, which answers 404 by design. See
+`Program.cs` in both projects for the full wiring.
