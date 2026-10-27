@@ -141,6 +141,19 @@ control how the client recovers after a connection that was already established 
 with `Optional = false` still reconnects automatically if the server goes away after startup — it
 just fails fast if the server was never reachable in the first place.
 
+## How does a health check know whether the client is connected?
+
+Read `client.Config.ServerStatus` or `client.Naming.ServerStatus`. Both return a
+`NacosServerStatus`: `Up` when that client's connection is established and the handshake completed,
+`Down` otherwise. The value comes from the transport's own state, so a readiness probe costs nothing
+and never blocks on the network; there is no request to time out.
+
+These are the counterparts of the Java client's `getServerStatus()`, which returns the strings
+`UP`/`DOWN`; the mapping is direct. `Up` says the connection is usable — it does not promise that a
+particular configuration exists or that every request will succeed, so a caller that needs an
+authoritative answer should still read the value it depends on. The AI registry and the lock client
+open their own connections lazily and are not covered by these two properties.
+
 ## Why does a reconnect not lose my listeners and registrations?
 
 Nacos discards connection-scoped state — configuration listeners, service subscriptions and

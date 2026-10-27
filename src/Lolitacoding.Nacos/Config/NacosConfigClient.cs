@@ -127,6 +127,12 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     }
 
     /// <inheritdoc />
+    public NacosServerStatus ServerStatus =>
+        _connection.State == NacosTransportState.Connected
+            ? NacosServerStatus.Up
+            : NacosServerStatus.Down;
+
+    /// <inheritdoc />
     public void AddConfigFilter(INacosConfigFilter filter)
     {
         ArgumentNullException.ThrowIfNull(filter);

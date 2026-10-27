@@ -535,4 +535,14 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增：指纹已知夹具、tags/description/namespace、排除字段、map 顺序与数组顺序、URI（默认端口/IDN/IPv4/IPv6/Unicode/非法）、descriptor 数字与转义；HTTP 请求形状与头、变化回调、awaitingRefresh、generation 取消、容量拒绝、迁移终止、回退集合、三次失败降级；管理器 Auto→HTTP、Auto→Polling、Grpc 501 拒绝、Http 跳过 gRPC。
 - 验收：Release 构建零警告零错误；单元测试 **852 个全绿**（新增 62 个：指纹/URI 规范化 31 个、HTTP 绑定 9 个、协调器 17 个、管理器传输选择 5 个）；集成测试新增 `AgentWatchIntegrationTests.WatchAgentAsync_ReportsAChangeOverTheHttpBatch`（真实容器 `v3.3.0-RC`，`Http` 模式：发布 agent → watch 收到初始状态 → 重新发布 → watch 收到新版本，且证明两侧算出的指纹一致），整套 **62 个全绿**。
 
+#### P2-10 · 服务器状态（✅ 已完成）
+
+- **缺口**：Java 的 `ConfigService.getServerStatus()` 与 `NamingService.getServerStatus()` 返回 `UP`/`DOWN`，供健康检查判断「现在能不能连上服务端」。本客户端的传输状态早已存在（`NacosTransportState`），但没有暴露到公共面。
+- **公共面**：`NacosServerStatus { Down, Up }`；`INacosConfigClient.ServerStatus` 与 `INacosNamingClient.ServerStatus`。`Down = 0` 是默认值，未初始化的值不会意外读成 `Up`。
+- **语义**：`Up` 当且仅当该客户端自己的连接处于 `NacosTransportState.Connected`（连接建立且握手完成）。属性直接读 `_connection.State`，不发送请求，所以可以在就绪探针里高频轮询。对应 Java：config 的 `worker.isHealthServer()`（至少一个 rpc 客户端在运行）与 naming 的 `rpcClient.isRunning()`。`Unhealthy`、重连中、已释放一律 `Down`——这些时刻请求要么等待恢复、要么失败，报 `Up` 只会让探针把流量送进一个正在替换的连接。
+- **范围**：只覆盖 config 与 naming 两条连接，与 Java 的两个 `getServerStatus()` 对齐。锁与 AI 的连接是懒建立的、按需打开，没有对应的 Java API，不在这里暴露。
+- **文档**：`docs/java-parity.md` 的 P2-10 标记完成；`docs/faq.md` 新增「How does a health check know whether the client is connected?」。
+- 单元测试新增 4 个：config 与 naming 各两个（连接前 `Down`、握手后 `Up`）。
+- 验收：Release 构建零警告零错误；单元测试 **856 个全绿**（新增 4 个）；集成测试新增 `ConfigIntegrationTests.ServerStatus_ReportsUpOnceBothClientsAreConnected`（真实容器 `v3.0.2`：连接前两条都是 `Down`，`ConnectAsync` 后都是 `Up`），整套 **63 个全绿**。
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

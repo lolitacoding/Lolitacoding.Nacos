@@ -25,6 +25,26 @@ public sealed class NacosConfigClientTests
         new("cipher-AES-application.json", Group, "public");
 
     [Fact]
+    public void ServerStatus_IsDownUntilTheConnectionIsEstablished()
+    {
+        // A health check must not need a request, and before the first connect there is no server
+        // to answer one: the answer comes from the transport state.
+        using Harness harness = CreateHarness();
+
+        harness.Client.ServerStatus.ShouldBe(NacosServerStatus.Down);
+    }
+
+    [Fact]
+    public async Task ServerStatus_IsUpWhileTheConnectionIsEstablished()
+    {
+        using Harness harness = CreateHarness();
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        harness.Client.ServerStatus.ShouldBe(NacosServerStatus.Up);
+    }
+
+    [Fact]
     public async Task GetConfig_ReturnsTheContentAndHash()
     {
         using Harness harness = CreateHarness(request =>

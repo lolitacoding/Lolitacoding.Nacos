@@ -10,6 +10,22 @@ namespace Lolitacoding.Nacos.Naming;
 public interface INacosNamingClient : IAsyncDisposable
 {
     /// <summary>
+    /// Gets whether the client currently has a usable connection to a Nacos server.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The answer is read from the transport's state, so asking costs nothing and never blocks on
+    /// the network: this is the property to poll from a health check instead of issuing a request.
+    /// <see cref="NacosServerStatus.Up"/> means the connection is established and the handshake
+    /// completed, not that a particular service exists or that every request will succeed.
+    /// </para>
+    /// <para>
+    /// This is the counterpart of the Java client's <c>NamingService.getServerStatus()</c>, which
+    /// reports <c>UP</c> while the underlying gRPC client is running.
+    /// </para>
+    /// </remarks>
+    NacosServerStatus ServerStatus { get; }
+    /// <summary>
     /// Registers or updates a service instance.
     /// </summary>
     /// <param name="service">The service to register under.</param>

@@ -106,6 +106,12 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <inheritdoc />
+    public NacosServerStatus ServerStatus =>
+        _connection.State == NacosTransportState.Connected
+            ? NacosServerStatus.Up
+            : NacosServerStatus.Down;
+
+    /// <inheritdoc />
     public async Task RegisterInstanceAsync(
         NacosServiceKey service,
         NacosInstance instance,

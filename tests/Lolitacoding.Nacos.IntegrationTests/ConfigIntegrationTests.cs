@@ -51,6 +51,23 @@ public sealed class ConfigIntegrationTests
     }
 
     [Fact]
+    public async Task ServerStatus_ReportsUpOnceBothClientsAreConnected()
+    {
+        // The status is the transport's own answer, so this is the check a readiness probe would
+        // make: no request is issued, and the value flips exactly when the handshake completes.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+        await using NacosClientFactory client = CreateClient(container);
+
+        client.Config.ServerStatus.ShouldBe(NacosServerStatus.Down);
+        client.Naming.ServerStatus.ShouldBe(NacosServerStatus.Down);
+
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        client.Config.ServerStatus.ShouldBe(NacosServerStatus.Up);
+        client.Naming.ServerStatus.ShouldBe(NacosServerStatus.Up);
+    }
+
+    [Fact]
     public async Task Listen_ReceivesAChangePushedByTheServer()
     {
         await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);

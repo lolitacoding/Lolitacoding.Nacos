@@ -24,6 +24,26 @@ public sealed class NacosNamingClientTests
     private static readonly NacosServiceKey Service = new("order-service", "DEFAULT_GROUP");
 
     [Fact]
+    public void ServerStatus_IsDownUntilTheConnectionIsEstablished()
+    {
+        // A health check must not need a request, and before the first connect there is no server
+        // to answer one: the answer comes from the transport state.
+        using NamingHarness harness = new();
+
+        harness.Client.ServerStatus.ShouldBe(NacosServerStatus.Down);
+    }
+
+    [Fact]
+    public async Task ServerStatus_IsUpWhileTheConnectionIsEstablished()
+    {
+        using NamingHarness harness = new();
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        harness.Client.ServerStatus.ShouldBe(NacosServerStatus.Up);
+    }
+
+    [Fact]
     public async Task RegisterInstance_SendsTheRegistrationWithItsCoordinates()
     {
         using NamingHarness harness = new();

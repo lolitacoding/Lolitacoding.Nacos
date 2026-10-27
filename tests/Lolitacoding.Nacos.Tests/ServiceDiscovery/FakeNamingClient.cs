@@ -50,6 +50,9 @@ internal sealed class FakeNamingClient : INacosNamingClient
     public Task Subscribed => _subscribed.Task;
 
     /// <inheritdoc />
+    public NacosServerStatus ServerStatus => NacosServerStatus.Up;
+
+    /// <inheritdoc />
     public Task RegisterInstanceAsync(
         NacosServiceKey service, NacosInstance instance, CancellationToken ct = default) =>
         Task.CompletedTask;

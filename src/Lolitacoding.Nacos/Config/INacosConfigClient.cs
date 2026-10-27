@@ -17,6 +17,23 @@ namespace Lolitacoding.Nacos.Config;
 public interface INacosConfigClient : IAsyncDisposable
 {
     /// <summary>
+    /// Gets whether the client currently has a usable connection to a Nacos server.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The answer is read from the transport's state, so asking costs nothing and never blocks on
+    /// the network: this is the property to poll from a health check instead of issuing a read.
+    /// <see cref="NacosServerStatus.Up"/> means the connection is established and the handshake
+    /// completed, not that a particular configuration exists or that every request will succeed.
+    /// </para>
+    /// <para>
+    /// This is the counterpart of the Java client's <c>ConfigService.getServerStatus()</c>, which
+    /// reports <c>UP</c> when at least one server connection is running.
+    /// </para>
+    /// </remarks>
+    NacosServerStatus ServerStatus { get; }
+
+    /// <summary>
     /// Reads a configuration.
     /// </summary>
     /// <param name="key">The configuration to read.</param>

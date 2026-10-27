@@ -712,6 +712,7 @@ Lolitacoding.Nacos.Config.INacosConfigClient.GetConfigAsync(Lolitacoding.Nacos.C
 Lolitacoding.Nacos.Config.INacosConfigClient.ListenAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Config.NacosConfigChange!>!
 Lolitacoding.Nacos.Config.INacosConfigClient.PublishConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, string! content, string? contentType = null, string? casMd5 = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Lolitacoding.Nacos.Config.INacosConfigClient.RemoveConfigAsync(Lolitacoding.Nacos.Config.NacosConfigKey! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Config.INacosConfigClient.ServerStatus.get -> Lolitacoding.Nacos.NacosServerStatus
 Lolitacoding.Nacos.Config.INacosConfigClient.WatchAsync(string! dataIdPattern, string! groupPattern, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Config.NacosConfigWatchEvent!>!
 Lolitacoding.Nacos.Config.INacosConfigClient.WatchAsync(string! groupPattern, System.Threading.CancellationToken ct) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Config.NacosConfigWatchEvent!>!
 Lolitacoding.Nacos.Config.INacosConfigEncryptionProvider
@@ -950,6 +951,9 @@ Lolitacoding.Nacos.NacosServerException.NacosServerException() -> void
 Lolitacoding.Nacos.NacosServerException.NacosServerException(int errorCode, string! message) -> void
 Lolitacoding.Nacos.NacosServerException.NacosServerException(string! message) -> void
 Lolitacoding.Nacos.NacosServerException.NacosServerException(string! message, System.Exception? innerException) -> void
+Lolitacoding.Nacos.NacosServerStatus
+Lolitacoding.Nacos.NacosServerStatus.Down = 0 -> Lolitacoding.Nacos.NacosServerStatus
+Lolitacoding.Nacos.NacosServerStatus.Up = 1 -> Lolitacoding.Nacos.NacosServerStatus
 Lolitacoding.Nacos.NacosTimeoutException
 Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException() -> void
 Lolitacoding.Nacos.NacosTimeoutException.NacosTimeoutException(string! message) -> void
@@ -986,6 +990,7 @@ Lolitacoding.Nacos.Naming.INacosNamingClient.GetInstancesAsync(Lolitacoding.Naco
 Lolitacoding.Nacos.Naming.INacosNamingClient.GetServicesAsync(int pageNo = 1, int pageSize = 10, string? groupName = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Naming.NacosServiceListPage!>!
 Lolitacoding.Nacos.Naming.INacosNamingClient.RegisterInstanceAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, Lolitacoding.Nacos.Naming.NacosInstance! instance, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Lolitacoding.Nacos.Naming.INacosNamingClient.RegisterInstancesAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.Naming.INacosNamingClient.ServerStatus.get -> Lolitacoding.Nacos.NacosServerStatus
 Lolitacoding.Nacos.Naming.INacosNamingClient.SubscribeAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, Lolitacoding.Nacos.Naming.INacosInstanceSelector! selector) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Naming.NacosServiceChange!>!
 Lolitacoding.Nacos.Naming.INacosNamingClient.SubscribeAsync(Lolitacoding.Nacos.Naming.NacosServiceKey! service, string? clusters = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Naming.NacosServiceChange!>!
 Lolitacoding.Nacos.Naming.INacosNamingClient.WatchAsync(string! groupPattern, System.Threading.CancellationToken ct) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Naming.NacosServiceWatchEvent!>!
