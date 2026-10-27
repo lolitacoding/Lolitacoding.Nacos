@@ -139,6 +139,10 @@ public sealed class NacosNamingClientTests
 
         await harness.DropAndReconnectAsync();
 
+        // Replay runs after the reconnect event rather than inside it, so give it the chance to
+        // (wrongly) resend before asserting that it did not.
+        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+
         harness.CountRequests("InstanceRequest").ShouldBe(1);
         harness.CountRequests("PersistentInstanceRequest").ShouldBe(0);
     }
@@ -298,6 +302,10 @@ public sealed class NacosNamingClientTests
                 TestContext.Current.CancellationToken));
 
         await harness.DropAndReconnectAsync();
+
+        // The replay is asynchronous, so the absence assertion needs a window in which a replay
+        // could have arrived.
+        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
 
         harness.CountRequests("BatchInstanceRequest").ShouldBe(1);
     }
@@ -942,6 +950,11 @@ public sealed class NacosNamingClientTests
 
         await NamingHarness.WaitForAsync(
             () => harness.CountRequests("InstanceRequest") > registrationsBefore);
+
+        // Registration and subscription are replayed independently, so the registration landing
+        // says nothing about the subscription having been sent yet.
+        await NamingHarness.WaitForAsync(
+            () => harness.CountRequests("SubscribeServiceRequest") > subscriptionsBefore);
 
         harness.CountRequests("InstanceRequest").ShouldBe(registrationsBefore + 1);
         harness.CountRequests("SubscribeServiceRequest").ShouldBeGreaterThanOrEqualTo(subscriptionsBefore + 1);

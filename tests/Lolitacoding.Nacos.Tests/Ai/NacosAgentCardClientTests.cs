@@ -333,7 +333,10 @@ public sealed class NacosAgentCardClientTests
         await server.DropAndReconnectAsync();
 
         // The registration is a Naming instance owned by the connection that made it, so the server
-        // drops it with the connection and the client has to publish it again.
+        // drops it with the connection and the client has to publish it again. The replay runs on
+        // the reconnect event, so wait for it rather than for the reconnect itself.
+        await AiTestServer.WaitForAsync(() => server.AgentEndpoints.Count == 2);
+
         IReadOnlyList<AgentEndpointRequest> endpoints = server.AgentEndpoints;
 
         endpoints.Count.ShouldBe(2);
@@ -357,6 +360,10 @@ public sealed class NacosAgentCardClientTests
 
         await server.DropAndReconnectAsync();
 
+        // The replay is asynchronous, so the absence assertion needs a window in which a replay
+        // could have arrived.
+        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+
         // The caller saw the failure, so republishing later would report a state it never asked for.
         server.AgentEndpoints.Count.ShouldBe(1);
     }
@@ -375,6 +382,7 @@ public sealed class NacosAgentCardClientTests
             "planner", endpoint, TestContext.Current.CancellationToken);
 
         await server.DropAndReconnectAsync();
+        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
 
         // Only the original registration and the removal: a reconnect must not bring back an
         // endpoint that was taken away.
