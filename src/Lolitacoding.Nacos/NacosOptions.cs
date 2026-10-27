@@ -13,6 +13,8 @@ namespace Lolitacoding.Nacos;
 /// </remarks>
 public sealed class NacosOptions
 {
+    private string _namespace = NacosConstants.DefaultNamespace;
+
     /// <summary>
     /// Gets or sets the Nacos server base addresses, for example
     /// <c>http://127.0.0.1:8848</c>.
@@ -30,7 +32,18 @@ public sealed class NacosOptions
     /// <remarks>
     /// Both an empty string and <c>public</c> select the default public namespace.
     /// </remarks>
-    public string Namespace { get; set; } = NacosConstants.DefaultNamespace;
+    public string Namespace
+    {
+        get => _namespace;
+        set
+        {
+            _namespace = value;
+
+            // Remembered because the address server is only asked for a namespace the caller
+            // actually chose; normalizing an empty value to "public" must not count as a choice.
+            NamespaceWasConfigured = !string.IsNullOrEmpty(value);
+        }
+    }
 
     /// <summary>
     /// Gets or sets the user name used to authenticate against a secured Nacos server.
@@ -88,6 +101,69 @@ public sealed class NacosOptions
     /// Gets or sets the HTTP context path of the Nacos server.
     /// </summary>
     public string ContextPath { get; set; } = NacosConstants.DefaultContextPath;
+
+    /// <summary>
+    /// Gets or sets the Nacos address server that publishes the list of servers to connect to.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An address server lets a deployment add or retire Nacos nodes without redeploying its
+    /// clients: the client polls the endpoint, and the servers it dials follow the published list.
+    /// Supply a host name or IP address here and the port through
+    /// <see cref="EndpointPort"/>; the URL is built as
+    /// <c>http://{Endpoint}:{EndpointPort}{contextPath}/{EndpointServerListName}</c>.
+    /// </para>
+    /// <para>
+    /// When this is set it takes precedence over <see cref="ServerAddresses"/>, and the client
+    /// starts with an empty list until the endpoint answers for the first time. This mirrors the
+    /// official Java client's <c>endpoint</c> setting.
+    /// </para>
+    /// </remarks>
+    public string? Endpoint { get; set; }
+
+    /// <summary>
+    /// Gets or sets the port of the address server.
+    /// </summary>
+    /// <remarks>
+    /// The address server is contacted over plain HTTP; this is the port it listens on, which is
+    /// unrelated to the ports of the Nacos servers it publishes.
+    /// </remarks>
+    public int EndpointPort { get; set; } = 8080;
+
+    /// <summary>
+    /// Gets or sets the context path used to reach the address server.
+    /// </summary>
+    /// <remarks>
+    /// Left unset, <see cref="ContextPath"/> is used, which is right when the address server and the
+    /// Nacos servers are served under the same prefix.
+    /// </remarks>
+    public string? EndpointContextPath { get; set; }
+
+    /// <summary>
+    /// Gets or sets the name of the resource that lists the servers.
+    /// </summary>
+    /// <remarks>
+    /// The default, <c>serverlist</c>, is what the official Java client requests.
+    /// </remarks>
+    public string EndpointServerListName { get; set; } = NacosConstants.DefaultServerListName;
+
+    /// <summary>
+    /// Gets or sets extra query parameters appended to the address server URL.
+    /// </summary>
+    /// <remarks>
+    /// The value is appended verbatim after the parameters the client adds itself, so it must
+    /// already be URL-encoded and must not start with <c>?</c> or <c>&amp;</c>.
+    /// </remarks>
+    public string? EndpointQueryParams { get; set; }
+
+    /// <summary>
+    /// Gets or sets how often the published server list is polled.
+    /// </summary>
+    /// <remarks>
+    /// A change is applied at most once every 30 seconds even when this is shorter, so a flapping
+    /// address server cannot make the client reconnect in a tight loop.
+    /// </remarks>
+    public TimeSpan EndpointRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Gets or sets the application name reported to the Nacos server.
@@ -153,6 +229,18 @@ public sealed class NacosOptions
     internal bool HasCredentials =>
         !string.IsNullOrEmpty(UserName) && !string.IsNullOrEmpty(Password);
 
+    /// <summary>Gets a value indicating whether an address server is configured.</summary>
+    internal bool HasEndpoint => !string.IsNullOrWhiteSpace(Endpoint);
+
+    /// <summary>
+    /// Gets a value indicating whether the namespace was supplied rather than defaulted.
+    /// </summary>
+    /// <remarks>
+    /// The address server is only asked for a namespace when the caller chose one, matching the
+    /// official client, which leaves the parameter off for the public default.
+    /// </remarks>
+    internal bool NamespaceWasConfigured { get; private set; }
+
     /// <summary>
     /// Validates the options and normalizes the values that have aliases.
     /// </summary>
@@ -167,23 +255,29 @@ public sealed class NacosOptions
     /// </remarks>
     internal void Validate()
     {
-        if (ServerAddresses.Count == 0)
+        if (HasEndpoint)
+        {
+            ValidateEndpoint();
+        }
+        else if (ServerAddresses.Count == 0)
         {
             throw new NacosConfigurationException(
-                "At least one Nacos server address must be configured on NacosOptions.ServerAddresses.");
+                "Configure NacosOptions.ServerAddresses, or an address server through NacosOptions.Endpoint, so the client knows which Nacos server to talk to.");
         }
-
-        foreach (string address in ServerAddresses)
+        else
         {
-            if (string.IsNullOrWhiteSpace(address))
+            foreach (string address in ServerAddresses)
             {
-                throw new NacosConfigurationException(
-                    "NacosOptions.ServerAddresses contains an empty entry; every entry must be a host or URL such as 'http://127.0.0.1:8848'.");
-            }
+                if (string.IsNullOrWhiteSpace(address))
+                {
+                    throw new NacosConfigurationException(
+                        "NacosOptions.ServerAddresses contains an empty entry; every entry must be a host or URL such as 'http://127.0.0.1:8848'.");
+                }
 
-            // Parsing here turns a malformed address into a startup failure instead of a
-            // per-request one.
-            NacosServerAddress.Parse(address);
+                // Parsing here turns a malformed address into a startup failure instead of a
+                // per-request one.
+                NacosServerAddress.Parse(address);
+            }
         }
 
         if (!string.IsNullOrEmpty(UserName) && string.IsNullOrEmpty(Password))
@@ -230,8 +324,9 @@ public sealed class NacosOptions
         if (string.IsNullOrEmpty(Namespace))
         {
             // Nacos treats an empty namespace as the public default, so it is normalized rather
-            // than rejected.
-            Namespace = NacosConstants.DefaultNamespace;
+            // than rejected. The field is written directly so the value does not look like a
+            // namespace the caller chose.
+            _namespace = NacosConstants.DefaultNamespace;
             return;
         }
 
@@ -248,6 +343,68 @@ public sealed class NacosOptions
                     string.Concat(
                         "NacosOptions.Namespace '", Namespace,
                         "' contains characters that cannot be sent as request metadata; use an ASCII namespace id."));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rejects an address server configuration the client could not turn into a URL.
+    /// </summary>
+    /// <remarks>
+    /// The endpoint is a host rather than a URL: the scheme, port and path are supplied separately,
+    /// which keeps a typo in one setting from silently pointing the client at another resource.
+    /// </remarks>
+    private void ValidateEndpoint()
+    {
+        string endpoint = Endpoint!;
+
+        if (!string.Equals(endpoint, endpoint.Trim(), StringComparison.Ordinal) ||
+            endpoint.Any(char.IsWhiteSpace))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.Endpoint must not contain whitespace.");
+        }
+
+        if (endpoint.Contains("://", StringComparison.Ordinal) ||
+            endpoint.Contains('/') ||
+            endpoint.Contains('?') ||
+            endpoint.Contains('#'))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.Endpoint must be a host name or IP address such as 'address-server.example.com'; set the port on NacosOptions.EndpointPort and the path on NacosOptions.EndpointContextPath.");
+        }
+
+        if (EndpointPort is < 1 or > 65535)
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.EndpointPort must be between 1 and 65535.");
+        }
+
+        EndpointServerListName = EndpointServerListName.Trim().TrimStart('/');
+
+        if (EndpointServerListName.Length == 0 ||
+            EndpointServerListName.Contains('?') ||
+            EndpointServerListName.Contains('#'))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.EndpointServerListName must be a resource name such as 'serverlist'.");
+        }
+
+        if (EndpointRefreshInterval <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.EndpointRefreshInterval must be greater than zero.");
+        }
+
+        if (EndpointQueryParams is not null)
+        {
+            // Accept the value with or without the separator, since both read naturally in
+            // configuration, but store it in the one form the URL builder appends.
+            EndpointQueryParams = EndpointQueryParams.Trim().TrimStart('?').TrimStart('&');
+
+            if (EndpointQueryParams.Length == 0)
+            {
+                EndpointQueryParams = null;
             }
         }
     }

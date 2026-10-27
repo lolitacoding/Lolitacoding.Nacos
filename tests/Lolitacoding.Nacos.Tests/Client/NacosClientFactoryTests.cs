@@ -61,6 +61,37 @@ public sealed class NacosClientFactoryTests
     }
 
     [Fact]
+    public async Task Create_WithAnAddressServer_DialsThePublishedServerInsteadOfTheConfiguredOne()
+    {
+        // The endpoint is the authority on which nodes exist, so a client that has one does not
+        // also dial the addresses in configuration.
+        var channels = new FakeNacosChannelFactory(address =>
+            new FakeNacosChannel(address, FakeServerCheck.Responding(), new FakeNacosDuplexStream()));
+
+        var options = new NacosOptions
+        {
+            Endpoint = "address-server",
+            ServerAddresses = ["127.0.0.1:9999"],
+            ConnectionTimeout = TimeSpan.FromSeconds(5),
+        };
+
+        using var http = new HttpClient(new AddressServerHandler("127.0.0.1:8848"));
+
+        await using NacosClientFactory client = NacosClientFactory.Create(
+            options,
+            httpClient: http,
+            channelFactory: channels,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance,
+            random: new Random(1234));
+
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        channels.RequestedAddresses.ShouldNotBeEmpty();
+        channels.RequestedAddresses.ShouldAllBe(address => address.Port == 8848);
+    }
+
+    [Fact]
     public async Task DisposeAsync_DisposesEveryConnection()
     {
         var streams = new List<FakeNacosDuplexStream>();
@@ -160,4 +191,18 @@ public sealed class NacosClientFactoryTests
                     WaitPosition = -1,
                 },
             });
+
+    /// <summary>
+    /// Answers the address server with a fixed list of Nacos servers.
+    /// </summary>
+    private sealed class AddressServerHandler(string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(body),
+            });
+    }
 }

@@ -206,9 +206,11 @@ Two capabilities that the older client does not offer in the same form:
   AI connection, and only a skill and an agent specification — the two the server exposes as HTTP
   alone — are read over HTTP. See
   [the protocol notes](protocol-notes.md#transport-selection-and-http-fallback).
-- **Address-server (endpoint) discovery.** Supply `ServerAddresses` explicitly. The Nacos registry
-  itself is discovered through `Microsoft.Extensions.ServiceDiscovery`, which is a different thing:
-  it resolves service *names*, not the Nacos servers to talk to.
+- **`${...}` placeholders in the address-server settings.** `NacosOptions.Endpoint` and its
+  companions are used literally. Address-server discovery itself is supported; see
+  [address-server discovery](configuration.md#address-server-discovery). The Nacos registry is a
+  different thing: `Microsoft.Extensions.ServiceDiscovery` resolves service *names*, not the Nacos
+  servers to talk to.
 - **Aliyun MSE AccessKey/SecretKey** authentication. The auth layer leaves room for it, but only
   user name / password is supported today.
 - Multi-targeting to `netstandard` / .NET 8 and below.

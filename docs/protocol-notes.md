@@ -23,6 +23,38 @@ port (port unification), so an `https://` address dials the same `9848`, not a s
 The endpoint one port above the SDK gRPC port (`main + 1001`) is the cluster-to-cluster gRPC port,
 which an SDK client never dials.
 
+## Address-server discovery
+
+An address server is a plain HTTP resource that publishes the current list of Nacos servers. It is
+not part of the Nacos protocol — any deployment can serve it — so the contract that matters is the
+URL the client requests and the shape of the answer.
+
+```text
+GET http://{endpoint}:{endpointPort}{contextPath}/{serverListName}[?namespace={id}][&{queryParams}]
+Request-Module: default
+```
+
+The defaults are `endpointPort` 8080, `contextPath` `/nacos`, `serverListName` `serverlist`, so the
+common request is `GET http://address-server:8080/nacos/serverlist`. The `namespace` parameter is
+only added when the caller configured a namespace, and it is percent-encoded. `queryParams` is
+appended verbatim after it, already encoded. `Request-Module` is informational: the Java client
+sends the module it fetches for, and the resource does not require it.
+
+The answer is `text/plain` with one server per line; blank lines are ignored:
+
+| Line | Meaning |
+| --- | --- |
+| `10.0.0.1` | `10.0.0.1:8848`, the default main port. |
+| `10.0.0.1:8858` | Port 8858, gRPC at 9858. |
+| `https://nacos.example.com:8443` | TLS on the main port, gRPC at 9443. |
+
+One unusable line rejects the whole answer, and so does an empty answer: the list already in use
+stays in force rather than being replaced by half a cluster.
+
+The list is fetched five times at startup (the nth attempt 100 ms after the previous one) and then
+once per `EndpointRefreshInterval` (30 s by default), with at most one applied change every 30
+seconds. A replacement is applied only when the set of addresses differs, ignoring order.
+
 ## The payload envelope
 
 Every message is a protobuf `Payload`: a `Metadata` (with `type`, `clientIp` and a header map) and an

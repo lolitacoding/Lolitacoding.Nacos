@@ -904,6 +904,18 @@ Lolitacoding.Nacos.NacosOptions.ConnectionTimeout.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosOptions.ConnectionTimeout.set -> void
 Lolitacoding.Nacos.NacosOptions.ContextPath.get -> string!
 Lolitacoding.Nacos.NacosOptions.ContextPath.set -> void
+Lolitacoding.Nacos.NacosOptions.Endpoint.get -> string?
+Lolitacoding.Nacos.NacosOptions.Endpoint.set -> void
+Lolitacoding.Nacos.NacosOptions.EndpointContextPath.get -> string?
+Lolitacoding.Nacos.NacosOptions.EndpointContextPath.set -> void
+Lolitacoding.Nacos.NacosOptions.EndpointPort.get -> int
+Lolitacoding.Nacos.NacosOptions.EndpointPort.set -> void
+Lolitacoding.Nacos.NacosOptions.EndpointQueryParams.get -> string?
+Lolitacoding.Nacos.NacosOptions.EndpointQueryParams.set -> void
+Lolitacoding.Nacos.NacosOptions.EndpointRefreshInterval.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosOptions.EndpointRefreshInterval.set -> void
+Lolitacoding.Nacos.NacosOptions.EndpointServerListName.get -> string!
+Lolitacoding.Nacos.NacosOptions.EndpointServerListName.set -> void
 Lolitacoding.Nacos.NacosOptions.HealthCheckInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosOptions.HealthCheckInterval.set -> void
 Lolitacoding.Nacos.NacosOptions.HealthCheckTimeout.get -> System.TimeSpan
@@ -1105,6 +1117,7 @@ const Lolitacoding.Nacos.NacosConstants.DefaultContextPath = "/nacos" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultGroup = "DEFAULT_GROUP" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultNamespace = "public" -> string!
 const Lolitacoding.Nacos.NacosConstants.DefaultPort = 8848 -> int
+const Lolitacoding.Nacos.NacosConstants.DefaultServerListName = "serverlist" -> string!
 const Lolitacoding.Nacos.NacosConstants.GrpcPortOffset = 1000 -> int
 override Lolitacoding.Nacos.Config.NacosConfigChange.Equals(object? obj) -> bool
 override Lolitacoding.Nacos.Config.NacosConfigChange.GetHashCode() -> int

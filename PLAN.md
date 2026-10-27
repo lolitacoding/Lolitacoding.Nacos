@@ -93,7 +93,7 @@ INacosClientFactory / NacosClient
 1. **传输以 gRPC 为主**：Nacos 2.x+ 客户端通过 gRPC 长连接获得配置变更与服务变更推送。使用 `Grpc.Net.Client`（`GrpcChannel`），连接断开后以指数退避 + 抖动重连，并在重连后自动恢复所有监听与已注册实例。
 2. **HTTP OpenAPI 作为降级/辅助通道**（用于登录获取 token、服务端探测等），通过 `IHttpClientFactory` + 弹性策略（`Microsoft.Extensions.Http.Resilience`）。
 3. **监听模型**：对外暴露 `IAsyncEnumerable<ConfigChange>` 与回调委托两种方式；内部使用 `Channel<T>` 做背压。
-4. **多服务器地址**：支持配置多个 `ServerAddresses`，故障自动切换；预留地址服务器（endpoint）发现的扩展点，v1 可不实现。
+4. **多服务器地址**：支持配置多个 `ServerAddresses`，故障自动切换；也支持地址服务器（`NacosOptions.Endpoint`）动态发布服务器列表（见 P2-9）。
 5. **线程安全**：所有客户端对象注册为 Singleton，可并发使用。
 
 ## 5. 里程碑与任务
@@ -145,7 +145,7 @@ INacosClientFactory / NacosClient
 - [ ] **T5.4** 发布 `0.1.0-preview` 到 NuGet，申请保留前缀 `Lolitacoding.*`。
 
 ### 后续（v1 之后）
-- 阿里云 MSE AccessKey 认证；地址服务器发现。
+- 阿里云 MSE AccessKey 认证。
 - 以同样的结构扩展其他国内生态组件（独立仓库）。
 
 ## 6. 待核对事项（AI 开始 M1 前必须先确认，不得凭记忆编写）
@@ -544,5 +544,26 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **文档**：`docs/java-parity.md` 的 P2-10 标记完成；`docs/faq.md` 新增「How does a health check know whether the client is connected?」。
 - 单元测试新增 4 个：config 与 naming 各两个（连接前 `Down`、握手后 `Up`）。
 - 验收：Release 构建零警告零错误；单元测试 **856 个全绿**（新增 4 个）；集成测试新增 `ConfigIntegrationTests.ServerStatus_ReportsUpOnceBothClientsAreConnected`（真实容器 `v3.0.2`：连接前两条都是 `Down`，`ConnectAsync` 后都是 `Up`），整套 **63 个全绿**。
+
+#### P2-8 · 加密配置的本地快照（✅ 已由 P1-4 覆盖）
+
+- **结论**：不需要新代码。P1-4 落地后，快照存的就是服务端返回的字节加上包装后的数据密钥（`EncryptedDataKey`），密钥只在读取时于内存中解开，落盘的始终是密文。
+- **与 Java 的差异**：Java 的 `LocalEncryptedDataKeyProcessor` 把包装后的密钥写在缓存旁边的独立密钥文件里；这里把密钥写进快照文件本身（元数据 `v2` 标记）。一个文件不会和错误的缓存条目配对，复制或删除快照时密钥随之走。
+
+#### P2-9 · 地址服务器发现（✅ 已完成）
+
+- **缺口**：Java 的 `PropertyKeyConst.ENDPOINT` 让客户端从一个 HTTP 地址服务器拉取当前服务端列表（`ServerListManager` / `EndpointServerListProvider`），部署可以在不重新发布客户端的情况下增减节点。本客户端此前只能写死 `ServerAddresses`。
+- **公共面**：`NacosOptions` 上六个扁平选项：`Endpoint`、`EndpointPort`（8080）、`EndpointContextPath`（默认取 `ContextPath`）、`EndpointServerListName`（`serverlist`）、`EndpointQueryParams`、`EndpointRefreshInterval`（30 秒）。两者都没有时构建即失败；`Endpoint` 写成 URL、带空白或带路径同样在构建时拒绝。
+- **URL（与 Java 一致）**：`http://{Endpoint}:{EndpointPort}{contextPath}/{EndpointServerListName}`；`namespace=` 只在调用方显式设置过命名空间时追加，`EndpointQueryParams` 原样接在后面。
+- **优先级**：Endpoint 替换而不是叠加 `ServerAddresses`；两者都设时记事件 1008 并忽略地址列表，且不再解析这些地址——一条过期配置不该拦住一个永远不会拨它的客户端。创建客户端不阻塞：列表从空开始，连接最多等 `ConnectionTimeout`。
+- **播种**：5 次尝试，第 n 次之后等 `n * 100 ms`。Java 五次都失败就抛异常；这里记事件 1007 后继续轮询，让地址服务器比客户端启动慢的部署能自行恢复，真正的失败由需要地址的连接报出（消息里带地址服务器 URL）。
+- **刷新**：`PeriodicTimer` 按 `EndpointRefreshInterval` 轮询，且无论间隔多短，30 秒内最多应用一次变更（抖动保护，与 Java 相同）；闸门关闭时连请求都不发。
+- **应用变更**：`NacosServerList` 只在地址集合（忽略顺序）变化时替换快照并触发 `Changed`。每条连接、token 提供者与 AI HTTP 客户端每次尝试取一份快照，替换发生在故障转移中途也不会重复或跳过某个服务端。已连接的连接只在**当前服务端离开列表**时重连——新增节点不会白白丢掉健康连接，下一次自然重连会带上它（对应 Java 的 `onServerListChange`）；刚拨通的服务端在握手后重新校验是否仍在列表里，避免留住一个拨号期间被撤下的节点。
+- **解析**：每行一个地址，空行跳过；裸主机默认 8848；带 scheme 的行保留 scheme（`https://` 即 TLS）。任何一行无法解析就拒绝整份应答，空应答同样拒绝——半个集群比继续用现有列表更糟。
+- **与 Java 的差异**：Endpoint 各选项不做 `${...}` 占位符解析；应答行允许显式 `https://`（Java 一律拼 `http://`）；命名空间做百分号编码而不是原样插值，且只在调用方设置过时发送。
+- **日志** 1003–1008：不可达、状态码拒绝、空应答、列表已替换、播种放弃、Endpoint 覆盖地址列表。
+- **文档**：`docs/java-parity.md` 的 P2-8/P2-9 标记完成并记录差异；`docs/protocol-notes.md` 新增「Address-server discovery」（URL、请求头、应答行格式、轮询规则）；`docs/configuration.md` 记录六个选项与优先级；`docs/faq.md` 新增「How do I point the client at an address server?」。
+- 单元测试新增 40 个：`Internal/NacosServerListTests.cs` 8 个（替换、同集合不同顺序不算变更、按 HTTP 端点匹配、等待填充/超时/无来源消息）、`Internal/NacosEndpointServerListProviderTests.cs` 12 个（URL 形状与命名空间/查询参数、播种、重试、五次失败、https 行、30 秒闸门、坏应答与空应答保留旧列表、后台启动）、`NacosEndpointOptionsTests.cs` 14 个（15 个用例，端口越界为参数化；校验、Endpoint 覆盖时跳过地址校验、命名空间记忆）、`Transport/NacosGrpcConnectionTests.cs` 4 个（当前服务端被撤下则重连、新增节点保持连接、空列表等待、超时后 `Disconnected`）、`Client/NacosClientFactoryTests.cs` 1 个（Endpoint 优先于地址列表）。
+- 验收：Release 构建零警告零错误；单元测试 **896 个全绿**（新增 40 个）；集成测试新增 `AddressServerIntegrationTests.Client_ConnectsToTheServerTheAddressServerPublishes`（真实容器 `v3.0.2` + 进程内 `TcpListener` 地址服务器：请求打到 `/nacos/serverlist` → 两个客户端 `ServerStatus` 均为 `Up` → 配置发布/读取往返证明拨号的是列表里的服务端），整套 **64 个全绿**。
 
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

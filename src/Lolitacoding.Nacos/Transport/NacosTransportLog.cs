@@ -33,6 +33,65 @@ internal static partial class NacosTransportLog
         Message = "Nacos transport state changed from {Previous} to {Current}")]
     public static partial void StateChanged(ILogger logger, string previous, string current);
 
+    /// <summary>Logs that the address server could not be reached or timed out.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="url">The address server URL.</param>
+    /// <param name="reason">The failure reason.</param>
+    [LoggerMessage(
+        EventId = 1003,
+        Level = LogLevel.Warning,
+        Message = "The Nacos address server {Url} could not be read: {Reason}")]
+    public static partial void AddressServerUnreachable(ILogger logger, Uri url, string reason);
+
+    /// <summary>Logs that the address server answered with an error status.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="url">The address server URL.</param>
+    /// <param name="statusCode">The status code it answered with.</param>
+    [LoggerMessage(
+        EventId = 1004,
+        Level = LogLevel.Warning,
+        Message = "The Nacos address server {Url} answered with HTTP {StatusCode}")]
+    public static partial void AddressServerRejected(ILogger logger, Uri url, int statusCode);
+
+    /// <summary>Logs that the address server published an empty list.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="url">The address server URL.</param>
+    [LoggerMessage(
+        EventId = 1005,
+        Level = LogLevel.Warning,
+        Message = "The Nacos address server {Url} published no servers; the previous list stays in use")]
+    public static partial void AddressServerReturnedNoServers(ILogger logger, Uri url);
+
+    /// <summary>Logs that the published server list changed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="url">The address server URL.</param>
+    /// <param name="count">How many servers are now listed.</param>
+    [LoggerMessage(
+        EventId = 1006,
+        Level = LogLevel.Information,
+        Message = "The Nacos address server {Url} published {Count} server(s); the client list was replaced")]
+    public static partial void AddressServerListChanged(ILogger logger, Uri url, int count);
+
+    /// <summary>Logs that the initial seeding attempts all failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="url">The address server URL.</param>
+    /// <param name="attempts">How many attempts were made.</param>
+    [LoggerMessage(
+        EventId = 1007,
+        Level = LogLevel.Error,
+        Message = "The Nacos address server {Url} did not return a server list after {Attempts} attempts; the client will keep polling but has no server to dial yet")]
+    public static partial void AddressServerSeedGaveUp(ILogger logger, Uri url, int attempts);
+
+    /// <summary>Logs that an address server overrides the configured server addresses.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="endpoint">The configured address server.</param>
+    /// <param name="count">How many configured addresses are being ignored.</param>
+    [LoggerMessage(
+        EventId = 1008,
+        Level = LogLevel.Warning,
+        Message = "NacosOptions.Endpoint '{Endpoint}' is set, so the {Count} address(es) on NacosOptions.ServerAddresses are ignored")]
+    public static partial void EndpointOverridesServers(ILogger logger, string endpoint, int count);
+
     /// <summary>Logs that an incoming payload had no registered type.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="typeName">The unrecognized payload type name.</param>

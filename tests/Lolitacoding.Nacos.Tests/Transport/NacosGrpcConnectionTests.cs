@@ -424,6 +424,106 @@ public sealed class NacosGrpcConnectionTests
     }
 
     [Fact]
+    public async Task ServerList_WhenTheCurrentServerIsWithdrawn_ReconnectsToTheRemainingOne()
+    {
+        // An address server retiring a node must move the client off it, or the client keeps
+        // talking to a server the deployment no longer publishes.
+        var streams = new Queue<FakeNacosDuplexStream>([new(), new()]);
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(address, FakeServerCheck.Responding(), streams.Dequeue()));
+
+        var list = new NacosServerList(
+            [NacosServerAddress.Parse("127.0.0.1:8848")], isDynamic: true);
+
+        await using var connection = CreateConnection(factory, list);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        connection.CurrentServer!.Original.ShouldBe("127.0.0.1:8848");
+
+        list.Replace([NacosServerAddress.Parse("127.0.0.1:8849")]);
+
+        await WaitForConditionAsync(
+            () => connection.CurrentServer?.Original == "127.0.0.1:8849",
+            TimeSpan.FromSeconds(5),
+            TestContext.Current.CancellationToken);
+
+        connection.State.ShouldBe(NacosTransportState.Connected);
+    }
+
+    [Fact]
+    public async Task ServerList_WhenAnUnrelatedServerIsAdded_KeepsTheConnection()
+    {
+        // Adding a node must not cost a healthy connection: the next natural reconnect picks the
+        // new node up, and the rotation spreads requests over it from then on.
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(
+                address, FakeServerCheck.Responding(), new FakeNacosDuplexStream()));
+
+        var list = new NacosServerList(
+            [NacosServerAddress.Parse("127.0.0.1:8848")], isDynamic: true);
+
+        await using var connection = CreateConnection(factory, list);
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        list.Replace(
+        [
+            NacosServerAddress.Parse("127.0.0.1:8848"),
+            NacosServerAddress.Parse("127.0.0.1:8850"),
+        ]);
+
+        await Task.Delay(200, TestContext.Current.CancellationToken);
+
+        factory.RequestedAddresses.Count.ShouldBe(1);
+        connection.CurrentServer!.Original.ShouldBe("127.0.0.1:8848");
+        connection.State.ShouldBe(NacosTransportState.Connected);
+    }
+
+    [Fact]
+    public async Task ServerList_WhenEmpty_WaitsForTheFirstPublishedAddress()
+    {
+        // Client creation must not block on the address server, so the connection waits for the
+        // list rather than failing as soon as it is asked to connect.
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(
+                address, FakeServerCheck.Responding(), new FakeNacosDuplexStream()));
+
+        var list = new NacosServerList([], isDynamic: true);
+
+        await using var connection = CreateConnection(factory, list);
+
+        Task connecting = connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Task.Delay(100, TestContext.Current.CancellationToken);
+        connecting.IsCompleted.ShouldBeFalse();
+
+        list.Replace([NacosServerAddress.Parse("127.0.0.1:8848")]);
+
+        await connecting;
+
+        connection.State.ShouldBe(NacosTransportState.Connected);
+        factory.RequestedAddresses.Count.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task ServerList_WhenNothingIsPublished_FailsAfterTheConnectionTimeout()
+    {
+        var factory = new FakeNacosChannelFactory(
+            address => new FakeNacosChannel(
+                address, FakeServerCheck.Responding(), new FakeNacosDuplexStream()));
+
+        var list = new NacosServerList([], isDynamic: true);
+
+        await using var connection = CreateConnection(
+            factory, list, connectionTimeout: TimeSpan.FromMilliseconds(100));
+
+        await Should.ThrowAsync<NacosConnectionException>(
+            () => connection.ConnectAsync(TestContext.Current.CancellationToken));
+
+        connection.State.ShouldBe(NacosTransportState.Disconnected);
+        factory.RequestedAddresses.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task StreamEnd_TriggersReconnectAndRaisesReconnected()
     {
         // A dropped stream must recover, and subscribers must be told so they can restore the
@@ -860,12 +960,13 @@ public sealed class NacosGrpcConnectionTests
         IReadOnlyDictionary<string, string>? extraLabels = null,
         bool optional = false,
         TimeSpan? requestTimeout = null,
-        TimeSpan? reconnectDelay = null)
+        TimeSpan? reconnectDelay = null,
+        TimeSpan? connectionTimeout = null)
     {
         var options = new NacosOptions
         {
             AppName = "test-app",
-            ConnectionTimeout = TimeSpan.FromSeconds(5),
+            ConnectionTimeout = connectionTimeout ?? TimeSpan.FromSeconds(5),
             Optional = optional,
             RequestTimeout = requestTimeout ?? TimeSpan.FromSeconds(5),
             Reconnect = new NacosReconnectOptions

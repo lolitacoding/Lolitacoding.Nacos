@@ -154,6 +154,31 @@ particular configuration exists or that every request will succeed, so a caller 
 authoritative answer should still read the value it depends on. The AI registry and the lock client
 open their own connections lazily and are not covered by these two properties.
 
+## How do I point the client at an address server?
+
+Set `NacosOptions.Endpoint` to the address server's host and leave `ServerAddresses` empty:
+
+```csharp
+var options = new NacosOptions
+{
+    Endpoint = "address-server.example.com",
+    EndpointPort = 8080,
+};
+```
+
+The client requests `http://address-server.example.com:8080/nacos/serverlist` — the port, context
+path and resource name are configurable — expects one Nacos server per line, and dials the servers
+it is given. Seeding runs in the background, so creating a client never blocks on the endpoint; the
+first connect waits up to `ConnectionTimeout` for the list and then fails with a message that names
+the address server. The list is afterwards polled every `EndpointRefreshInterval` (30 s by default),
+and a change is applied at most once every 30 s.
+
+`Endpoint` replaces `ServerAddresses`: if both are set, the configured addresses are ignored and a
+warning (event 1008) is logged. A published line may be `host`, `host:port` or
+`https://host:port`; one unparsable line rejects the whole answer, and an empty answer does too, so
+the list already in use stays in force. A connection is only replaced when its current server has
+left the list — adding a node never costs a healthy connection.
+
 ## Why does a reconnect not lose my listeners and registrations?
 
 Nacos discards connection-scoped state — configuration listeners, service subscriptions and
@@ -480,10 +505,10 @@ The DI, configuration, service discovery and ASP.NET Core packages are ordinary
 
 ## What do the log event id ranges mean?
 
-Source-generated messages are grouped by subsystem: connection lifecycle in the `1000` range, push
-events in `2000`, reconnect recovery in `3000`, the configuration client in the `4000` range, the
-naming client in the `5000` range, the service discovery integration in the `6000` range, the
-distributed lock in the `7000` range, and the AI registry in the `8000` range.
+Source-generated messages are grouped by subsystem: connection lifecycle and address-server polling
+in the `1000` range, push events in `2000`, reconnect recovery in `3000`, the configuration client
+in the `4000` range, the naming client in the `5000` range, the service discovery integration in the
+`6000` range, the distributed lock in the `7000` range, and the AI registry in the `8000` range.
 
 ## How do I turn on logs?
 

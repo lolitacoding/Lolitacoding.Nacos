@@ -15,7 +15,7 @@ and `Naming`.
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `ServerAddresses` | `IList<string>` | empty | **Required.** One or more `host:port` or `http://host:port` values. Multiple addresses enable failover. The gRPC endpoint is the HTTP port + 1000. |
+| `ServerAddresses` | `IList<string>` | empty | **Required unless `Endpoint` is set.** One or more `host:port` or `http://host:port` values. Multiple addresses enable failover. The gRPC endpoint is the HTTP port + 1000. |
 | `Namespace` | `string` | `"public"` | The namespace (tenant) all operations default to. An empty value is normalised to `public`. Must be ASCII. |
 | `UserName` | `string?` | `null` | Credential for an auth-enabled server. Must be set together with `Password`. |
 | `Password` | `string?` | `null` | Must be set together with `UserName`. |
@@ -25,6 +25,12 @@ and `Naming`.
 | `HealthCheckTimeout` | `TimeSpan` | 3 s | Timeout for a single health check. |
 | `LocalCacheDirectory` | `string?` | `null` | Where snapshots and failover files are written. When unset, a per-user folder under `LocalApplicationData/Lolitacoding.Nacos/<namespace>` is used. |
 | `ContextPath` | `string` | `"/nacos"` | HTTP context path of the server. |
+| `Endpoint` | `string?` | `null` | Address server that publishes the server list. When set it replaces `ServerAddresses`; see below. |
+| `EndpointPort` | `int` | 8080 | Port of the address server (1–65535). |
+| `EndpointContextPath` | `string?` | `null` | Context path of the address server. Defaults to `ContextPath`. |
+| `EndpointServerListName` | `string` | `"serverlist"` | Resource that lists the servers. |
+| `EndpointQueryParams` | `string?` | `null` | Extra query parameters, already encoded, appended verbatim. A leading `?` or `&` is stripped. |
+| `EndpointRefreshInterval` | `TimeSpan` | 30 s | How often the list is polled. Must be positive; a change is applied at most once every 30 s regardless. |
 | `AppName` | `string?` | `null` | Reported to the server as the connection's application label. |
 | `LocalClientIp` | `string?` | `null` | Hint reported to the server. The server derives the authoritative address from the connection. |
 | `Optional` | `bool` | `false` | When `true`, an unreachable server is tolerated at startup; the client keeps retrying and serves cached values. When `false`, the first connect fails fast. |
@@ -32,6 +38,32 @@ and `Naming`.
 | `Config` | `NacosConfigOptions` | see below | Configuration-centre options. |
 | `Naming` | `NacosNamingOptions` | see below | Naming options. |
 | `Ai` | `NacosAiOptions` | see below | AI registry options. |
+
+### Address-server discovery
+
+An address server publishes the current list of Nacos servers as one address per line, so a
+deployment can add or retire nodes without redeploying its clients:
+
+```csharp
+var options = new NacosOptions
+{
+    Endpoint = "address-server.example.com",
+    EndpointPort = 8080,
+    EndpointRefreshInterval = TimeSpan.FromSeconds(15),
+};
+```
+
+- `Endpoint` takes precedence over `ServerAddresses`. When both are set the configured addresses are
+  ignored (and not validated) and event 1008 is logged.
+- The client starts with an empty list and seeds it in the background, so creating a client never
+  blocks on the endpoint. A connect waits up to `ConnectionTimeout` for the first answer and then
+  fails with a `NacosConnectionException` that names the address server.
+- `Namespace` is only sent to the endpoint when it was explicitly configured, matching the Java
+  client. `EndpointQueryParams` is appended verbatim, so it must already be URL-encoded.
+- A published list that cannot be parsed, or that is empty, is ignored and the previous list stays
+  in force. A connection is only replaced when its current server has left the list.
+
+The URL and answer shape are documented in `docs/protocol-notes.md`.
 
 ### `NacosReconnectOptions`
 

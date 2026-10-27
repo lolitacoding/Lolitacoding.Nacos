@@ -35,6 +35,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     private readonly NacosNamingClient _naming;
     private readonly NacosLockClient _lock;
     private readonly NacosAiClient _ai;
+    private readonly NacosEndpointServerListProvider? _endpointProvider;
     private readonly ILogger<NacosClientFactory> _logger;
 
     private bool _disposed;
@@ -47,6 +48,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         NacosNamingClient naming,
         NacosLockClient @lock,
         NacosAiClient ai,
+        NacosEndpointServerListProvider? endpointProvider,
         ILogger<NacosClientFactory> logger)
     {
         _options = options;
@@ -56,6 +58,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         _naming = naming;
         _lock = @lock;
         _ai = ai;
+        _endpointProvider = endpointProvider;
         _logger = logger;
     }
 
@@ -106,12 +109,47 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         options.Validate();
 
-        IReadOnlyList<NacosServerAddress> servers =
-            NacosServerAddress.ParseAll(options.ServerAddresses, options.ContextPath);
-
         TimeProvider clock = timeProvider ?? TimeProvider.System;
 
         HttpClient client = httpClient ?? CreateHttpClient(options.Tls);
+
+        // An address server replaces the configured addresses rather than adding to them: the
+        // published list is the authority on which nodes exist, so a client that has one does not
+        // also dial servers from configuration.
+        NacosServerList servers;
+        NacosEndpointServerListProvider? endpointProvider = null;
+
+        if (options.HasEndpoint)
+        {
+            if (options.ServerAddresses.Count > 0)
+            {
+                NacosTransportLog.EndpointOverridesServers(
+                    loggerFactory.CreateLogger("Lolitacoding.Nacos.AddressServer"),
+                    options.Endpoint!,
+                    options.ServerAddresses.Count);
+            }
+
+            servers = new NacosServerList(
+                [],
+                isDynamic: true,
+                source: NacosEndpointServerListProvider.BuildAddressServerUri(options).AbsoluteUri);
+
+            endpointProvider = new NacosEndpointServerListProvider(
+                options,
+                servers,
+                client,
+                clock,
+                loggerFactory.CreateLogger<NacosEndpointServerListProvider>());
+
+            // Seeding runs in the background so client creation never blocks on the address
+            // server; the connections wait for the list for as long as their timeout allows.
+            endpointProvider.Start();
+        }
+        else
+        {
+            servers = new NacosServerList(
+                NacosServerAddress.ParseAll(options.ServerAddresses, options.ContextPath));
+        }
 
         INacosAuthProvider authProvider = NacosAuthProviderFactory.Create(
             options, servers, client, clock, loggerFactory.CreateLogger("Lolitacoding.Nacos.Auth"), random);
@@ -180,7 +218,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             aiSnapshots);
 
         var factory = new NacosClientFactory(
-            options, configConnection, namingConnection, config, naming, @lock, ai,
+            options, configConnection, namingConnection, config, naming, @lock, ai, endpointProvider,
             loggerFactory.CreateLogger<NacosClientFactory>());
 
         // Domain pushes arrive on the connection of the module that owns them; routing them here
@@ -218,6 +256,13 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         _configConnection.ServerRequestReceived -= OnConfigServerRequestAsync;
         _namingConnection.ServerRequestReceived -= OnNamingServerRequestAsync;
+
+        // The address server poll loop goes first: it can replace the list the connections are
+        // still reading, and there is no reason to keep polling for a client that is shutting down.
+        if (_endpointProvider is { } endpointProvider)
+        {
+            await endpointProvider.DisposeAsync().ConfigureAwait(false);
+        }
 
         // The lock and AI clients dispose their own connection, which only exists if they were ever
         // used.

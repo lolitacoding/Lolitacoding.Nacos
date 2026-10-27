@@ -31,8 +31,8 @@ the bottom with the reason it is not implemented here.
 | P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | **Done** — `INacosNamingClient.GetServicesAsync`, `NacosServiceListPage` (selector omitted: the server ignores it) | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
 | P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` / `batchDeregisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | **Done** — `INacosNamingClient.RegisterInstancesAsync` / `DeregisterInstancesAsync` | Registers many instances of one service in one round trip. |
 | P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | **Done** — `NacosAiOptions.AgentWatchTransport`, `NacosAgentWatchTransport`, `NacosAgentDiscoveryCanonicalizer` | The watch path for deployments where the gRPC push channel is unavailable. |
-| P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | **Addressed by P1-4** — a snapshot keeps the stored ciphertext and the wrapped key | A process that fails over to disk must not write the plaintext of an encrypted configuration there. |
-| P2-9 | Address-server discovery | `PropertyKeyConst.ENDPOINT`, `ServerListManager` address-server polling | Missing; server addresses are configured explicitly | Deployments that hand out the server list through an address server cannot use this client. |
+| P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | **Done** — closed by P1-4; a snapshot keeps the stored ciphertext and the wrapped key | A process that fails over to disk must not write the plaintext of an encrypted configuration there. |
+| P2-9 | Address-server discovery | `PropertyKeyConst.ENDPOINT`, `ServerListManager` address-server polling | **Done** — `NacosOptions.Endpoint` and its five companions, `NacosServerList`, `NacosEndpointServerListProvider` | Deployments that hand out the server list through an address server cannot use this client. |
 | P2-10 | Server status | `ConfigService.getServerStatus()`, `NamingService.getServerStatus()` | **Done** — `INacosConfigClient.ServerStatus` / `INacosNamingClient.ServerStatus`, `NacosServerStatus` | A health check needs to answer "am I connected" without issuing a request. |
 | P3-11 | `NamingMaintainService` | `createService`, `updateService`, `deleteService`, `getService`, `updateInstance` | Missing by design | Administrative API under `/v3/admin/ns/*`; needs a bearer token even with auth disabled. It is not part of a runtime client. |
 | P3-12 | AI administration and console models | MCP/agent drafts, labels, versions, import, resource search, pipelines, registry models, overview | Missing by design | Reachable through `maintainer-client` or the console API, not through the runtime `AiService`. |
@@ -319,14 +319,65 @@ The .NET surface is the same `WatchAgentAsync` with a transport preference:
   another generation is discarded and retried, because its identifiers may describe a set the client
   no longer has.
 
+## P2-8: encrypted configuration snapshot at rest
+
+This needed no new code: P1-4 already made the snapshot store keep exactly what the server
+returned. A snapshot record holds the ciphertext together with the wrapped data key
+(`EncryptedDataKey`), and the key is unwrapped in memory only while a read is being served, so a
+process that fails over to its local cache never writes the plaintext of an encrypted
+configuration to disk.
+
+Difference from Java: `LocalEncryptedDataKeyProcessor` keeps the wrapped key in its own file next
+to the cache; here the key travels inside the snapshot file. One file cannot be paired with the
+wrong cached entry, and copying or deleting a snapshot takes its key with it.
+
+## P2-9: address-server discovery
+
+Java: `PropertyKeyConst.ENDPOINT`, `ENDPOINT_PORT`, `ENDPOINT_CONTEXT_PATH`, `ENDPOINT_QUERY_PARAMS`,
+`ENDPOINT_REFRESH_INTERVAL` and `ServerListManager`'s address-server provider. The reference
+implementation is `EndpointServerListProvider`.
+
+- **Options**: six flat settings on `NacosOptions` — `Endpoint`, `EndpointPort` (8080),
+  `EndpointContextPath` (defaults to `ContextPath`), `EndpointServerListName` (`serverlist`),
+  `EndpointQueryParams`, `EndpointRefreshInterval` (30 s). A configuration with neither an endpoint
+  nor a server address is rejected when the client is built, as is an endpoint that looks like a
+  URL, contains whitespace, or carries a path.
+- **URL**: `http://{Endpoint}:{EndpointPort}{contextPath}/{EndpointServerListName}`, with
+  `namespace=` added only when the caller chose a namespace and `EndpointQueryParams` appended
+  verbatim afterwards. This is the shape the Java client requests.
+- **Precedence**: an endpoint replaces the configured addresses rather than adding to them; setting
+  both logs event 1008 and the endpoint wins, and the addresses are not parsed at all, so a stale
+  entry cannot stop a client that will never dial it. Client creation never blocks on the endpoint:
+  the list starts empty and the connections wait for it for up to `ConnectionTimeout`.
+- **Seeding**: five attempts, the nth followed by a delay of `n * 100 ms`. Java throws when all
+  five fail; here event 1007 is logged and the poll loop keeps trying, so a client whose address
+  server is slower than its own startup recovers instead of failing forever. The connection that
+  needs an address reports the failure, naming the address server URL.
+- **Refresh**: a `PeriodicTimer` on `EndpointRefreshInterval`, with at most one applied change every
+  30 seconds regardless of the interval. A flapping address server must not make the client
+  reconnect in a tight loop; the Java client has the same floor. While the gate is closed the
+  endpoint is not fetched at all.
+- **Applying a change**: `NacosServerList` replaces its snapshot only when the set of addresses
+  differs (order-insensitive) and raises `Changed`. Every connection, the token provider and the AI
+  HTTP client take one snapshot per attempt, so a replacement mid-failover cannot address a server
+  twice or skip one. A connected connection reconnects only when its current server has left the
+  list — an added node costs no healthy connection and is picked up by the next natural reconnect,
+  which is what `onServerListChange` does. The membership of a freshly dialled server is re-checked
+  after the handshake, so a server withdrawn while it was being dialled is not kept.
+- **Parsing**: one address per line, blank lines skipped, a bare host defaulting to 8848, and a line
+  that starts with a scheme keeping that scheme (so `https://` still means TLS). One unusable line
+  rejects the whole answer and the previous list stays in force: half a cluster is worse than the
+  list already in use. An empty answer is treated the same way.
+- **Deviations from Java**: no `${...}` placeholder resolution in the endpoint settings; a published
+  line may carry an explicit `https://` scheme (Java always prepends `http://`); the namespace is
+  percent-encoded rather than interpolated raw, and is only sent when the caller set one.
+- **Log events** 1003–1008: unreachable, rejected status, empty answer, list replaced, seeding gave
+  up, endpoint overrides the configured addresses.
+
 ## P2 items
 
-- **Snapshot encryption** reuses the filter's key material; it is only meaningful once P1-4
-  exists.
-- **Address-server discovery** replaces the static server list with an HTTP endpoint that answers
-  the current list. It is a deployment concern, not a protocol one.
-- **Server status** is a read of the transport state. Java returns a string; here it will be a
-  typed enum so a health check does not have to parse it.
+All three P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. What remains is the
+P3 list, which is closed by design rather than by work.
 
 ## Standing non-goals
 

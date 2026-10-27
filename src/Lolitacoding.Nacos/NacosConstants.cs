@@ -28,6 +28,14 @@ public static class NacosConstants
     /// <summary>The default HTTP context path of a Nacos server.</summary>
     public const string DefaultContextPath = "/nacos";
 
+    /// <summary>
+    /// The default resource name an address server answers with its list of Nacos servers.
+    /// </summary>
+    /// <remarks>
+    /// This is the value the official Java client requests when no custom cluster name is set.
+    /// </remarks>
+    public const string DefaultServerListName = "serverlist";
+
     /// <summary>The default configuration group name.</summary>
     public const string DefaultGroup = "DEFAULT_GROUP";
 

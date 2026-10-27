@@ -39,7 +39,7 @@ internal sealed class NacosTokenProvider : INacosAuthProvider
     /// </remarks>
     private const long ReLoginWindowSeconds = 60;
 
-    private readonly IReadOnlyList<NacosServerAddress> _servers;
+    private readonly NacosServerList _servers;
     private readonly INacosLoginClient _loginClient;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
@@ -86,7 +86,7 @@ internal sealed class NacosTokenProvider : INacosAuthProvider
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _servers = servers;
+        _servers = servers as NacosServerList ?? new NacosServerList(servers);
         _loginClient = loginClient;
         _timeProvider = timeProvider;
         _logger = logger;
@@ -170,17 +170,19 @@ internal sealed class NacosTokenProvider : INacosAuthProvider
             return null;
         }
 
-        if (_servers.Count == 0)
+        IReadOnlyList<NacosServerAddress> servers = _servers.Items;
+
+        if (servers.Count == 0)
         {
             throw new NacosAuthException("No Nacos server address is configured to authenticate against.");
         }
 
         NacosAuthException? lastFailure = null;
 
-        for (int attempt = 0; attempt < _servers.Count; attempt++)
+        for (int attempt = 0; attempt < servers.Count; attempt++)
         {
-            int index = (_serverIndex + attempt) % _servers.Count;
-            NacosServerAddress server = _servers[index];
+            int index = (_serverIndex + attempt) % servers.Count;
+            NacosServerAddress server = servers[index];
 
             NacosLoginResponse? response;
             try

@@ -36,7 +36,7 @@ internal sealed class NacosAiHttpClient
     /// <summary>The status Nacos answers a conditional read with when the hash still matches.</summary>
     private const int NotModifiedStatusCode = 304;
 
-    private readonly IReadOnlyList<NacosServerAddress> _servers;
+    private readonly NacosServerList _servers;
     private readonly HttpClient _httpClient;
     private readonly INacosAuthProvider? _authProvider;
     private readonly TimeSpan _timeout;
@@ -65,7 +65,7 @@ internal sealed class NacosAiHttpClient
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(logger);
 
-        _servers = servers;
+        _servers = servers as NacosServerList ?? new NacosServerList(servers);
         _httpClient = httpClient;
         _timeout = timeout;
         _logger = logger;
@@ -160,11 +160,15 @@ internal sealed class NacosAiHttpClient
         CancellationToken ct)
     {
         NacosException? failure = null;
-        int start = NextServer();
 
-        for (int attempt = 0; attempt < _servers.Count; attempt++)
+        // One snapshot for the whole attempt: the address server may replace the list while the
+        // request is failing over, and mixing generations could address a server twice or skip one.
+        IReadOnlyList<NacosServerAddress> servers = _servers.Items;
+        int start = NextServer(servers.Count);
+
+        for (int attempt = 0; attempt < servers.Count; attempt++)
         {
-            NacosServerAddress server = _servers[(start + attempt) % _servers.Count];
+            NacosServerAddress server = servers[(start + attempt) % servers.Count];
 
             try
             {
@@ -197,21 +201,22 @@ internal sealed class NacosAiHttpClient
     /// <summary>
     /// Chooses the server a request starts from.
     /// </summary>
+    /// <param name="count">How many servers the request may try.</param>
     /// <returns>The index of the first server to try.</returns>
     /// <remarks>
     /// The starting point rotates so a client with several servers spreads its requests over them
     /// instead of loading the first one and using the rest only as failover.
     /// </remarks>
-    private int NextServer()
+    private int NextServer(int count)
     {
-        if (_servers.Count <= 1)
+        if (count <= 1)
         {
             return 0;
         }
 
         int next = Interlocked.Increment(ref _nextServer);
 
-        return (int)((uint)next % _servers.Count);
+        return (int)((uint)next % count);
     }
 
     /// <summary>

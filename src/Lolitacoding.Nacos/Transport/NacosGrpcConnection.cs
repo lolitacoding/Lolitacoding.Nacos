@@ -37,7 +37,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     private readonly NacosOptions _options;
     private readonly NacosConnectionModule _module;
     private readonly IReadOnlyDictionary<string, string>? _extraLabels;
-    private readonly IReadOnlyList<NacosServerAddress> _servers;
+    private readonly NacosServerList _servers;
     private readonly INacosChannelFactory _channelFactory;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
@@ -120,7 +120,12 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
-        if (servers.Count == 0)
+        // A fixed list is wrapped so that every connection reads its servers through the same
+        // shape as a list an address server keeps current. A dynamic list may legitimately start
+        // empty: the first connect waits for the address server to publish one.
+        NacosServerList list = servers as NacosServerList ?? new NacosServerList(servers);
+
+        if (!list.IsDynamic && list.Count == 0)
         {
             throw new ArgumentException(
                 "At least one Nacos server address is required.", nameof(servers));
@@ -129,13 +134,15 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         _options = options;
         _module = module;
         _extraLabels = extraLabels;
-        _servers = servers;
+        _servers = list;
         _channelFactory = channelFactory;
         _timeProvider = timeProvider;
         _logger = logger;
         _backoff = new NacosBackoffPolicy(options.Reconnect, timeProvider, random ?? new Random());
         _authProvider = authProvider;
         ClientVersion = BuildClientVersion();
+
+        _servers.Changed += OnServerListChanged;
     }
 
     /// <summary>Raised whenever the transport state changes.</summary>
@@ -579,6 +586,8 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         _disposed = true;
         SetState(NacosTransportState.Shutdown);
 
+        _servers.Changed -= OnServerListChanged;
+
         await _shutdown.CancelAsync().ConfigureAwait(false);
         TearDown();
 
@@ -637,16 +646,43 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
 
             SetState(NacosTransportState.Connecting);
 
+            // An address-server list starts empty, so the first attempt waits for it instead of
+            // failing immediately; a configured list is already populated and this returns at once.
+            try
+            {
+                await _servers
+                    .WaitForItemsAsync(_options.ConnectionTimeout, _timeProvider, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is NacosConnectionException or OperationCanceledException)
+            {
+                // Nothing was dialled, so the connection is not "connecting" any more.
+                SetState(NacosTransportState.Disconnected);
+                throw;
+            }
+
+            // One snapshot for the whole attempt: the list may be replaced while this loop runs,
+            // and mixing generations would try a server that the new list no longer publishes.
+            IReadOnlyList<NacosServerAddress> servers = _servers.Items;
             var failures = new List<Exception>();
 
-            for (int attempt = 0; attempt < _servers.Count; attempt++)
+            for (int attempt = 0; attempt < servers.Count; attempt++)
             {
-                int index = (_serverIndex + attempt) % _servers.Count;
-                NacosServerAddress address = _servers[index];
+                int index = (_serverIndex + attempt) % servers.Count;
+                NacosServerAddress address = servers[index];
 
                 try
                 {
                     await ConnectToAsync(address, ct).ConfigureAwait(false);
+
+                    if (!_servers.Contains(address))
+                    {
+                        // The address server withdrew this server while it was being dialled.
+                        // Keeping the connection would pin the client to a node the deployment no
+                        // longer publishes, so the attempt moves on to the current list.
+                        TearDown();
+                        continue;
+                    }
 
                     _serverIndex = index;
                     _everConnected = true;
@@ -675,7 +711,7 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
 
             throw new NacosConnectionException(
                 string.Concat(
-                    "None of the ", _servers.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    "None of the ", servers.Count.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     " configured Nacos server(s) could be reached."),
                 failures.Count > 0 ? new AggregateException(failures) : null);
         }
@@ -934,12 +970,14 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
         await SendResponseAsync(new ConnectResetResponse { RequestId = reset.RequestId }, ct)
             .ConfigureAwait(false);
 
+        IReadOnlyList<NacosServerAddress> servers = _servers.Items;
+
         // Move to the server the server recommended, or simply advance to the next one.
         if (!string.IsNullOrEmpty(reset.ServerIp))
         {
-            for (int i = 0; i < _servers.Count; i++)
+            for (int i = 0; i < servers.Count; i++)
             {
-                if (string.Equals(_servers[i].Host, reset.ServerIp, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(servers[i].Host, reset.ServerIp, StringComparison.OrdinalIgnoreCase))
                 {
                     _serverIndex = i;
                     return;
@@ -947,7 +985,42 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             }
         }
 
-        _serverIndex = (_serverIndex + 1) % _servers.Count;
+        if (servers.Count > 0)
+        {
+            _serverIndex = (_serverIndex + 1) % servers.Count;
+        }
+    }
+
+    /// <summary>
+    /// Reacts to the address server publishing a different set of servers.
+    /// </summary>
+    /// <param name="sender">The list that changed.</param>
+    /// <param name="e">The event arguments.</param>
+    /// <remarks>
+    /// Only a connection whose current server has left the list is affected. Reconnecting because a
+    /// node was added elsewhere would drop a healthy connection for nothing, and the next natural
+    /// reconnect will pick the new node up anyway.
+    /// </remarks>
+    private void OnServerListChanged(object? sender, EventArgs e)
+    {
+        if (_disposed || _state != NacosTransportState.Connected)
+        {
+            return;
+        }
+
+        NacosServerAddress? current = CurrentServer;
+
+        if (current is null || _servers.Contains(current))
+        {
+            return;
+        }
+
+        // A recovery only starts from a state that is not Connected, so the state is moved first:
+        // the connection is about to be replaced, and requests arriving in between should wait for
+        // the new one rather than be sent on the old server.
+        SetState(NacosTransportState.Unhealthy);
+
+        _ = Task.Run(() => HandleConnectionLossAsync(_shutdown.Token), CancellationToken.None);
     }
 
     /// <summary>
