@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using Lolitacoding.Nacos.Config;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lolitacoding.Nacos.Internal;
 
@@ -53,15 +55,27 @@ internal sealed class NacosConfigSnapshotStore
     private const string MetadataVersionMarker = "v2\n";
 
     private readonly string _rootDirectory;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NacosConfigSnapshotStore"/> class.
     /// </summary>
     /// <param name="rootDirectory">The directory that holds the snapshots.</param>
-    public NacosConfigSnapshotStore(string rootDirectory)
+    /// <param name="logger">
+    /// The logger that reports a snapshot that could not be written or read, or
+    /// <see langword="null"/> when the caller has none.
+    /// </param>
+    /// <remarks>
+    /// The store reports failures itself rather than throwing. Every caller treats caching as an
+    /// optimisation that must never fail the operation it decorates, so a failure that is only
+    /// signalled through an exception would either be swallowed by each of them — which is how the
+    /// failure used to disappear — or break a read that already succeeded.
+    /// </remarks>
+    public NacosConfigSnapshotStore(string rootDirectory, ILogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
         _rootDirectory = Path.Combine(rootDirectory, "config");
+        _logger = logger ?? NullLogger.Instance;
     }
 
     /// <summary>
@@ -118,13 +132,15 @@ internal sealed class NacosConfigSnapshotStore
             // never visible under the real name.
             File.Move(temporary, path, overwrite: true);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
             TryDelete(temporary);
+            NacosConfigLog.SnapshotWriteFailed(_logger, key.ToString(), ex.Message);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
             TryDelete(temporary);
+            NacosConfigLog.SnapshotWriteFailed(_logger, key.ToString(), ex.Message);
         }
     }
 
@@ -178,12 +194,14 @@ internal sealed class NacosConfigSnapshotStore
 
             return (content, contentType, encryptedDataKey);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            NacosConfigLog.SnapshotReadFailed(_logger, key.ToString(), ex.Message);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            NacosConfigLog.SnapshotReadFailed(_logger, key.ToString(), ex.Message);
             return null;
         }
     }

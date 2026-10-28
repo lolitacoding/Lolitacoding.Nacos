@@ -1116,15 +1116,9 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             return;
         }
 
-        try
-        {
-            await _snapshots.SaveAsync(service, info, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // A failed snapshot write must not fail a lookup that already succeeded.
-            NacosNamingLog.SnapshotWriteFailed(_logger, service.ToString(), ex.Message);
-        }
+        // The store reports a failed write itself; a snapshot is an optimisation and must not fail a
+        // lookup that already succeeded.
+        await _snapshots.SaveAsync(service, info, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1140,15 +1134,9 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             return null;
         }
 
-        try
-        {
-            return await _snapshots.LoadAsync(service, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            NacosNamingLog.SnapshotReadFailed(_logger, service.ToString(), ex.Message);
-            return null;
-        }
+        // An unreadable snapshot is reported by the store and treated as absent: the caller is
+        // already failing over, so its own exception is the one worth surfacing.
+        return await _snapshots.LoadAsync(service, ct).ConfigureAwait(false);
     }
 
     /// <summary>

@@ -90,20 +90,28 @@ internal static partial class NacosConfigLog
         Message = "Ignoring a notification for configuration {Key}: the content hash {Md5} is unchanged.")]
     public static partial void ChangeIgnored(ILogger logger, string key, string? md5);
 
-    /// <summary>Logs that the config client could not read a snapshot it was asked for.</summary>
+    /// <summary>Logs that the snapshot store could not read a configuration snapshot.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="key">The configuration coordinates.</param>
     /// <param name="reason">The failure.</param>
+    /// <remarks>
+    /// Warning, not Debug: this is only reached while failing over, so the snapshot was the last
+    /// copy of the value and its absence turns a survivable outage into a failed read.
+    /// </remarks>
     [LoggerMessage(
         EventId = 4009,
-        Level = LogLevel.Debug,
+        Level = LogLevel.Warning,
         Message = "Could not read the local snapshot for configuration {Key}: {Reason}")]
     public static partial void SnapshotReadFailed(ILogger logger, string key, string reason);
 
-    /// <summary>Logs that writing a snapshot failed.</summary>
+    /// <summary>Logs that the snapshot store could not write a configuration snapshot.</summary>
     /// <param name="logger">The logger.</param>
     /// <param name="key">The configuration coordinates.</param>
     /// <param name="reason">The failure.</param>
+    /// <remarks>
+    /// Warning: the failure is swallowed so that caching never fails the read that produced the
+    /// value, which leaves this line as the only sign that the next outage has no copy to serve.
+    /// </remarks>
     [LoggerMessage(
         EventId = 4010,
         Level = LogLevel.Warning,

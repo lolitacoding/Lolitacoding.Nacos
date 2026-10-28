@@ -1618,16 +1618,11 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             return;
         }
 
-        try
-        {
-            await _snapshots.SaveAsync(
-                key, result.Content, result.ContentType, result.EncryptedDataKey, ct)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            NacosConfigLog.SnapshotWriteFailed(_logger, key.ToString(), ex.Message);
-        }
+        // The store reports a write that could not be completed itself; caching must never fail the
+        // read that already succeeded.
+        await _snapshots.SaveAsync(
+            key, result.Content, result.ContentType, result.EncryptedDataKey, ct)
+            .ConfigureAwait(false);
     }
 
     private async Task<NacosConfigResult?> ReadSnapshotAsync(NacosConfigKey key, CancellationToken ct)
@@ -1637,30 +1632,24 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             return null;
         }
 
-        try
-        {
-            (string Content, string? ContentType, string? EncryptedDataKey)? snapshot =
-                await _snapshots.LoadAsync(key, ct).ConfigureAwait(false);
+        // An unreadable snapshot is reported by the store and treated as absent here: the caller
+        // is already failing over, so its own exception is the one worth surfacing.
+        (string Content, string? ContentType, string? EncryptedDataKey)? snapshot =
+            await _snapshots.LoadAsync(key, ct).ConfigureAwait(false);
 
-            if (snapshot is null)
-            {
-                return null;
-            }
-
-            return new NacosConfigResult(
-                key,
-                snapshot.Value.Content,
-                NacosMd5.Compute(snapshot.Value.Content),
-                snapshot.Value.ContentType,
-                DateTimeOffset.MinValue,
-                fromLocalCache: true,
-                snapshot.Value.EncryptedDataKey);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        if (snapshot is null)
         {
-            NacosConfigLog.SnapshotReadFailed(_logger, key.ToString(), ex.Message);
             return null;
         }
+
+        return new NacosConfigResult(
+            key,
+            snapshot.Value.Content,
+            NacosMd5.Compute(snapshot.Value.Content),
+            snapshot.Value.ContentType,
+            DateTimeOffset.MinValue,
+            fromLocalCache: true,
+            snapshot.Value.EncryptedDataKey);
     }
 
     private static DateTimeOffset ToTimestamp(long lastModified) =>

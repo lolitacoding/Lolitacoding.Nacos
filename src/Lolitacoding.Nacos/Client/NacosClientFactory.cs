@@ -179,9 +179,9 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             random,
             authProvider);
 
-        NacosConfigSnapshotStore? configSnapshots = CreateConfigSnapshotStore(options);
-        NacosServiceSnapshotStore? namingSnapshots = CreateServiceSnapshotStore(options);
-        NacosAiSnapshotStore? aiSnapshots = CreateAiSnapshotStore(options);
+        NacosConfigSnapshotStore? configSnapshots = CreateConfigSnapshotStore(options, loggerFactory);
+        NacosServiceSnapshotStore? namingSnapshots = CreateServiceSnapshotStore(options, loggerFactory);
+        NacosAiSnapshotStore? aiSnapshots = CreateAiSnapshotStore(options, loggerFactory);
 
         var config = new NacosConfigClient(
             options,
@@ -385,30 +385,42 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// Creates the configuration snapshot store when local caching is enabled.
     /// </summary>
     /// <param name="options">The client options.</param>
+    /// <param name="loggerFactory">The factory the store logs through.</param>
     /// <returns>The store, or <see langword="null"/> when caching is disabled.</returns>
-    private static NacosConfigSnapshotStore? CreateConfigSnapshotStore(NacosOptions options) =>
+    private static NacosConfigSnapshotStore? CreateConfigSnapshotStore(
+        NacosOptions options,
+        ILoggerFactory loggerFactory) =>
         options.Config.EnableLocalCache
-            ? new NacosConfigSnapshotStore(ResolveCacheDirectory(options))
+            ? new NacosConfigSnapshotStore(
+                ResolveCacheDirectory(options), loggerFactory.CreateLogger<NacosConfigSnapshotStore>())
             : null;
 
     /// <summary>
     /// Creates the service snapshot store when local caching is enabled.
     /// </summary>
     /// <param name="options">The client options.</param>
+    /// <param name="loggerFactory">The factory the store logs through.</param>
     /// <returns>The store, or <see langword="null"/> when caching is disabled.</returns>
-    private static NacosServiceSnapshotStore? CreateServiceSnapshotStore(NacosOptions options) =>
+    private static NacosServiceSnapshotStore? CreateServiceSnapshotStore(
+        NacosOptions options,
+        ILoggerFactory loggerFactory) =>
         options.Naming.EnableLocalCache
-            ? new NacosServiceSnapshotStore(ResolveCacheDirectory(options))
+            ? new NacosServiceSnapshotStore(
+                ResolveCacheDirectory(options), loggerFactory.CreateLogger<NacosServiceSnapshotStore>())
             : null;
 
     /// <summary>
     /// Creates the AI snapshot store when local caching is enabled.
     /// </summary>
     /// <param name="options">The client options.</param>
+    /// <param name="loggerFactory">The factory the store logs through.</param>
     /// <returns>The store, or <see langword="null"/> when caching is disabled.</returns>
-    private static NacosAiSnapshotStore? CreateAiSnapshotStore(NacosOptions options) =>
+    private static NacosAiSnapshotStore? CreateAiSnapshotStore(
+        NacosOptions options,
+        ILoggerFactory loggerFactory) =>
         options.Ai.EnableLocalCache
-            ? new NacosAiSnapshotStore(ResolveCacheDirectory(options))
+            ? new NacosAiSnapshotStore(
+                ResolveCacheDirectory(options), loggerFactory.CreateLogger<NacosAiSnapshotStore>())
             : null;
 
     /// <summary>

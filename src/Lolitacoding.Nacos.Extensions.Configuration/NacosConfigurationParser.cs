@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using YamlDotNet.RepresentationModel;
 
 namespace Lolitacoding.Nacos.Extensions.Configuration;
@@ -35,11 +36,24 @@ internal static class NacosConfigurationParser
     /// <param name="dataId">The data id, used as the format hint of last resort.</param>
     /// <param name="contentType">The content type the server reported, when known.</param>
     /// <param name="content">The raw content.</param>
+    /// <param name="logger">
+    /// The logger that reports a document the format could not read, or <see langword="null"/> when
+    /// the caller has none.
+    /// </param>
     /// <returns>
     /// A map of flat keys to values. The raw content is always included under
     /// <paramref name="dataId"/> so a consumer can retrieve the document as authored.
     /// </returns>
-    public static Dictionary<string, string?> Parse(string dataId, string? contentType, string content)
+    /// <remarks>
+    /// A document that fails to parse is reported rather than swallowed: the keys it would have
+    /// produced simply do not exist afterwards, so a lookup silently falls back to a default. That
+    /// is indistinguishable from "the operator never set it" unless the failure is logged.
+    /// </remarks>
+    public static Dictionary<string, string?> Parse(
+        string dataId,
+        string? contentType,
+        string content,
+        ILogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(dataId);
         ArgumentNullException.ThrowIfNull(content);
@@ -49,14 +63,17 @@ internal static class NacosConfigurationParser
             [dataId] = content,
         };
 
-        switch (ResolveFormat(dataId, contentType, content))
+        NacosConfigurationFormat format = ResolveFormat(dataId, contentType, content);
+
+        string? failure = null;
+        switch (format)
         {
             case NacosConfigurationFormat.Json:
-                FlattenJson(values, prefix: string.Empty, content);
+                failure = FlattenJson(values, prefix: string.Empty, content);
                 break;
 
             case NacosConfigurationFormat.Yaml:
-                FlattenYaml(values, prefix: string.Empty, content);
+                failure = FlattenYaml(values, prefix: string.Empty, content);
                 break;
 
             case NacosConfigurationFormat.Properties:
@@ -66,6 +83,11 @@ internal static class NacosConfigurationParser
             default:
                 // Plain text: the data id key added above is the whole result.
                 break;
+        }
+
+        if (failure is not null && logger is not null)
+        {
+            NacosConfigurationLog.MalformedDocument(logger, dataId, format, failure);
         }
 
         return values;
@@ -167,21 +189,27 @@ internal static class NacosConfigurationParser
     /// <param name="target">The map to write into.</param>
     /// <param name="prefix">The key prefix for the current nesting level.</param>
     /// <param name="content">The JSON text.</param>
+    /// <returns>The reason the document could not be read, or <see langword="null"/> on success.</returns>
     /// <remarks>
     /// A malformed document is left unflattened rather than throwing: the raw content is already
     /// present under the data id, and refusing to start because one optional document is
     /// malformed would be a worse failure mode than ignoring the structured view of it.
     /// </remarks>
-    private static void FlattenJson(Dictionary<string, string?> target, string prefix, string content)
+    private static string? FlattenJson(
+        Dictionary<string, string?> target,
+        string prefix,
+        string content)
     {
         try
         {
             using JsonDocument document = JsonDocument.Parse(content);
             FlattenJsonElement(target, prefix, document.RootElement);
+            return null;
         }
-        catch (JsonException)
+        catch (JsonException ex)
         {
-            // Deliberately ignored; see the remarks.
+            // Deliberately not thrown; the caller reports it and keeps the raw value.
+            return ex.Message;
         }
     }
 
@@ -250,7 +278,11 @@ internal static class NacosConfigurationParser
     /// <param name="target">The map to write into.</param>
     /// <param name="prefix">The key prefix for the current nesting level.</param>
     /// <param name="content">The YAML text.</param>
-    private static void FlattenYaml(Dictionary<string, string?> target, string prefix, string content)
+    /// <returns>The reason the document could not be read, or <see langword="null"/> on success.</returns>
+    private static string? FlattenYaml(
+        Dictionary<string, string?> target,
+        string prefix,
+        string content)
     {
         try
         {
@@ -260,14 +292,16 @@ internal static class NacosConfigurationParser
 
             if (stream.Documents.Count == 0)
             {
-                return;
+                return null;
             }
 
             FlattenYamlNode(target, prefix, stream.Documents[0].RootNode);
+            return null;
         }
-        catch (YamlDotNet.Core.YamlException)
+        catch (YamlDotNet.Core.YamlException ex)
         {
             // As with JSON, malformed content degrades to the raw value rather than failing.
+            return ex.Message;
         }
     }
 

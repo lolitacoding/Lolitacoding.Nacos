@@ -722,4 +722,23 @@ internal static partial class NacosAiLog
         string agentName,
         string transport,
         string reason);
+
+    /// <summary>Logs that a resource could not be read from the local failover cache.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="resource">The resource kind.</param>
+    /// <param name="name">The selector the resource was cached for.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// Warning, not Debug: the read only happens while the control plane is unreachable, so the
+    /// snapshot was the last copy and its absence is the difference between starting and failing.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8050,
+        Level = LogLevel.Warning,
+        Message = "Reading the cached {Resource} {Name} from disk failed: {Reason}")]
+    public static partial void SnapshotReadFailed(
+        ILogger logger,
+        string resource,
+        string name,
+        string reason);
 }

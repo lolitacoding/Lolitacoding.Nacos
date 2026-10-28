@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
+using Lolitacoding.Nacos.Ai;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lolitacoding.Nacos.Internal;
 
@@ -57,15 +60,25 @@ internal sealed class NacosAiSnapshotStore
     private const string DirectoryName = "ai";
 
     private readonly string _rootDirectory;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NacosAiSnapshotStore"/> class.
     /// </summary>
     /// <param name="rootDirectory">The directory that holds the snapshots.</param>
-    public NacosAiSnapshotStore(string rootDirectory)
+    /// <param name="logger">
+    /// The logger that reports a snapshot that could not be written or read, or
+    /// <see langword="null"/> when the caller has none.
+    /// </param>
+    /// <remarks>
+    /// The store reports failures itself rather than throwing, for the same reason as the
+    /// configuration and naming stores: caching must never fail the read it decorates.
+    /// </remarks>
+    public NacosAiSnapshotStore(string rootDirectory, ILogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
         _rootDirectory = Path.Combine(rootDirectory, DirectoryName);
+        _logger = logger ?? NullLogger.Instance;
     }
 
     /// <summary>
@@ -116,13 +129,15 @@ internal sealed class NacosAiSnapshotStore
             // visible under the real name.
             File.Move(temporary, path, overwrite: true);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
             TryDelete(temporary);
+            NacosAiLog.SnapshotWriteFailed(_logger, kind, key, ex.Message);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
             TryDelete(temporary);
+            NacosAiLog.SnapshotWriteFailed(_logger, kind, key, ex.Message);
         }
     }
 
@@ -159,12 +174,14 @@ internal sealed class NacosAiSnapshotStore
 
             return JsonSerializer.Deserialize(payload, typeInfo);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            NacosAiLog.SnapshotReadFailed(_logger, kind, key, ex.Message);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            NacosAiLog.SnapshotReadFailed(_logger, kind, key, ex.Message);
             return null;
         }
         catch (JsonException)

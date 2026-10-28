@@ -96,6 +96,12 @@ there is no assembly-wide discovery, so the algorithms are listed explicitly. A 
 `INacosConfigClient.AddConfigFilter` is how any other transformation is run; see
 [java-parity.md](java-parity.md#p1-4-configuration-filters-and-encrypted-content).
 
+The local snapshot is an optimisation, never a precondition: a write that fails does not fail the
+read that produced it, and a read that fails is treated as "no snapshot". Both are logged instead —
+`4010` for a write and `4009` for a read — so a failover copy that never reached the disk does not
+stay invisible until the outage that needs it. The naming store reports `5010` (write) and `5011`
+(read), and the AI store `8042` (write) and `8050` (read), under the same contract.
+
 ### `NacosNamingOptions`
 
 | Property | Type | Default | Notes |
@@ -163,7 +169,9 @@ content sniff:
 
 Structured documents are flattened with `:` and numeric array indices. The raw document is always
 stored verbatim under its data id. A malformed structured document degrades to its raw value rather
-than failing the application.
+than failing the application, and is reported as `4108` at Warning when the source can log: the keys
+it would have produced do not exist, so every lookup for them falls back to a default, which is
+indistinguishable from a value nobody configured.
 
 ## `NacosServiceRegistrationOptions`
 

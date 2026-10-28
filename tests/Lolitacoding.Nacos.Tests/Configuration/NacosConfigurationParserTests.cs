@@ -1,4 +1,6 @@
 using Lolitacoding.Nacos.Extensions.Configuration;
+using Lolitacoding.Nacos.Tests.Support;
+using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Tests.Configuration;
 
@@ -116,6 +118,49 @@ public sealed class NacosConfigurationParserTests
         Dictionary<string, string?> values = NacosConfigurationParser.Parse("app.yaml", "yaml", Broken);
 
         values["app.yaml"].ShouldBe(Broken);
+    }
+
+    [Fact]
+    public void Parse_ReportsMalformedJson()
+    {
+        // The keys a malformed document would have produced simply do not exist afterwards, so a
+        // lookup falls back to its default. That is indistinguishable from "never configured"
+        // unless the failure is reported.
+        var log = new RecordingLoggerFactory();
+        const string Broken = "{ not json";
+
+        Dictionary<string, string?> values = NacosConfigurationParser.Parse(
+            "app.json", "json", Broken, log.CreateLogger("test"));
+
+        values["app.json"].ShouldBe(Broken);
+
+        RecordedLogEntry entry = log.ForEvent(4108).ShouldHaveSingleItem();
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldStartWith(
+            "Could not read Nacos configuration app.json as Json; only its raw text is available:");
+    }
+
+    [Fact]
+    public void Parse_ReportsMalformedYaml()
+    {
+        var log = new RecordingLoggerFactory();
+
+        NacosConfigurationParser.Parse(
+            "app.yaml", "yaml", "key: [unterminated", log.CreateLogger("test"));
+
+        log.ForEvent(4108).ShouldHaveSingleItem().Message.ShouldStartWith(
+            "Could not read Nacos configuration app.yaml as Yaml;");
+    }
+
+    [Fact]
+    public void Parse_DoesNotReportAWellFormedDocument()
+    {
+        var log = new RecordingLoggerFactory();
+
+        NacosConfigurationParser.Parse(
+            "app.json", "json", """{"App":{"Greeting":"hi"}}""", log.CreateLogger("test"));
+
+        log.ForEvent(4108).ShouldBeEmpty();
     }
 
     [Theory]

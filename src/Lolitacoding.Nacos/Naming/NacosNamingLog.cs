@@ -232,9 +232,13 @@ internal static partial class NacosNamingLog
     /// <param name="logger">The logger.</param>
     /// <param name="service">The service the instances belong to.</param>
     /// <param name="count">The number of instances in the published set.</param>
+    /// <remarks>
+    /// Information, like the single-instance registration it replaces: an operator who registers a
+    /// set instead of one instance at a time must not lose the only record that it happened.
+    /// </remarks>
     [LoggerMessage(
         EventId = 5021,
-        Level = LogLevel.Debug,
+        Level = LogLevel.Information,
         Message = "Published {Count} instances of {Service} as one batch.")]
     public static partial void InstancesRegistered(ILogger logger, string service, int count);
 }

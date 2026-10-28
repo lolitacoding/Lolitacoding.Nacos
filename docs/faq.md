@@ -376,6 +376,8 @@ snapshot directory, and a lookup that finds no in-memory entry falls back to tha
 in-memory cache only helps a process that stays up; the on-disk snapshot is what keeps a rolling
 restart during a Nacos outage from becoming an application outage. It is written atomically, so a
 process killed mid-write leaves either the previous snapshot or the new one, never a truncated file.
+A write that could not be completed is logged as `5010` and a read as `5011`, both at Warning: the
+failure is swallowed so it never fails the lookup, which is why it has to be reported.
 
 ## Does the AI registry cache survive a restart?
 
@@ -386,6 +388,8 @@ difference between an agent host that comes back up during an outage and one tha
 Nothing else writes a copy, nothing but an unreachable server makes the client read one, and a
 resource the server reports as withdrawn has its copy removed, so the file is never a better answer
 than the server. The RAD agent watch is the exception: its recovery after a reconnect is in memory.
+A copy that could not be written is logged as `8042` and one that could not be read as `8050`, both
+at Warning, because the failure is swallowed to keep the read that already succeeded working.
 
 The official Java client keeps all of these caches in memory only, so this is an extension rather than
 a port; [the protocol notes](protocol-notes.md#the-local-failover-cache) record it as the intended
@@ -491,7 +495,8 @@ available at once; this is not an either/or.
 
 If a document is not being flattened, check the content type and the data id extension: the format
 is chosen from the server-reported type, then the data id suffix, then a content sniff. A malformed
-document degrades to its raw value rather than throwing.
+document degrades to its raw value rather than throwing, and logs `4108` at Warning when the source
+can log, so a document that never flattened does not look like a set of keys nobody configured.
 
 ## Can I use this with Native AOT or trimming?
 
@@ -511,8 +516,8 @@ in the `4000` range, the naming client in the `5000` range, the service discover
 `6000` range, the distributed lock in the `7000` range, and the AI registry in the `8000` range.
 
 Two integration packages have ranges of their own: `4100` for the `IConfiguration` provider
-(`4103` when the initial load finishes, `4104` when a change triggers a reload) and `4200` for the
-ASP.NET Core registration.
+(`4103` when the initial load finishes, `4104` when a change triggers a reload, `4108` when a
+document could not be read as the format it claims) and `4200` for the ASP.NET Core registration.
 
 ## Why is there no log when a Nacos configuration changes?
 

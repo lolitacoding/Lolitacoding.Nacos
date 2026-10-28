@@ -1,5 +1,7 @@
 using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Naming;
+using Lolitacoding.Nacos.Tests.Support;
+using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Tests.Internal;
 
@@ -246,6 +248,35 @@ public sealed class NacosServiceSnapshotStoreTests : IDisposable
         // Nothing may have been created outside the snapshot directory.
         File.Exists(Path.Combine(_root, "escape")).ShouldBeFalse();
         File.Exists(Path.GetFullPath(Path.Combine(namingDirectory, "..", "..", "escape"))).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Save_ReportsAWriteThatCouldNotBeCompleted()
+    {
+        // Same contract as the configuration store: the write failure is swallowed so a lookup is
+        // never failed by caching, and reported so a missing failover copy is visible.
+        var log = new RecordingLoggerFactory();
+        var store = new NacosServiceSnapshotStore(BlockedRoot(), log.CreateLogger("test"));
+        var key = new NacosServiceKey("orders", "DEFAULT_GROUP", "public");
+
+        await store.SaveAsync(
+            key, Info(key, new NacosInstance("10.0.0.1", 8080)),
+            TestContext.Current.CancellationToken);
+
+        RecordedLogEntry entry = log.ForEvent(5010).ShouldHaveSingleItem();
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldStartWith($"Failed to write the local snapshot for {key}:");
+    }
+
+    /// <summary>Creates a cache root whose snapshot directory cannot be created.</summary>
+    /// <returns>The root directory.</returns>
+    private string BlockedRoot()
+    {
+        string root = Path.Combine(_root, "blocked");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "naming"), string.Empty);
+
+        return root;
     }
 
     /// <summary>Builds a service state carrying the given instances.</summary>

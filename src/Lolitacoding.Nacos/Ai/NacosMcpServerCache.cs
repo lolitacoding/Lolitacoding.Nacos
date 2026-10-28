@@ -339,18 +339,11 @@ internal sealed class NacosMcpServerCache : IAsyncDisposable
             return;
         }
 
-        try
-        {
-            await snapshot.Store
-                .SaveAsync(snapshot.Kind, key, detail, snapshot.Type, ct)
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // The read succeeded, so a snapshot that could not be written is reported rather than
-            // raised: losing the failover copy must not fail a caller.
-            NacosAiLog.SnapshotWriteFailed(_logger, snapshot.Kind, detail.Name ?? string.Empty, ex.Message);
-        }
+        // The store reports a failed write itself; a cache is an optimisation and losing it must
+        // not fail a caller.
+        await snapshot.Store
+            .SaveAsync(snapshot.Kind, key, detail, snapshot.Type, ct)
+            .ConfigureAwait(false);
     }
 
     /// <summary>

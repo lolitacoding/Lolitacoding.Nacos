@@ -81,4 +81,25 @@ internal static partial class NacosConfigurationLog
         Message = "The content of Nacos configuration {DataId} changed but produced the same keys; "
             + "no reload is needed.")]
     public static partial void ContentUnchanged(ILogger logger, string dataId);
+
+    /// <summary>Logs that a document could not be read as the format it claims to be.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="dataId">The data id of the document.</param>
+    /// <param name="format">The format that was attempted.</param>
+    /// <param name="reason">The failure reported by the parser.</param>
+    /// <remarks>
+    /// Warning, not Debug: the keys the document would have produced do not exist, so every lookup
+    /// for them falls back to a default. Without this line the application looks like it is using
+    /// the configured value while it is actually using the fallback.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 4108,
+        Level = LogLevel.Warning,
+        Message = "Could not read Nacos configuration {DataId} as {Format}; only its raw text is "
+            + "available: {Reason}")]
+    public static partial void MalformedDocument(
+        ILogger logger,
+        string dataId,
+        NacosConfigurationFormat format,
+        string reason);
 }

@@ -1,5 +1,7 @@
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Internal;
+using Lolitacoding.Nacos.Tests.Support;
+using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Tests.Internal;
 
@@ -269,8 +271,7 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task Save_UsesAPathDerivedFromACoordinatesHash()
-    {
+    public async Task Save_UsesAPathDerivedFromACoordinatesHash()    {
         // Data ids are arbitrary caller input, so the file name must not be derived from them
         // directly: a data id containing a path separator would otherwise escape the directory.
         var store = new NacosConfigSnapshotStore(_root);
@@ -284,5 +285,65 @@ public sealed class NacosConfigSnapshotStoreTests : IDisposable
         // Nothing may have been created outside the snapshot directory.
         File.Exists(Path.Combine(_root, "escape")).ShouldBeFalse();
         File.Exists(Path.GetFullPath(Path.Combine(configDirectory, "..", "..", "escape"))).ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task Save_ReportsAWriteThatCouldNotBeCompleted()
+    {
+        // A snapshot that cannot be written is the failover copy that the next outage depends on.
+        // The store swallows the failure so caching never breaks a read, which is exactly why it
+        // has to report it: otherwise the copy is missing and nobody knows.
+        var log = new RecordingLoggerFactory();
+        var store = new NacosConfigSnapshotStore(BlockedRoot(), log.CreateLogger("test"));
+        var key = new NacosConfigKey("app.json", "DEFAULT_GROUP", "public");
+
+        await store.SaveAsync(
+            key, """{"a":1}""", "json", ct: TestContext.Current.CancellationToken);
+
+        RecordedLogEntry entry = log.ForEvent(4010).ShouldHaveSingleItem();
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldStartWith(
+            $"Could not write a local snapshot for configuration {key}:");
+    }
+
+    [Fact]
+    public async Task Load_ReportsAReadThatCouldNotBeCompleted()
+    {
+        // Reached while failing over, when the snapshot is the last copy of the value.
+        var log = new RecordingLoggerFactory();
+        var store = new NacosConfigSnapshotStore(_root, log.CreateLogger("test"));
+        var key = new NacosConfigKey("app.json", "DEFAULT_GROUP", "public");
+
+        await store.SaveAsync(key, "content", "text", ct: TestContext.Current.CancellationToken);
+
+        string file = Directory.GetFiles(Path.Combine(_root, "config")).ShouldHaveSingleItem();
+
+        // Holding the file open without sharing makes the read fail the way a locked or
+        // permission-restricted cache location would.
+        using (new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.None))
+        {
+            (await store.LoadAsync(key, TestContext.Current.CancellationToken)).ShouldBeNull();
+        }
+
+        RecordedLogEntry entry = log.ForEvent(4009).ShouldHaveSingleItem();
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldStartWith($"Could not read the local snapshot for configuration {key}:");
+    }
+
+    /// <summary>
+    /// Creates a cache root whose snapshot directory cannot be created.
+    /// </summary>
+    /// <returns>The root directory.</returns>
+    /// <remarks>
+    /// The store appends <c>config</c> to the root, so a file with that name makes the directory
+    /// creation fail deterministically on every platform.
+    /// </remarks>
+    private string BlockedRoot()
+    {
+        string root = Path.Combine(_root, "blocked");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "config"), string.Empty);
+
+        return root;
     }
 }

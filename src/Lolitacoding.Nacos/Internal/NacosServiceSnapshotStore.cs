@@ -2,6 +2,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Lolitacoding.Nacos.Naming;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lolitacoding.Nacos.Internal;
 
@@ -28,15 +30,26 @@ internal sealed class NacosServiceSnapshotStore
     private const string FileExtension = ".service";
 
     private readonly string _rootDirectory;
+    private readonly ILogger _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NacosServiceSnapshotStore"/> class.
     /// </summary>
     /// <param name="rootDirectory">The directory that holds the snapshots.</param>
-    public NacosServiceSnapshotStore(string rootDirectory)
+    /// <param name="logger">
+    /// The logger that reports a snapshot that could not be written or read, or
+    /// <see langword="null"/> when the caller has none.
+    /// </param>
+    /// <remarks>
+    /// The store reports failures itself rather than throwing, for the same reason as the
+    /// configuration store: every caller treats caching as an optimisation that must never fail the
+    /// lookup it decorates.
+    /// </remarks>
+    public NacosServiceSnapshotStore(string rootDirectory, ILogger? logger = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
         _rootDirectory = Path.Combine(rootDirectory, "naming");
+        _logger = logger ?? NullLogger.Instance;
     }
 
     /// <summary>
@@ -88,13 +101,15 @@ internal sealed class NacosServiceSnapshotStore
             // never visible under the real name.
             File.Move(temporary, path, overwrite: true);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
             TryDelete(temporary);
+            NacosNamingLog.SnapshotWriteFailed(_logger, key.ToString(), ex.Message);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
             TryDelete(temporary);
+            NacosNamingLog.SnapshotWriteFailed(_logger, key.ToString(), ex.Message);
         }
     }
 
@@ -127,12 +142,14 @@ internal sealed class NacosServiceSnapshotStore
 
             payload = await File.ReadAllTextAsync(path, Encoding.UTF8, ct).ConfigureAwait(false);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
+            NacosNamingLog.SnapshotReadFailed(_logger, key.ToString(), ex.Message);
             return null;
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
+            NacosNamingLog.SnapshotReadFailed(_logger, key.ToString(), ex.Message);
             return null;
         }
 

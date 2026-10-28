@@ -158,7 +158,11 @@ internal sealed class NacosConfigurationProvider : ConfigurationProvider, IDispo
         Dictionary<string, string?> section = change.Content is null
             // A deleted data id contributes nothing; its keys must vanish from the view.
             ? new Dictionary<string, string?>(StringComparer.Ordinal)
-            : NacosConfigurationParser.Parse(dataId, change.Result.ContentType, change.Content);
+            : NacosConfigurationParser.Parse(
+                dataId,
+                change.Result.ContentType,
+                change.Content,
+                _logger);
 
         bool changed;
         bool isInitial;

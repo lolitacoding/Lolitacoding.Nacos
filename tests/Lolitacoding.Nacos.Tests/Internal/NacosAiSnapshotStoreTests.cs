@@ -1,6 +1,8 @@
 using Lolitacoding.Nacos.Ai;
 using Lolitacoding.Nacos.Internal;
 using Lolitacoding.Nacos.Protocol;
+using Lolitacoding.Nacos.Tests.Support;
+using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Tests.Internal;
 
@@ -195,5 +197,38 @@ public sealed class NacosAiSnapshotStoreTests : IDisposable
     public void Constructor_RejectsABlankDirectory()
     {
         Should.Throw<ArgumentException>(() => new NacosAiSnapshotStore("  "));
+    }
+
+    [Fact]
+    public async Task Save_ReportsAWriteThatCouldNotBeCompleted()
+    {
+        // The AI store follows the same contract as the configuration and naming stores: the write
+        // failure is swallowed so a read is never failed by caching, and reported so a missing
+        // failover copy is visible.
+        var log = new RecordingLoggerFactory();
+        var store = new NacosAiSnapshotStore(BlockedRoot(), log.CreateLogger("test"));
+        NacosPrompt prompt = new() { PromptKey = "greeting", Version = "1.0.0", Template = "hi" };
+
+        await store.SaveAsync(
+            NacosAiSnapshotStore.PromptKind,
+            "greeting::latest",
+            prompt,
+            NacosJsonContext.Default.NacosPrompt,
+            TestContext.Current.CancellationToken);
+
+        RecordedLogEntry entry = log.ForEvent(8042).ShouldHaveSingleItem();
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldStartWith("Caching prompt greeting::latest on disk failed:");
+    }
+
+    /// <summary>Creates a cache root whose snapshot directory cannot be created.</summary>
+    /// <returns>The root directory.</returns>
+    private string BlockedRoot()
+    {
+        string root = Path.Combine(_root, "blocked");
+        Directory.CreateDirectory(root);
+        File.WriteAllText(Path.Combine(root, "ai"), string.Empty);
+
+        return root;
     }
 }
