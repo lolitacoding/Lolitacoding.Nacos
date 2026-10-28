@@ -226,9 +226,11 @@ internal static class NacosEventually
     /// <para>
     /// A RAD agent publish is a write the server reads back before it answers, and that read has a
     /// window in which it can miss the version the write just created — the server answers with an
-    /// error of its own rather than refusing the request. The write is repeated because it is
-    /// idempotent for an identical request: a version that already exists is answered with, not
-    /// created a second time.
+    /// error of its own rather than refusing the request. The write is repeated because the request
+    /// is idempotent for an identical payload: a version that already exists is not created a second
+    /// time. The repeat is not answered with the first attempt's state, though: a version the failed
+    /// attempt left as a draft is only submitted when the request sets <c>autoSubmit</c>, so a caller
+    /// that needs the version online sets it.
     /// </para>
     /// <para>
     /// This is for a write that sets up a test whose subject is something else. A write a test is

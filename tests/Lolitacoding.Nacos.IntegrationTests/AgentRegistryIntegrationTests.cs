@@ -18,7 +18,9 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// <para>
 /// The fixture publishes through the client alone. The first version of an agent is submitted as it is
 /// published and the default pipeline puts it online, so a discovery resolves it without an approval
-/// step; a later version of an existing agent is a draft until it is submitted.
+/// step; a later version of an existing agent is a draft until it is submitted. A fixture publish sets
+/// <c>AutoSubmit</c> so that a publish the server's read-back race forced the fixture to repeat still
+/// ends online: the repeat is of an existing version, which the pipeline no longer submits on its own.
 /// </para>
 /// </remarks>
 [Trait(NacosTraits.Category, NacosTraits.Integration)]
@@ -36,8 +38,10 @@ public sealed class AgentRegistryIntegrationTests
 
         // The publish is repeated through WritesAsync because the server reads the version back
         // before it answers, and that read can miss the write it just applied — 3.0.2 answers
-        // "Agent Version cannot be read after creation" for it. An identical request is answered
-        // with the existing version rather than creating a second one, so the repeat is safe.
+        // "Agent Version cannot be read after creation" for it. The failed attempt leaves the
+        // version behind as a draft, and a republish of an existing version is only submitted when
+        // autoSubmit is set, so the request asks for it: otherwise the retry would answer with that
+        // draft. The first publish is submitted by the pipeline either way.
         NacosAgentVersionDetail published = await NacosEventually.WritesAsync(
             () => client.Ai.Agent.PublishAgentAsync(
                 new NacosAgentPublishRequest
@@ -49,12 +53,14 @@ public sealed class AgentRegistryIntegrationTests
                     Author = "integration-tests",
                     Tags = ["travel"],
                     CallInterfaces = [CallInterface()],
+                    AutoSubmit = true,
                 },
                 ct),
             ct);
 
-        // The first version of an agent is submitted as it is published, and the default pipeline
-        // puts it online, so a discovery has something to resolve without an approval step.
+        // Whichever attempt answered, the version it reports is the online one: the first publish is
+        // submitted as it is published, and a retry is submitted because autoSubmit is set. That is
+        // what gives the discovery below something to resolve without an approval step.
         published.Version.ShouldBe("1.0.0");
         published.Status.ShouldBe(NacosAiStatus.VersionOnline);
 
@@ -88,6 +94,7 @@ public sealed class AgentRegistryIntegrationTests
                     Version = "1.0.0",
                     Description = "Searchable.",
                     Tags = ["travel"],
+                    AutoSubmit = true,
                     CallInterfaces = [CallInterface()],
                 },
                 ct),
@@ -150,6 +157,7 @@ public sealed class AgentRegistryIntegrationTests
                     AgentName = agentName,
                     Version = "1.0.0",
                     Description = "Callable.",
+                    AutoSubmit = true,
                     CallInterfaces = [CallInterface()],
                 },
                 ct),
@@ -211,6 +219,7 @@ public sealed class AgentRegistryIntegrationTests
                 {
                     AgentName = agentName,
                     Version = "1.0.0",
+                    AutoSubmit = true,
                     CallInterfaces = [CallInterface()],
                 },
                 ct),
