@@ -395,6 +395,16 @@ The official Java client keeps all of these caches in memory only, so this is an
 a port; [the protocol notes](protocol-notes.md#the-local-failover-cache) record it as the intended
 deviation.
 
+## Why does a search not find an agent I just published?
+
+Because a RAD search is answered from the shared AI resource index rather than from the registry
+itself. The server projects an agent into that index only while its latest version is online, and a
+background task applies the projection on a poll of a few seconds, so a publish answers before the
+agent is findable. Discovery is the immediate read and is what a caller should use when it already
+has the name. A server configured into `SCAN` mode searches the stored summaries instead and sees
+the agent as soon as the publish is recorded; the client sends the same request either way, so a
+caller cannot tell which path it got.
+
 ## Why does an agent watch need HTTP long polling?
 
 Because the push half of discovery needs a channel the server can write to, and some deployments do

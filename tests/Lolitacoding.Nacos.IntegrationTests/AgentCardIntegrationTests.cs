@@ -52,8 +52,7 @@ public sealed class AgentCardIntegrationTests
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => value.Version == "1.0.0" && value.Skills is { Count: > 0 },
-            ct,
-            tolerateFailures: true);
+            ct);
 
         read.Name.ShouldBe(agentName);
         read.Description.ShouldBe("Plans a trip.");
@@ -126,8 +125,7 @@ public sealed class AgentCardIntegrationTests
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => value.Url == "http://10.0.0.7:9000/a2a" && value.SupportedInterfaces is { Count: 1 },
-            ct,
-            tolerateFailures: true);
+            ct);
 
         read.Url.ShouldBe("http://10.0.0.7:9000/a2a");
         read.SupportedInterfaces.ShouldNotBeNull().Count.ShouldBe(1);
@@ -168,8 +166,7 @@ public sealed class AgentCardIntegrationTests
         await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => !string.IsNullOrEmpty(value.Url),
-            ct,
-            tolerateFailures: true);
+            ct);
 
         await client.Ai.AgentCard.DeregisterAgentEndpointAsync(agentName, endpoint, ct);
 
@@ -178,8 +175,7 @@ public sealed class AgentCardIntegrationTests
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => value.Url == PlaceholderUrl && value.SupportedInterfaces is { Count: 1 },
-            ct,
-            tolerateFailures: true);
+            ct);
 
         read.SupportedInterfaces.ShouldNotBeNull().Count.ShouldBe(1);
         read.SupportedInterfaces![0].Url.ShouldBe(PlaceholderUrl);
@@ -214,8 +210,7 @@ public sealed class AgentCardIntegrationTests
         await NacosEventually.BecomesAsync(
             () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             card => card.Version == "1.0.0",
-            ct,
-            tolerateFailures: true);
+            ct);
 
         await using IAsyncEnumerator<NacosAgentCardDetail?> changes =
             client.Ai.AgentCard.SubscribeAgentCardAsync(agentName, ct: ct).GetAsyncEnumerator(ct);

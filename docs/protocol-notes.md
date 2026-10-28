@@ -770,6 +770,15 @@ interfaces and runtime endpoints, managed the way a prompt or a skill is.
   immediately. A later version of an existing agent is only submitted when `autoSubmit` is set, so it
   stays a draft until something submits it. That is why the integration fixture needs no approval
   step, and why forcing a publish of the first version is a `400`: it is already online.
+- **A search is answered from the shared AI resource index, not from the registry.** In `AUTO` mode,
+  the server's default, `AgentSearchModeResolver` resolves search to `INDEX`: an agent is projected
+  into the index only while its latest version is online, and the projection is applied by a
+  background task polled every five seconds
+  (`nacos.ai.resource.search.index.consumer.interval-seconds`) with a retry backoff of its own. A
+  publish therefore answers before the agent is findable, while discovery is the immediate read.
+  `SCAN`, which the server has to be configured into, walks the stored summaries instead. The client
+  sends the same `AgentSearchRpcRequest` either way and cannot tell which path the server took, so a
+  caller that publishes and searches in the same breath has to allow the index to catch up.
 - **An endpoint batch is bound to a version range.** An endpoint that carries no `bindings` of its own
   inherits the batch's `runtimeVersion` and `versionRange`, and a batch that names neither is refused
   with `Invalid Agent version: null` — there is no version to bind the endpoints to. The range has to

@@ -65,8 +65,7 @@ public sealed class PromptIntegrationTests
         NacosPrompt latest = await NacosEventually.BecomesAsync(
             () => client.Ai.Prompt.GetPromptAsync(promptKey, ct: ct),
             value => value.Version == SecondVersion && value.Variables is { Count: > 0 },
-            ct,
-            tolerateFailures: true);
+            ct);
 
         latest.PromptKey.ShouldBe(promptKey);
         latest.Template.ShouldBe("Hello {{name}} from 2.0.0");
@@ -96,8 +95,7 @@ public sealed class PromptIntegrationTests
         NacosPrompt labelled = await NacosEventually.BecomesAsync(
             () => client.Ai.Prompt.GetPromptAsync(promptKey, label: "stable", ct: ct),
             value => value.Version == FirstVersion,
-            ct,
-            tolerateFailures: true);
+            ct);
 
         labelled.Version.ShouldBe(FirstVersion);
         labelled.Template.ShouldBe("Hello {{name}} from 1.0.0");
@@ -125,8 +123,7 @@ public sealed class PromptIntegrationTests
         await NacosEventually.BecomesAsync(
             () => client.Ai.Prompt.GetPromptAsync(published, ct: ct),
             value => value.Version == FirstVersion,
-            ct,
-            tolerateFailures: true);
+            ct);
 
         // Missing is an error rather than an empty answer, so a caller cannot mistake a typo in a key
         // for a prompt that exists with nothing in it.

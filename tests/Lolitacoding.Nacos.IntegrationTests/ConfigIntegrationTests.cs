@@ -212,8 +212,7 @@ public sealed class ConfigIntegrationTests
                 await NacosEventually.BecomesAsync(
                     () => client.Config.GetConfigAsync(key, ct),
                     _ => true,
-                    ct,
-                    tolerateFailures: true).ConfigureAwait(false);
+                    ct).ConfigureAwait(false);
 
                 await client.Config.PublishConfigAsync(key, updated, "text", ct: ct).ConfigureAwait(false);
             },

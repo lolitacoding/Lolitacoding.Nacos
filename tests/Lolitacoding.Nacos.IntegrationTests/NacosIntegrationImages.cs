@@ -158,9 +158,10 @@ internal static class NacosIntegrationImages
 /// Names the trait applied to every test that requires a running Docker daemon.
 /// </summary>
 /// <remarks>
-/// CI filters these tests out of the unit-test job with <c>--filter "Category!=Integration"</c>
-/// and runs them in a dedicated job that provides Docker, so the trait is the single switch that
-/// separates the two jobs.
+/// The trait is what a developer filters on to run or skip the Docker-dependent suite locally, with
+/// <c>--filter "Category=Integration"</c> or <c>--filter "Category!=Integration"</c>. CI does not
+/// need the filter to separate the two suites: they are separate projects, and the unit-test job
+/// never runs this one.
 /// </remarks>
 public static class NacosTraits
 {

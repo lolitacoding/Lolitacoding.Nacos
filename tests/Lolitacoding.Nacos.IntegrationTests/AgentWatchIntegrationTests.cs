@@ -48,8 +48,7 @@ public sealed class AgentWatchIntegrationTests
             () => client.Ai.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0",
-            ct,
-            tolerateFailures: true);
+            ct);
 
         await using IAsyncEnumerator<NacosAgentDiscoveryResult?> changes =
             client.Ai.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
@@ -94,8 +93,7 @@ public sealed class AgentWatchIntegrationTests
             () => client.Ai.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0",
-            ct,
-            tolerateFailures: true);
+            ct);
 
         await using IAsyncEnumerator<NacosAgentDiscoveryResult?> changes =
             client.Ai.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)

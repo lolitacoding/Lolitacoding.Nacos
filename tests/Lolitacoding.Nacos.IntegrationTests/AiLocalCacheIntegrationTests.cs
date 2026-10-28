@@ -53,8 +53,7 @@ public sealed class AiLocalCacheIntegrationTests
                 await NacosEventually.BecomesAsync(
                     () => first.Ai.Prompt.GetPromptAsync(promptKey, ct: ct),
                     prompt => prompt.Version == Version,
-                    ct,
-                    tolerateFailures: true);
+                    ct);
 
                 await using IAsyncEnumerator<NacosPrompt?> subscribed = first.Ai.Prompt
                     .SubscribePromptAsync(promptKey, ct: ct)

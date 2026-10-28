@@ -93,8 +93,7 @@ public sealed class AiIntegrationTests
         NacosMcpServerDetail detail = await NacosEventually.BecomesAsync(
             () => client.Ai.Mcp.GetServerAsync(name, ct: ct),
             value => value.VersionDetail?.Version == Version && value.ToolSpec?.Tools is { Count: > 0 },
-            ct,
-            tolerateFailures: true);
+            ct);
 
         detail.Name.ShouldBe(name);
         detail.Protocol.ShouldBe(NacosMcpProtocol.Stdio);
@@ -213,8 +212,7 @@ public sealed class AiIntegrationTests
         NacosMcpServerDetail released = await NacosEventually.BecomesAsync(
             () => client.Ai.Mcp.GetServerAsync(name, Version, ct),
             value => value.RemoteServerConfig?.ServiceRef is not null,
-            ct,
-            tolerateFailures: true);
+            ct);
 
         released.RemoteServerConfig!.ServiceRef!.ServiceName.ShouldBe($"{name}::{Version}");
 
@@ -223,8 +221,7 @@ public sealed class AiIntegrationTests
         NacosMcpServerDetail registered = await NacosEventually.BecomesAsync(
             () => client.Ai.Mcp.GetServerAsync(name, Version, ct),
             value => ContainsEndpoint(value, pinnedPort),
-            ct,
-            tolerateFailures: true);
+            ct);
 
         NacosMcpEndpointInfo endpoint =
             registered.BackendEndpoints!.Single(candidate => candidate.Port == pinnedPort);
@@ -240,8 +237,7 @@ public sealed class AiIntegrationTests
         NacosMcpServerDetail removed = await NacosEventually.BecomesAsync(
             () => client.Ai.Mcp.GetServerAsync(name, Version, ct),
             value => !ContainsEndpoint(value, pinnedPort),
-            ct,
-            tolerateFailures: true);
+            ct);
 
         // Asserted rather than assumed: the wait gives up quietly, so a removal that never reaches the
         // server would otherwise pass as one that did.
@@ -254,8 +250,7 @@ public sealed class AiIntegrationTests
         NacosMcpServerDetail withoutVersion = await NacosEventually.BecomesAsync(
             () => client.Ai.Mcp.GetServerAsync(name, ct: ct),
             value => ContainsEndpoint(value, latestPort),
-            ct,
-            tolerateFailures: true);
+            ct);
 
         ContainsEndpoint(withoutVersion, latestPort).ShouldBeTrue();
 

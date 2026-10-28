@@ -62,8 +62,7 @@ public sealed class AgentSpecIntegrationTests
         NacosAgentSpec spec = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentSpec.GetAgentSpecAsync(agentSpecName, ct: ct),
             value => value.Version == FirstVersion && value.Resource is { Count: > 0 },
-            ct,
-            tolerateFailures: true);
+            ct);
 
         spec.Name.ShouldBe(agentSpecName);
         spec.Description.ShouldBe("A worker that does the thing.");
@@ -132,8 +131,7 @@ public sealed class AgentSpecIntegrationTests
         NacosAgentSpec latest = await NacosEventually.BecomesAsync(
             () => client.Ai.AgentSpec.GetAgentSpecAsync(agentSpecName, ct: ct),
             value => value.Version == SecondVersion,
-            ct,
-            tolerateFailures: true);
+            ct);
 
         latest.Description.ShouldBe("Version two.");
 

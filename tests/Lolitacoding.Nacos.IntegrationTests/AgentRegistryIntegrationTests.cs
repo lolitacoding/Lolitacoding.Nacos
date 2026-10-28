@@ -34,17 +34,23 @@ public sealed class AgentRegistryIntegrationTests
         CancellationToken ct = TestContext.Current.CancellationToken;
         string agentName = NacosHttp.UniqueId("rad");
 
-        NacosAgentVersionDetail published = await client.Ai.Agent.PublishAgentAsync(
-            new NacosAgentPublishRequest
-            {
-                AgentName = agentName,
-                Version = "1.0.0",
-                DisplayName = "Planner",
-                Description = "Plans things.",
-                Author = "integration-tests",
-                Tags = ["travel"],
-                CallInterfaces = [CallInterface()],
-            },
+        // The publish is repeated through WritesAsync because the server reads the version back
+        // before it answers, and that read can miss the write it just applied — 3.0.2 answers
+        // "Agent Version cannot be read after creation" for it. An identical request is answered
+        // with the existing version rather than creating a second one, so the repeat is safe.
+        NacosAgentVersionDetail published = await NacosEventually.WritesAsync(
+            () => client.Ai.Agent.PublishAgentAsync(
+                new NacosAgentPublishRequest
+                {
+                    AgentName = agentName,
+                    Version = "1.0.0",
+                    DisplayName = "Planner",
+                    Description = "Plans things.",
+                    Author = "integration-tests",
+                    Tags = ["travel"],
+                    CallInterfaces = [CallInterface()],
+                },
+                ct),
             ct);
 
         // The first version of an agent is submitted as it is published, and the default pipeline
@@ -56,8 +62,7 @@ public sealed class AgentRegistryIntegrationTests
             () => client.Ai.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0" && value.CallInterfaces is { Count: > 0 },
-            ct,
-            tolerateFailures: true);
+            ct);
 
         discovered.AgentName.ShouldBe(agentName);
         discovered.Version.ShouldBe("1.0.0");
@@ -88,8 +93,10 @@ public sealed class AgentRegistryIntegrationTests
                 ct),
             ct);
 
-        // A search is a read of the registry's index, so it sees the agent as soon as the publish is
-        // recorded — an online version is not needed to find one.
+        // A search reads the shared AI resource index, not the registry itself: the server projects
+        // an agent into it only once its latest version is online, and a background task applies the
+        // projection on a short poll. The wait therefore spans that task, which is why it is given
+        // longer than a read that only waits for the publish to be applied.
         NacosAgentPage<NacosAgentSummary> page = await NacosEventually.BecomesAsync(
             () => client.Ai.Agent.SearchAgentsAsync(
                 new NacosAgentSearchRequest
@@ -101,7 +108,7 @@ public sealed class AgentRegistryIntegrationTests
                 ct),
             value => value.TotalCount > 0,
             ct,
-            tolerateFailures: true);
+            timeout: TimeSpan.FromMinutes(2));
 
         page.PageItems.ShouldNotBeNull()
             .ShouldContain(agent => agent.AgentName == agentName);
@@ -152,8 +159,7 @@ public sealed class AgentRegistryIntegrationTests
             () => client.Ai.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0",
-            ct,
-            tolerateFailures: true);
+            ct);
 
         await client.Ai.Agent.RegisterEndpointsAsync(
             new NacosAgentEndpointBatch
@@ -184,8 +190,7 @@ public sealed class AgentRegistryIntegrationTests
                 new NacosAgentReference { AgentName = agentName },
                 ct: ct),
             value => RuntimeUris(value).Contains("http://10.0.0.7:9000/a2a"),
-            ct,
-            tolerateFailures: true);
+            ct);
 
         RuntimeUris(discovered).ShouldContain("http://10.0.0.7:9000/a2a");
     }
@@ -237,8 +242,7 @@ public sealed class AgentRegistryIntegrationTests
             () => client.Ai.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => RuntimeUris(value).Contains("http://10.0.0.8:9001/a2a"),
-            ct,
-            tolerateFailures: true);
+            ct);
 
         await client.Ai.Agent.DeregisterEndpointsAsync(agentName, "a2a", ct);
 
@@ -249,8 +253,7 @@ public sealed class AgentRegistryIntegrationTests
                 new NacosAgentReference { AgentName = agentName },
                 ct: ct),
             value => !RuntimeUris(value).Contains("http://10.0.0.8:9001/a2a"),
-            ct,
-            tolerateFailures: true);
+            ct);
 
         RuntimeUris(discovered).ShouldNotContain("http://10.0.0.8:9001/a2a");
     }

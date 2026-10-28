@@ -32,9 +32,10 @@ internal static class NacosEventually
     /// <param name="read">Issues the read.</param>
     /// <param name="isSatisfied">Reports whether a read is the one being waited for.</param>
     /// <param name="ct">The cancellation token.</param>
-    /// <param name="tolerateFailures">
-    /// <see langword="true"/> to keep reading while the read itself fails, which is what happens
-    /// while a server is still applying a write or a connection is still being re-established.
+    /// <param name="timeout">
+    /// How long to keep reading. The default is the read budget below, which covers a write the
+    /// server is still applying. A caller that waits on a server-side index built after the write
+    /// asks for longer, because the wait then spans the index task rather than the write.
     /// </param>
     /// <returns>
     /// The first value that satisfies <paramref name="isSatisfied"/>, or the last value read when
@@ -45,18 +46,28 @@ internal static class NacosEventually
     /// rethrowing it says what went wrong where returning <see langword="default"/> would report it
     /// as a value the caller never read.
     /// </exception>
+    /// <remarks>
+    /// A read that fails is repeated rather than reported. That is the same eventual consistency the
+    /// successful reads are waiting on: the server refuses a read while it is still applying the
+    /// write ("requested file is being modified", or a version it cannot read back yet), and a
+    /// connection that is coming back refuses requests until it has. A read that never succeeds is
+    /// still reported, by rethrowing the last failure, so a genuine one is not waited away.
+    /// </remarks>
     public static async Task<T> BecomesAsync<T>(
         Func<Task<T>> read,
         Func<T, bool> isSatisfied,
         CancellationToken ct,
-        bool tolerateFailures = false)
+        TimeSpan? timeout = null)
         where T : notnull
     {
         T? last = default;
         bool observed = false;
         NacosException? failure = null;
+        int attempts = timeout is { } budget
+            ? Math.Max(1, (int)Math.Ceiling(budget / Interval))
+            : ReadAttempts;
 
-        for (int attempt = 0; attempt < ReadAttempts; attempt++)
+        for (int attempt = 0; attempt < attempts; attempt++)
         {
             try
             {
@@ -68,7 +79,7 @@ internal static class NacosEventually
                     return last;
                 }
             }
-            catch (NacosException ex) when (tolerateFailures)
+            catch (NacosException ex)
             {
                 // The server refused the read because it has not applied the write yet, or because
                 // the connection is still coming back; both are waited out rather than reported.
@@ -226,5 +237,5 @@ internal static class NacosEventually
     /// </remarks>
     public static Task<T> WritesAsync<T>(Func<Task<T>> write, CancellationToken ct)
         where T : notnull
-        => BecomesAsync(write, _ => true, ct, tolerateFailures: true);
+        => BecomesAsync(write, _ => true, ct);
 }

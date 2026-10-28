@@ -69,8 +69,7 @@ public sealed class SkillIntegrationTests
         NacosSkill skill = await NacosEventually.BecomesAsync(
             () => client.Ai.Skill.GetSkillAsync(skillName, ct: ct),
             value => value.Version == FirstVersion && value.Archive.Length > 0,
-            ct,
-            tolerateFailures: true);
+            ct);
 
         skill.Name.ShouldBe(skillName);
         skill.Version.ShouldBe(FirstVersion);
@@ -138,8 +137,7 @@ public sealed class SkillIntegrationTests
         NacosSkill latest = await NacosEventually.BecomesAsync(
             () => client.Ai.Skill.GetSkillAsync(skillName, ct: ct),
             value => value.Version == SecondVersion && value.Archive.Length > 0,
-            ct,
-            tolerateFailures: true);
+            ct);
 
         latest.Version.ShouldBe(SecondVersion);
         ReadEntries(latest)[string.Concat(skillName, "/SKILL.md")].ShouldContain("Version two.");

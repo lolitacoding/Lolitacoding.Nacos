@@ -84,8 +84,7 @@ public sealed class TransportIntegrationTests
                 },
                 TestContext.Current.CancellationToken),
             result => result.Success,
-            TestContext.Current.CancellationToken,
-            tolerateFailures: true);
+            TestContext.Current.CancellationToken);
 
         response.Success.ShouldBeTrue();
     }

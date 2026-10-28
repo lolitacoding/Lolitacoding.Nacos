@@ -64,8 +64,7 @@ public sealed class AddressServerIntegrationTests
         NacosConfigResult result = await NacosEventually.BecomesAsync(
             () => client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
             read => read.Content == "from-the-endpoint",
-            TestContext.Current.CancellationToken,
-            tolerateFailures: true);
+            TestContext.Current.CancellationToken);
 
         result.Content.ShouldBe("from-the-endpoint");
     }
