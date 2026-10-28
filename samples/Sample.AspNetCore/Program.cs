@@ -28,8 +28,10 @@ builder.AddNacosClient(configure: options =>
     options.Optional = true;
 });
 
-// 2. Pull application settings from Nacos, with hot reload.
-builder.Configuration.AddNacosConfiguration(options =>
+// 2. Pull application settings from Nacos, with hot reload. The host overload connects the
+//    source's diagnostics to the logging configured above, so a change is visible without any
+//    extra wiring.
+builder.AddNacosConfiguration(options =>
 {
     options.ServerAddresses = [serverAddress];
     options.Namespace = "public";

@@ -106,7 +106,7 @@ internal static partial class NacosConfigLog
     /// <param name="reason">The failure.</param>
     [LoggerMessage(
         EventId = 4010,
-        Level = LogLevel.Debug,
+        Level = LogLevel.Warning,
         Message = "Could not write a local snapshot for configuration {Key}: {Reason}")]
     public static partial void SnapshotWriteFailed(ILogger logger, string key, string reason);
 
@@ -249,4 +249,91 @@ internal static partial class NacosConfigLog
         Message = "A configuration filter removed the content of {Key} while publishing; the "
             + "publish was aborted.")]
     public static partial void FilterRemovedPublishedContent(ILogger logger, string key);
+
+    /// <summary>Logs that a listener was added for a configuration.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <param name="count">The number of listeners now registered for it.</param>
+    [LoggerMessage(
+        EventId = 4023,
+        Level = LogLevel.Debug,
+        Message = "Added a listener for configuration {Key}; it now has {Count} listener(s).")]
+    public static partial void ListenerAdded(ILogger logger, string key, int count);
+
+    /// <summary>Logs that a listener was removed from a configuration.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <param name="count">The number of listeners still registered for it.</param>
+    [LoggerMessage(
+        EventId = 4024,
+        Level = LogLevel.Debug,
+        Message = "Removed a listener for configuration {Key}; {Count} listener(s) remain.")]
+    public static partial void ListenerRemoved(ILogger logger, string key, int count);
+
+    /// <summary>Logs that the server announced a change for a listened configuration.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    [LoggerMessage(
+        EventId = 4025,
+        Level = LogLevel.Debug,
+        Message = "Received a change notification for configuration {Key}.")]
+    public static partial void ChangeNotificationReceived(ILogger logger, string key);
+
+    /// <summary>Logs that a change notification did not name the configuration it is about.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="dataId">The data id the notification carried, if any.</param>
+    /// <param name="group">The group the notification carried, if any.</param>
+    [LoggerMessage(
+        EventId = 4026,
+        Level = LogLevel.Warning,
+        Message = "Ignoring a change notification with missing coordinates (dataId='{DataId}', "
+            + "group='{Group}').")]
+    public static partial void ChangeNotificationMalformed(
+        ILogger logger,
+        string? dataId,
+        string? group);
+
+    /// <summary>Logs that a change notification arrived for a configuration nobody listens to.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <remarks>
+    /// A notification can outlive the listener that asked for it: the last listener may be removed
+    /// while a push is already in flight. Distinguishing that from a lost notification is what
+    /// makes "why was my listener not called" answerable.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 4027,
+        Level = LogLevel.Debug,
+        Message = "Ignoring a change notification for {Key}: no listener is registered for it.")]
+    public static partial void ChangeNotificationUnmatched(ILogger logger, string key);
+
+    /// <summary>Logs that a fetched change was handed to the listeners.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <param name="count">The number of callbacks invoked.</param>
+    [LoggerMessage(
+        EventId = 4028,
+        Level = LogLevel.Debug,
+        Message = "Delivered the change of {Key} to {Count} listener(s).")]
+    public static partial void ChangeDelivered(ILogger logger, string key, int count);
+
+    /// <summary>Logs that the content of a changed configuration could not be fetched.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 4029,
+        Level = LogLevel.Warning,
+        Message = "Could not fetch the new content of {Key} after a change notification: {Reason}")]
+    public static partial void ContentFetchFailed(ILogger logger, string key, string reason);
+
+    /// <summary>Logs that processing a change notification failed unexpectedly.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 4030,
+        Level = LogLevel.Error,
+        Message = "Processing a change notification for {Key} failed: {Reason}")]
+    public static partial void ChangeProcessingFailed(ILogger logger, string key, string reason);
 }

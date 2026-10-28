@@ -26,8 +26,9 @@ builder.Services.AddNacos(options =>
 
 // 2. Layer Nacos configuration on top of the local configuration sources.
 //    Values published to Nacos override appsettings.json, and changes trigger
-//    IOptionsMonitor/IOptionsSnapshot refresh without restarting the process.
-builder.Configuration.AddNacosConfiguration(options =>
+//    IOptionsMonitor/IOptionsSnapshot refresh without restarting the process. The host
+//    overload connects the source's diagnostics to the host's logging.
+builder.AddNacosConfiguration(options =>
 {
     options.ServerAddresses = [serverAddress];
     options.Namespace = "public";

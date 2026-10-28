@@ -1,5 +1,7 @@
 using Lolitacoding.Nacos.Extensions.Configuration;
+using Lolitacoding.Nacos.Tests.Support;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace Lolitacoding.Nacos.Tests.Configuration;
 
@@ -97,5 +99,38 @@ public sealed class NacosConfigurationProviderTests
         // A provider can be disposed before it is ever asked to load if the host is torn down
         // early; that must not throw.
         Should.NotThrow(provider.Load);
+    }
+
+    [Fact]
+    public void Load_ReportsTheOutcomeAtInformation()
+    {
+        // The initial load is the only evidence a production host gets that the source is attached,
+        // so the summary must be visible without raising the minimum level to Debug.
+        var factory = new RecordingLoggerFactory();
+        var options = new NacosConfigurationSourceOptions
+        {
+            ServerAddresses = [Unreachable],
+            DataIds = ["app.json"],
+            Optional = true,
+            LoggerFactory = factory,
+        };
+
+        var provider = new NacosConfigurationProvider(options);
+
+        try
+        {
+            provider.Load();
+
+            RecordedLogEntry loaded = factory.ForEvent(4103).ShouldHaveSingleItem();
+            loaded.Level.ShouldBe(LogLevel.Information);
+            loaded.Message.ShouldBe("Loaded 0 configuration key(s) from 1 Nacos data id(s).");
+
+            // The subscription failure explains why no key arrived.
+            factory.ForEvent(4102).ShouldHaveSingleItem().Level.ShouldBe(LogLevel.Warning);
+        }
+        finally
+        {
+            ((IDisposable)provider).Dispose();
+        }
     }
 }

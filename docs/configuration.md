@@ -120,9 +120,9 @@ its recovery after a reconnect is in-memory.
 
 ## `NacosConfigurationSourceOptions`
 
-Used by `builder.Configuration.AddNacosConfiguration(...)`. Deliberately smaller than
-`NacosOptions`: a configuration source only needs to reach the server and name the data ids it
-layers, so it does not expose transport tuning.
+Used by both `AddNacosConfiguration` overloads — the one on `IHostApplicationBuilder` and the one on
+`IConfigurationBuilder`. Deliberately smaller than `NacosOptions`: a configuration source only needs
+to reach the server and name the data ids it layers, so it does not expose transport tuning.
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
@@ -134,7 +134,20 @@ layers, so it does not expose transport tuning.
 | `Password` | `string?` | `null` | Must be set together with `UserName`. |
 | `LocalCacheDirectory` | `string?` | `null` | Snapshot directory for failover. |
 | `Optional` | `bool` | `false` | When `false`, a failure to read the configuration aborts startup. |
-| `LoggerFactory` | `ILoggerFactory?` | `null` | Optional. The provider has no container to resolve a logger from, so pass one to see connection failures. |
+| `LoggerFactory` | `ILoggerFactory?` | `null` | Optional. The provider has no container to resolve a logger from. The host overload fills this in automatically; when the source is added through `IConfigurationBuilder`, pass one to see the source's warnings. |
+
+### Logging
+
+`AddNacosConfiguration` on `IHostApplicationBuilder` needs no logger factory. The source is created
+before the container exists, so it starts with a deferred factory: it keeps `Information` and above
+while the host is being built and replays those entries through the host's `ILoggerFactory` at
+startup, honouring the filters the application configured. From then on the source, and the client
+it owns, log through the host like any other component.
+
+When the source is added through `builder.Configuration` — a plain `IConfigurationBuilder`, as in a
+test or a console app without a host — there is nothing to bind to, so set `LoggerFactory`
+explicitly or the source stays silent. A factory assigned by the caller always wins over the
+deferred one.
 
 ### Supported document formats
 

@@ -78,8 +78,12 @@ public sealed class NacosConfigurationSourceOptions
     /// Gets or sets the logger factory used for the provider's diagnostics.
     /// </summary>
     /// <remarks>
-    /// Optional. A configuration provider has no container to resolve a logger from, so the host
-    /// passes one here when it wants the source's connection failures to be visible.
+    /// Optional. A configuration provider has no container to resolve a logger from, so a caller
+    /// that adds the source through an <see cref="Microsoft.Extensions.Configuration.IConfigurationBuilder"/>
+    /// passes one here when it wants the source's warnings to be visible. The
+    /// <see cref="Microsoft.Extensions.Hosting.IHostApplicationBuilder"/> overload of
+    /// <c>AddNacosConfiguration</c> fills it with a factory that is bound to the host's own at
+    /// startup, and an explicitly assigned factory always wins over that.
     /// </remarks>
     public ILoggerFactory? LoggerFactory { get; set; }
 

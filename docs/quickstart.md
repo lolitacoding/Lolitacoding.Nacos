@@ -215,7 +215,7 @@ that was resolved once still resolves after a restart during a control-plane out
 ```csharp
 using Lolitacoding.Nacos.Extensions.Configuration;
 
-builder.Configuration.AddNacosConfiguration(options =>
+builder.AddNacosConfiguration(options =>
 {
     options.ServerAddresses = ["http://127.0.0.1:8848"];
     options.Namespace = "public";
@@ -224,6 +224,11 @@ builder.Configuration.AddNacosConfiguration(options =>
     options.Optional = true;
 });
 ```
+
+This is the host overload, so the source's diagnostics go through the application's logging without
+any extra wiring: the initial load and every applied change are logged as events `4103` and `4104`.
+Use `builder.Configuration.AddNacosConfiguration(...)` only when no host is involved, and pass
+`options.LoggerFactory` there if you want to see the source's warnings.
 
 The source is appended, so it overrides sources added before it (for example `appsettings.json`).
 JSON, YAML and Java-style `.properties` documents are flattened with the `:` separator, and the raw

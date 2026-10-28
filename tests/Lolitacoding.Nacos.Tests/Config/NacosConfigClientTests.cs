@@ -7,6 +7,8 @@ using Lolitacoding.Nacos.Protocol.Generated;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Lolitacoding.Nacos.Tests.Transport;
+using Lolitacoding.Nacos.Tests.Support;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lolitacoding.Nacos.Tests.Config;
@@ -702,6 +704,130 @@ public sealed class NacosConfigClientTests
     }
 
     [Fact]
+    public async Task Listener_LogsItsRegistrationTheNotificationAndTheDelivery()
+    {
+        var log = new RecordingLoggerFactory();
+        using Harness harness = CreateHarness(
+            ListenThenQuery("v1"),
+            logger: log.CreateLogger<NacosConfigClient>());
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var changes = new List<NacosConfigChange>();
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            Key,
+            (change, _) =>
+            {
+                lock (changes)
+                {
+                    changes.Add(change);
+                }
+
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken);
+
+        changes.ShouldHaveSingleItem().Content.ShouldBe("v1");
+
+        log.ForEvent(4023).ShouldHaveSingleItem().Message.ShouldBe(
+            $"Added a listener for configuration {Key}; it now has 1 listener(s).");
+
+        harness.Handler = request => PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+            ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+            : QueryResponse("v2", "text");
+
+        await harness.PushChangeAsync(Key);
+
+        RecordedLogEntry received = await WaitForLogAsync(
+            log, 4025, TestContext.Current.CancellationToken);
+        received.Message.ShouldBe($"Received a change notification for configuration {Key}.");
+
+        // The delivery is logged after every callback ran, which is later than the callback itself,
+        // so it is waited for rather than asserted straight after the push.
+        RecordedLogEntry delivered = await WaitForLogAsync(
+            log, 4028, TestContext.Current.CancellationToken);
+        delivered.Message.ShouldBe($"Delivered the change of {Key} to 1 listener(s).");
+
+        await handle.DisposeAsync();
+
+        log.ForEvent(4024).ShouldHaveSingleItem().Message.ShouldBe(
+            $"Removed a listener for configuration {Key}; 0 listener(s) remain.");
+    }
+
+    [Fact]
+    public async Task Listener_LogsANotificationForAConfigurationNobodyListensTo()
+    {
+        // A push can arrive after the last listener was removed. Saying so is what separates a
+        // dropped notification from one that was never received.
+        var log = new RecordingLoggerFactory();
+        using Harness harness = CreateHarness(
+            _ => QueryResponse("hello", "text"),
+            logger: log.CreateLogger<NacosConfigClient>());
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var other = new NacosConfigKey("other.json", Group, "public");
+        await harness.PushChangeAsync(other);
+
+        RecordedLogEntry entry = await WaitForLogAsync(
+            log, 4027, TestContext.Current.CancellationToken);
+        entry.Message.ShouldBe(
+            $"Ignoring a change notification for {other}: no listener is registered for it.");
+    }
+
+    [Fact]
+    public async Task Listener_LogsAMalformedNotification()
+    {
+        var log = new RecordingLoggerFactory();
+        using Harness harness = CreateHarness(
+            _ => QueryResponse("hello", "text"),
+            logger: log.CreateLogger<NacosConfigClient>());
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await harness.PushNotificationAsync(new ConfigChangeNotifyRequest
+        {
+            DataId = string.Empty,
+            Group = Group,
+            Tenant = "public",
+        });
+
+        RecordedLogEntry entry = await WaitForLogAsync(
+            log, 4026, TestContext.Current.CancellationToken);
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldBe(
+            "Ignoring a change notification with missing coordinates (dataId='', "
+                + "group='DEFAULT_GROUP').");
+    }
+
+    [Fact]
+    public async Task Listener_LogsAFailedContentFetch()
+    {
+        var log = new RecordingLoggerFactory();
+        using Harness harness = CreateHarness(
+            ListenThenQuery("v1"),
+            logger: log.CreateLogger<NacosConfigClient>());
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            Key, (_, _) => Task.CompletedTask, TestContext.Current.CancellationToken);
+
+        harness.Handler = request => PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+            ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+            : throw new NacosServerException("the fetch failed");
+
+        await harness.PushChangeAsync(Key);
+
+        RecordedLogEntry entry = await WaitForLogAsync(
+            log, 4029, TestContext.Current.CancellationToken);
+        entry.Level.ShouldBe(LogLevel.Warning);
+        entry.Message.ShouldBe(
+            $"Could not fetch the new content of {Key} after a change notification: "
+                + "the fetch failed");
+    }
+
+    [Fact]
     public void AddConfigFilter_RejectsANullFilter()
     {
         using Harness harness = CreateHarness();
@@ -853,18 +979,45 @@ public sealed class NacosConfigClientTests
         throw new TimeoutException("The listener was never notified of the missed change.");
     }
 
+    /// <summary>Waits until an event was logged.</summary>
+    /// <param name="log">The recording factory.</param>
+    /// <param name="eventId">The event id to wait for.</param>
+    /// <param name="ct">A token that cancels the wait.</param>
+    /// <returns>The first entry logged for the event.</returns>
+    private static async Task<RecordedLogEntry> WaitForLogAsync(
+        RecordingLoggerFactory log,
+        int eventId,
+        CancellationToken ct)
+    {
+        for (int i = 0; i < 1000; i++)
+        {
+            IReadOnlyList<RecordedLogEntry> entries = log.ForEvent(eventId);
+
+            if (entries.Count > 0)
+            {
+                return entries[0];
+            }
+
+            await Task.Delay(10, ct);
+        }
+
+        throw new TimeoutException($"Event {eventId} was not logged within the timeout.");
+    }
+
     private static Harness CreateHarness(
         Func<Payload, Payload>? handler = null,
         string @namespace = "public",
         bool verifyMd5 = true,
         bool snapshots = false,
-        Action<NacosConfigOptions>? configureConfig = null) =>
+        Action<NacosConfigOptions>? configureConfig = null,
+        ILogger<NacosConfigClient>? logger = null) =>
         new(
             handler ?? (_ => QueryResponse("hello", "text")),
             @namespace,
             verifyMd5,
             snapshots,
-            configureConfig);
+            configureConfig,
+            logger);
 
     /// <summary>
     /// A filter whose body is supplied by the test.
@@ -898,7 +1051,8 @@ public sealed class NacosConfigClientTests
             string @namespace,
             bool verifyMd5,
             bool snapshots,
-            Action<NacosConfigOptions>? configureConfig = null)
+            Action<NacosConfigOptions>? configureConfig = null,
+            ILogger<NacosConfigClient>? logger = null)
         {
             Handler = handler;
             _snapshotRoot = TestPaths.CreateScratchDirectory("config-client");
@@ -951,7 +1105,11 @@ public sealed class NacosConfigClientTests
             var snapshotStore = snapshots ? new NacosConfigSnapshotStore(_snapshotRoot) : null;
 
             Client = new NacosConfigClient(
-                options, connection, TimeProvider.System, NullLogger<NacosConfigClient>.Instance, snapshotStore);
+                options,
+                connection,
+                TimeProvider.System,
+                logger ?? NullLogger<NacosConfigClient>.Instance,
+                snapshotStore);
 
             // The production factory does this wiring; without it a pushed notification would be
             // acknowledged but never turned into a listener callback.
@@ -1030,14 +1188,20 @@ public sealed class NacosConfigClientTests
         /// <summary>Pushes a change notification for a configuration, as the server would.</summary>
         /// <param name="key">The configuration that changed.</param>
         /// <returns>A task that completes once the frame was handed to the transport.</returns>
-        public Task PushChangeAsync(NacosConfigKey key)
-        {
-            _currentStream.Push(TestPayload.ForRequest(new ConfigChangeNotifyRequest
+        public Task PushChangeAsync(NacosConfigKey key) =>
+            PushNotificationAsync(new ConfigChangeNotifyRequest
             {
                 DataId = key.DataId,
                 Group = key.Group,
                 Tenant = key.Namespace,
-            }));
+            });
+
+        /// <summary>Pushes a raw change notification, as the server would.</summary>
+        /// <param name="notification">The notification to push.</param>
+        /// <returns>A task that completes once the frame was handed to the transport.</returns>
+        public Task PushNotificationAsync(ConfigChangeNotifyRequest notification)
+        {
+            _currentStream.Push(TestPayload.ForRequest(notification));
 
             return Task.CompletedTask;
         }

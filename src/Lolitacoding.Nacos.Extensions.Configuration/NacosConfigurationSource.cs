@@ -21,6 +21,11 @@ internal sealed class NacosConfigurationSource : IConfigurationSource
     /// <param name="options">The validated source options.</param>
     public NacosConfigurationSource(NacosConfigurationSourceOptions options) => _options = options;
 
+    /// <summary>
+    /// Gets the validated options, exposed so tests can observe what the extension methods set.
+    /// </summary>
+    internal NacosConfigurationSourceOptions Options => _options;
+
     /// <inheritdoc />
     public IConfigurationProvider Build(IConfigurationBuilder builder) =>
         new NacosConfigurationProvider(_options);

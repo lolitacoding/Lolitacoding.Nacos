@@ -639,10 +639,12 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             _ => new ListenerRegistration(key));
 
         bool isFirst;
+        int listenerCount;
         lock (registration.Sync)
         {
             isFirst = registration.Count == 0;
             registration.Add(onChange);
+            listenerCount = registration.Count;
         }
 
         if (isFirst)
@@ -669,6 +671,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             }
         }
 
+        NacosConfigLog.ListenerAdded(_logger, id, listenerCount);
+
         // The current value is delivered immediately so a subscriber does not have to issue a
         // separate read to learn where it is starting from.
         NacosConfigResult current = await GetConfigAsync(key, ct).ConfigureAwait(false);
@@ -689,8 +693,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     /// <param name="registration">The registration to notify.</param>
     /// <param name="change">The change to deliver.</param>
     /// <param name="ct">A token that cancels the notification.</param>
-    /// <returns>A task that completes once every callback ran.</returns>
-    private async Task InvokeSafelyAsync(
+    /// <returns>The number of callbacks that were invoked.</returns>
+    private async Task<int> InvokeSafelyAsync(
         ListenerRegistration registration,
         NacosConfigChange change,
         CancellationToken ct)
@@ -709,7 +713,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
-                return;
+                return callbacks.Length;
             }
             catch (Exception ex)
             {
@@ -718,6 +722,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
                 NacosConfigLog.ListenerFailed(_logger, change.Key.ToString(), ex.Message);
             }
         }
+
+        return callbacks.Length;
     }
 
     /// <summary>
@@ -732,6 +738,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     {
         if (string.IsNullOrEmpty(notification.DataId) || string.IsNullOrEmpty(notification.Group))
         {
+            NacosConfigLog.ChangeNotificationMalformed(
+                _logger, notification.DataId, notification.Group);
             return;
         }
 
@@ -744,8 +752,11 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         {
             // A notification for something nobody is listening to: possible after a listener was
             // removed while a push was already in flight.
+            NacosConfigLog.ChangeNotificationUnmatched(_logger, key.ToString());
             return;
         }
+
+        NacosConfigLog.ChangeNotificationReceived(_logger, key.ToString());
 
         NacosConfigResult result;
         try
@@ -756,7 +767,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         }
         catch (NacosException ex)
         {
-            NacosConfigLog.ListenerRestoreFailed(_logger, ex.Message);
+            NacosConfigLog.ContentFetchFailed(_logger, key.ToString(), ex.Message);
             return;
         }
 
@@ -791,10 +802,12 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             return;
         }
 
-        await InvokeSafelyAsync(
+        int deliveredTo = await InvokeSafelyAsync(
             registration,
             new NacosConfigChange(key, delivered) { PreviousMd5 = previous },
             ct).ConfigureAwait(false);
+
+        NacosConfigLog.ChangeDelivered(_logger, key.ToString(), deliveredTo);
     }
 
     /// <summary>
@@ -895,7 +908,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // One configuration that cannot be read must not hide the changes to the others.
-                NacosConfigLog.ListenerFailed(_logger, key.ToString(), ex.Message);
+                NacosConfigLog.ChangeProcessingFailed(_logger, key.ToString(), ex.Message);
             }
         }
     }
@@ -1548,16 +1561,26 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         Func<NacosConfigChange, CancellationToken, Task> onChange)
     {
         bool isLast;
+        int remaining;
         lock (registration.Sync)
         {
             registration.Remove(onChange);
-            isLast = registration.Count == 0;
+            remaining = registration.Count;
+            isLast = remaining == 0;
         }
 
-        if (!isLast || !_listeners.TryRemove(id, out _))
+        if (!isLast)
+        {
+            NacosConfigLog.ListenerRemoved(_logger, id, remaining);
+            return;
+        }
+
+        if (!_listeners.TryRemove(id, out _))
         {
             return;
         }
+
+        NacosConfigLog.ListenerRemoved(_logger, id, 0);
 
         if (_disposed || _connection.State != NacosTransportState.Connected)
         {

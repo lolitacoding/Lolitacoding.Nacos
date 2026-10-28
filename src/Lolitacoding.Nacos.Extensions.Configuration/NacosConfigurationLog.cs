@@ -30,9 +30,13 @@ internal static partial class NacosConfigurationLog
     /// <param name="logger">The logger.</param>
     /// <param name="dataIdCount">The number of data ids requested.</param>
     /// <param name="keyCount">The number of keys produced.</param>
+    /// <remarks>
+    /// Information rather than Debug: this line is the only evidence that the source is attached
+    /// and serving values, so it must be visible at the level a production host logs by default.
+    /// </remarks>
     [LoggerMessage(
         EventId = 4103,
-        Level = LogLevel.Debug,
+        Level = LogLevel.Information,
         Message = "Loaded {KeyCount} configuration key(s) from {DataIdCount} Nacos data id(s).")]
     public static partial void Loaded(ILogger logger, int dataIdCount, int keyCount);
 
@@ -44,4 +48,37 @@ internal static partial class NacosConfigurationLog
         Level = LogLevel.Information,
         Message = "Nacos configuration {DataId} changed; signalling a configuration reload.")]
     public static partial void Reloading(ILogger logger, string dataId);
+
+    /// <summary>Logs that the provider started watching its data ids.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">The number of data ids being watched.</param>
+    /// <param name="dataIds">The data ids, comma separated.</param>
+    [LoggerMessage(
+        EventId = 4105,
+        Level = LogLevel.Debug,
+        Message = "Watching {Count} Nacos data id(s) for changes: {DataIds}")]
+    public static partial void StartedWatching(ILogger logger, int count, string dataIds);
+
+    /// <summary>Logs that the provider stopped watching its data ids.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">The number of data ids that were watched.</param>
+    [LoggerMessage(
+        EventId = 4106,
+        Level = LogLevel.Debug,
+        Message = "Stopped watching {Count} Nacos data id(s).")]
+    public static partial void StoppedWatching(ILogger logger, int count);
+
+    /// <summary>Logs that a data id's content changed without changing any key.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="dataId">The data id whose content changed.</param>
+    /// <remarks>
+    /// Worth a line of its own: the push arrived and was fetched, yet no reload follows. Without it
+    /// the change would look like a notification that was lost.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 4107,
+        Level = LogLevel.Debug,
+        Message = "The content of Nacos configuration {DataId} changed but produced the same keys; "
+            + "no reload is needed.")]
+    public static partial void ContentUnchanged(ILogger logger, string dataId);
 }

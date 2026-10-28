@@ -471,7 +471,7 @@ connection, credentials and failover list all belong to the options object.
 Add Nacos as a configuration source and bind your own options to a configuration section:
 
 ```csharp
-builder.Configuration.AddNacosConfiguration(options =>
+builder.AddNacosConfiguration(options =>
 {
     options.ServerAddresses = ["http://127.0.0.1:8848"];
     options.DataIds = ["my-service.json"];
@@ -510,6 +510,30 @@ in the `1000` range, push events in `2000`, reconnect recovery in `3000`, the co
 in the `4000` range, the naming client in the `5000` range, the service discovery integration in the
 `6000` range, the distributed lock in the `7000` range, and the AI registry in the `8000` range.
 
+Two integration packages have ranges of their own: `4100` for the `IConfiguration` provider
+(`4103` when the initial load finishes, `4104` when a change triggers a reload) and `4200` for the
+ASP.NET Core registration.
+
+## Why is there no log when a Nacos configuration changes?
+
+A change is applied quietly unless the source can log. The source is created while the host is
+still being assembled, so it has no container to resolve an `ILoggerFactory` from; when it is added
+through `builder.Configuration.AddNacosConfiguration(...)` and no factory is passed, it logs to
+`NullLogger` and every line is discarded.
+
+Use the host overload instead:
+
+```csharp
+builder.AddNacosConfiguration(options => { /* ... */ });
+```
+
+It starts the source with a deferred factory, keeps `Information` and above while the host is being
+built, and replays them through the host's factory at startup. After that, a change logs
+`4104` (`Nacos configuration {DataId} changed; signalling a configuration reload.`) at Information.
+Lower the level for the Nacos categories to see the rest of the chain: `4025` when the notification
+arrives, `4028` when it was delivered to the listeners, and `4107` when the content changed without
+producing a different key.
+
 ## How do I turn on logs?
 
 The client logs through `ILogger`. In a host, configure logging as usual:
@@ -518,6 +542,15 @@ The client logs through `ILogger`. In a host, configure logging as usual:
 builder.Logging.AddSimpleConsole();
 builder.Logging.SetMinimumLevel(LogLevel.Debug);
 ```
+
+Add the configuration source with the host overload so its diagnostics use the same pipeline:
+
+```csharp
+builder.AddNacosConfiguration(options => { /* ... */ });
+```
+
+If you add the source through `builder.Configuration.AddNacosConfiguration(...)` instead, no
+container exists yet, so pass `options.LoggerFactory` yourself or the source stays silent.
 
 Source-generated messages are used throughout; connection lifecycle events are in the `1000` range,
 push events in `2000`, reconnect recovery in `3000`.

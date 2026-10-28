@@ -365,7 +365,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         }
         catch (Exception ex)
         {
-            NacosConfigLog.ListenerFailed(
+            NacosConfigLog.ChangeProcessingFailed(
                 _logger, notification.DataId ?? "<unknown>", ex.Message);
         }
     }

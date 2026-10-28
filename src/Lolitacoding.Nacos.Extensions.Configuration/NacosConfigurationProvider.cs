@@ -82,6 +82,8 @@ internal sealed class NacosConfigurationProvider : ConfigurationProvider, IDispo
 
         Publish();
         NacosConfigurationLog.Loaded(_logger, _options.DataIds.Count, Data.Count);
+        NacosConfigurationLog.StartedWatching(
+            _logger, _options.DataIds.Count, string.Join(", ", _options.DataIds));
     }
 
     /// <inheritdoc />
@@ -109,6 +111,8 @@ internal sealed class NacosConfigurationProvider : ConfigurationProvider, IDispo
         }
 
         _subscriptions.Clear();
+
+        NacosConfigurationLog.StoppedWatching(_logger, _options.DataIds.Count);
 
         if (_client is not null)
         {
@@ -157,6 +161,7 @@ internal sealed class NacosConfigurationProvider : ConfigurationProvider, IDispo
             : NacosConfigurationParser.Parse(dataId, change.Result.ContentType, change.Content);
 
         bool changed;
+        bool isInitial;
 
         lock (_sync)
         {
@@ -165,14 +170,27 @@ internal sealed class NacosConfigurationProvider : ConfigurationProvider, IDispo
                 return Task.CompletedTask;
             }
 
+            isInitial = !_sections.ContainsKey(dataId);
             changed = !SectionsEqual(_sections.GetValueOrDefault(dataId), section);
             _sections[dataId] = section;
+        }
+
+        if (isInitial)
+        {
+            // The value delivered while subscribing only seeds the section; Load publishes once
+            // every data id has arrived, so reporting a reload here would claim a change that no
+            // consumer can observe.
+            return Task.CompletedTask;
         }
 
         if (changed)
         {
             NacosConfigurationLog.Reloading(_logger, dataId);
             Publish();
+        }
+        else
+        {
+            NacosConfigurationLog.ContentUnchanged(_logger, dataId);
         }
 
         return Task.CompletedTask;

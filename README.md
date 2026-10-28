@@ -146,13 +146,16 @@ holds, so a second registration never opens a second connection.
 ### Configuration provider with hot reload
 
 ```csharp
-builder.Configuration.AddNacosConfiguration(options =>
+builder.AddNacosConfiguration(options =>
 {
     options.ServerAddresses = ["http://127.0.0.1:8848"];
     options.DataIds = ["appsettings.json"];
     options.Optional = true;
 });
 ```
+
+The host overload connects the source's diagnostics to the application's logging, so a load and
+every applied change are visible without passing a logger factory.
 
 ### Service discovery for `HttpClient`
 
