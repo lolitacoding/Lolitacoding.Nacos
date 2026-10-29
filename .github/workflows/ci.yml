@@ -7,6 +7,16 @@ on:
   pull_request:
     branches: [main]
 
+# Every job only reads the repository; the publish job widens this for the OIDC token.
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to the same branch makes the older run irrelevant, but a tag is a release
+  # decision: never cancel one that may already be publishing.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 env:
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -27,6 +37,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
 
       - name: Restore
         run: dotnet restore Lolitacoding.Nacos.slnx
@@ -71,14 +83,19 @@ jobs:
       - name: Publish the Native AOT sample
         run: dotnet publish samples/Sample.Aot/Sample.Aot.csproj -c Release -r win-x64
 
+  # The suite is split by the image a test class needs rather than run as one job against one
+  # server: the base surface moves between matrix jobs, while the AI registry and the 3.3 modules
+  # are pinned to the first release that served them and only need to be checked once. Each job
+  # therefore pulls only the image its classes start, and selects those classes with
+  # --filter-class, which is the MTP-native way to name a class (the VSTest --filter syntax is not
+  # understood by the Microsoft.Testing.Platform runner).
   integration:
     name: Integration tests (Nacos ${{ matrix.nacos }})
     runs-on: ubuntu-latest
     needs: build
     strategy:
-      # The whole suite runs against every supported base version, not just the oldest: the same
-      # tests must hold on the newer servers a caller may deploy, and the module images below stay
-      # fixed so only the base surface moves between the matrix jobs.
+      # The whole base suite runs against every supported 3.x release, not just the oldest: the
+      # same tests must hold on the newer servers a caller may deploy.
       fail-fast: false
       matrix:
         nacos: [v3.0.2, v3.2.4, v3.3.0-RC]
@@ -91,6 +108,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
 
       - name: Restore
         run: dotnet restore Lolitacoding.Nacos.slnx
@@ -98,60 +117,131 @@ jobs:
       - name: Build (Release)
         run: dotnet build Lolitacoding.Nacos.slnx -c Release --no-restore
 
-      - name: Start Nacos
-        run: |
-          # The tests start their own containers, so this step is what warms the image cache for them.
-          # The newer modules run against a newer image than the matrix base: the AI registry arrived
-          # after 3.0.2 and is checked on 3.2.4, while the lock service and the RAD agent registry both
-          # belong to the 3.3 line and are checked on 3.3.0-RC.
-          docker pull nacos/nacos-server:${{ matrix.nacos }}
-          docker pull nacos/nacos-server:v3.3.0-RC
-          docker pull nacos/nacos-server:v3.2.4
-          # The container image requires a signing key and a server identity from 3.2 on, whether or
-          # not the authentication plugin is enabled.
-          docker run -d --name nacos-it \
-            -e MODE=standalone \
-            -e NACOS_AUTH_ENABLE=false \
-            -e NACOS_AUTH_TOKEN=SecretKey012345678901234567890123456789012345678901234567890123456789 \
-            -e NACOS_AUTH_IDENTITY_KEY=serverIdentity \
-            -e NACOS_AUTH_IDENTITY_VALUE=security \
-            -p 8848:8848 -p 9848:9848 \
-            nacos/nacos-server:${{ matrix.nacos }}
-          # Wait for the server to answer its readiness endpoint. Nacos 3.x exposes readiness
-          # under the v3 admin core API; the legacy v1 console health path is gone. The body is what
-          # decides: the endpoint answers 200 while it is still reporting that a module is not ready.
-          for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:8848/nacos/v3/admin/core/state/readiness | grep -q '"data":"ok"'; then
-              echo "Nacos is ready."; exit 0
-            fi
-            sleep 5
-          done
-          echo "Nacos did not become ready in time." >&2
-          docker logs nacos-it >&2
-          exit 1
+      - name: Warm the image cache
+        # The tests start their own containers, so this step is what keeps the pull off the
+        # critical path of the first test that needs the image.
+        run: docker pull nacos/nacos-server:${{ matrix.nacos }}
 
       - name: Integration tests
         env:
           NACOS_TEST_IMAGE: nacos/nacos-server:${{ matrix.nacos }}
-          NACOS_LOCK_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
-          NACOS_AI_TEST_IMAGE: nacos/nacos-server:v3.2.4
-          NACOS_AGENT_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
-          NACOS_TEST_SERVER: http://127.0.0.1:8848
+          NO_PROXY: localhost,127.0.0.1
         run: >
           dotnet test tests/Lolitacoding.Nacos.IntegrationTests/Lolitacoding.Nacos.IntegrationTests.csproj
           -c Release --no-build
-          --report-xunit-trx --report-xunit-trx-filename integration.trx
+          --report-xunit-trx --report-xunit-trx-filename integration-v3.trx
           --results-directory ./TestResults
-
-      - name: Dump container logs
-        if: failure()
-        run: docker logs nacos-it || true
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AddressServerIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AuthIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.ConfigIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.NamingIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.TransportIntegrationTests
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: integration-test-results-${{ matrix.nacos }}
+          path: ./TestResults/*.trx
+          if-no-files-found: ignore
+
+  integration-ai:
+    name: Integration tests (AI registry, Nacos v3.2.4)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+
+      - name: Restore
+        run: dotnet restore Lolitacoding.Nacos.slnx
+
+      - name: Build (Release)
+        run: dotnet build Lolitacoding.Nacos.slnx -c Release --no-restore
+
+      - name: Warm the image cache
+        # The AI registry is younger than the oldest base server: a 3.0.2 server has no handler for
+        # it, so this job is pinned to the release that first served the whole contract.
+        run: docker pull nacos/nacos-server:v3.2.4
+
+      - name: Integration tests
+        env:
+          NACOS_AI_TEST_IMAGE: nacos/nacos-server:v3.2.4
+          NO_PROXY: localhost,127.0.0.1
+        run: >
+          dotnet test tests/Lolitacoding.Nacos.IntegrationTests/Lolitacoding.Nacos.IntegrationTests.csproj
+          -c Release --no-build
+          --report-xunit-trx --report-xunit-trx-filename integration-ai.trx
+          --results-directory ./TestResults
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AgentCardIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AgentSpecIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AiIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AiLocalCacheIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.PromptIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.SkillIntegrationTests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results-ai
+          path: ./TestResults/*.trx
+          if-no-files-found: ignore
+
+  integration-agent:
+    name: Integration tests (agent registry and lock, Nacos v3.3.0-RC)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
+
+      - name: Restore
+        run: dotnet restore Lolitacoding.Nacos.slnx
+
+      - name: Build (Release)
+        run: dotnet build Lolitacoding.Nacos.slnx -c Release --no-restore
+
+      - name: Warm the image cache
+        # The RAD agent handlers and the renewing lock service are both @Since("3.3.0"), so this job
+        # runs on the 3.3 line only, where a release candidate is what is published so far.
+        run: docker pull nacos/nacos-server:v3.3.0-RC
+
+      - name: Integration tests
+        env:
+          NACOS_AGENT_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
+          NACOS_LOCK_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
+          NO_PROXY: localhost,127.0.0.1
+        run: >
+          dotnet test tests/Lolitacoding.Nacos.IntegrationTests/Lolitacoding.Nacos.IntegrationTests.csproj
+          -c Release --no-build
+          --report-xunit-trx --report-xunit-trx-filename integration-agent.trx
+          --results-directory ./TestResults
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AgentRegistryIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AgentWatchIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.LockingIntegrationTests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results-agent
           path: ./TestResults/*.trx
           if-no-files-found: ignore
 
@@ -168,6 +258,8 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+          cache: true
+          cache-dependency-path: Directory.Packages.props
 
       - name: Pack (dry run, no publish)
         run: >
@@ -176,13 +268,39 @@ jobs:
           -o ./artifacts
           -p:ContinuousIntegrationBuild=true
 
-      - name: Verify both nupkg and snupkg were produced
+      - name: Validate the packages
+        # A real check of what the publish job is about to push: exactly the seven libraries, each
+        # with its symbols, its README, its nuspec and its net10.0 assembly. An empty or partial
+        # artifacts directory must fail here rather than at the feed.
         run: |
-          count_pkg=$(find ./artifacts -name '*.nupkg' -not -name '*.snupkg' | wc -l)
-          count_sym=$(find ./artifacts -name '*.snupkg' | wc -l)
+          count_pkg=$(find ./artifacts -maxdepth 1 -name '*.nupkg' | wc -l)
+          count_sym=$(find ./artifacts -maxdepth 1 -name '*.snupkg' | wc -l)
           echo "nupkg=$count_pkg snupkg=$count_sym"
-          test "$count_pkg" -ge 4
-          test "$count_sym" -ge 4
+          test "$count_pkg" -eq 7
+          test "$count_sym" -eq 7
+
+          for assembly in \
+            Lolitacoding.Nacos \
+            Lolitacoding.Nacos.AspNetCore \
+            Lolitacoding.Nacos.Extensions.Configuration \
+            Lolitacoding.Nacos.Extensions.DependencyInjection \
+            Lolitacoding.Nacos.Extensions.ServiceDiscovery \
+            Lolitacoding.Aspire.Hosting.Nacos \
+            Lolitacoding.Aspire.Nacos; do
+            pkg=$(find ./artifacts -maxdepth 1 -name "$assembly.[0-9]*.nupkg" -print -quit)
+            test -n "$pkg" || { echo "$assembly: no package was produced"; exit 1; }
+            find ./artifacts -maxdepth 1 -name "$assembly.[0-9]*.snupkg" | grep -q . \
+              || { echo "$assembly: no symbol package was produced"; exit 1; }
+            # -Z1 lists the entry names alone, so each check is an exact match rather than a
+            # substring that another package's path could satisfy.
+            unzip -Z1 "$pkg" > entries.txt
+            grep -qx "lib/net10.0/$assembly.dll" entries.txt \
+              || { echo "$assembly: $pkg has no lib/net10.0/$assembly.dll"; exit 1; }
+            grep -qx "README.md" entries.txt \
+              || { echo "$assembly: $pkg has no README.md"; exit 1; }
+            grep -qx "$assembly.nuspec" entries.txt \
+              || { echo "$assembly: $pkg has no nuspec"; exit 1; }
+          done
 
       - name: Upload packages
         uses: actions/upload-artifact@v4
@@ -193,40 +311,22 @@ jobs:
   publish:
     name: Publish to NuGet
     runs-on: ubuntu-latest
-    needs: pack
-    # Only a version tag publishes.
-    if: startsWith(github.ref, 'refs/tags/v')
+    # A tag publishes, but only once every gate has passed and the feed is switched on.
+    needs: [pack, integration, integration-ai, integration-agent, aot]
+    if: startsWith(github.ref, 'refs/tags/v') && vars.NUGET_PUBLISH_ENABLED == 'true'
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      # The packages are the ones the pack job already validated; re-packing here would publish
+      # something no job has looked at.
+      - name: Download the validated packages
+        uses: actions/download-artifact@v4
         with:
-          fetch-depth: 0
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-
-      - name: Pack
-        run: >
-          dotnet pack Lolitacoding.Nacos.slnx
-          -c Release
-          -o ./artifacts
-          -p:ContinuousIntegrationBuild=true
-
-      # Dry-run: validate the packages before trusting the pipeline with a real push.
-      - name: Validate packages (dry run)
-        run: |
-          dotnet tool install --global dotnet-validate --version 0.0.1-preview.304 || true
-          for pkg in ./artifacts/*.nupkg; do
-            case "$pkg" in *.snupkg) continue;; esac
-            echo "Validating $pkg"
-          done
+          name: nuget-packages
+          path: ./artifacts
 
       - name: Push to NuGet.org
-        if: ${{ vars.NUGET_PUBLISH_ENABLED == 'true' }}
         run: >
           dotnet nuget push ./artifacts/*.nupkg
           --api-key ${{ secrets.NUGET_API_KEY }}

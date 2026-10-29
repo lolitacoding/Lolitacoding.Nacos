@@ -160,8 +160,9 @@ internal static class NacosIntegrationImages
 /// <remarks>
 /// The trait is what a developer filters on to run or skip the Docker-dependent suite locally, with
 /// <c>--filter "Category=Integration"</c> or <c>--filter "Category!=Integration"</c>. CI does not
-/// need the filter to separate the two suites: they are separate projects, and the unit-test job
-/// never runs this one.
+/// need the trait to separate the two suites: they are separate projects, and the unit-test job
+/// never runs this one. The trait also does not name the image a test needs — that is a property of
+/// the class, and the image-specific CI jobs select classes with <c>--filter-class</c>.
 /// </remarks>
 public static class NacosTraits
 {
