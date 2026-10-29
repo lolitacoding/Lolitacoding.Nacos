@@ -1,705 +1,705 @@
 #nullable enable
-Lolitacoding.Nacos.Ai.INacosAgentCardRegistry
-Lolitacoding.Nacos.Ai.INacosAgentCardRegistry.DeregisterAgentEndpointAsync(string! agentName, Lolitacoding.Nacos.Ai.NacosAgentEndpoint! endpoint, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Lolitacoding.Nacos.Ai.INacosAgentCardRegistry.GetAgentCardAsync(string! agentName, string? version = null, string? registrationType = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosAgentCardDetail!>!
-Lolitacoding.Nacos.Ai.INacosAgentCardRegistry.RegisterAgentEndpointAsync(string! agentName, Lolitacoding.Nacos.Ai.NacosAgentEndpoint! endpoint, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Lolitacoding.Nacos.Ai.INacosAgentCardRegistry.ReleaseAgentCardAsync(Lolitacoding.Nacos.Ai.NacosAgentCard! card, string? registrationType = null, bool setAsLatest = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Lolitacoding.Nacos.Ai.INacosAgentCardRegistry.SubscribeAgentCardAsync(string! agentName, string? version = null, string? registrationType = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosAgentCardDetail?>!
-Lolitacoding.Nacos.Ai.INacosAgentRegistry
-Lolitacoding.Nacos.Ai.INacosAgentRegistry.DeregisterEndpointsAsync(string! agentName, string! protocol, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Lolitacoding.Nacos.Ai.INacosAgentRegistry.DiscoverAgentAsync(Lolitacoding.Nacos.Ai.NacosAgentReference! reference, Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult!>!
-Lolitacoding.Nacos.Ai.INacosAgentRegistry.PublishAgentAsync(Lolitacoding.Nacos.Ai.NacosAgentPublishRequest! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosAgentVersionDetail!>!
-Lolitacoding.Nacos.Ai.INacosAgentRegistry.RegisterEndpointsAsync(Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch! batch, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Lolitacoding.Nacos.Ai.INacosAgentRegistry.SearchAgentsAsync(Lolitacoding.Nacos.Ai.NacosAgentSearchRequest! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosAgentPage<Lolitacoding.Nacos.Ai.NacosAgentSummary!>!>!
-Lolitacoding.Nacos.Ai.INacosAgentRegistry.WatchAgentAsync(Lolitacoding.Nacos.Ai.NacosAgentReference! reference, Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult?>!
-Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry
-Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry.GetAgentSpecAsync(string! agentSpecName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosAgentSpec!>!
-Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry.SubscribeAgentSpecAsync(string! agentSpecName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosAgentSpec?>!
-Lolitacoding.Nacos.Ai.INacosAiClient
-Lolitacoding.Nacos.Ai.INacosAiClient.Agent.get -> Lolitacoding.Nacos.Ai.INacosAgentRegistry!
-Lolitacoding.Nacos.Ai.INacosAiClient.AgentCard.get -> Lolitacoding.Nacos.Ai.INacosAgentCardRegistry!
-Lolitacoding.Nacos.Ai.INacosAiClient.AgentSpec.get -> Lolitacoding.Nacos.Ai.INacosAgentSpecRegistry!
-Lolitacoding.Nacos.Ai.INacosAiClient.Mcp.get -> Lolitacoding.Nacos.Ai.INacosMcpRegistry!
-Lolitacoding.Nacos.Ai.INacosAiClient.Prompt.get -> Lolitacoding.Nacos.Ai.INacosPromptRegistry!
-Lolitacoding.Nacos.Ai.INacosAiClient.Skill.get -> Lolitacoding.Nacos.Ai.INacosSkillRegistry!
-Lolitacoding.Nacos.Ai.INacosMcpRegistry
-Lolitacoding.Nacos.Ai.INacosMcpRegistry.DeregisterServerEndpointAsync(string! name, string! address, int port, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Lolitacoding.Nacos.Ai.INacosMcpRegistry.GetServerAsync(string! name, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosMcpServerDetail!>!
-Lolitacoding.Nacos.Ai.INacosMcpRegistry.RegisterServerEndpointAsync(string! name, string! address, int port, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
-Lolitacoding.Nacos.Ai.INacosMcpRegistry.ReleaseServerAsync(Lolitacoding.Nacos.Ai.NacosMcpServer! server, Lolitacoding.Nacos.Ai.NacosMcpToolSpecification? tools = null, Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification? resources = null, Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec? endpoint = null, bool createDraft = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
-Lolitacoding.Nacos.Ai.INacosMcpRegistry.SubscribeServerAsync(string! name, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosMcpServerDetail!>!
-Lolitacoding.Nacos.Ai.INacosPromptRegistry
-Lolitacoding.Nacos.Ai.INacosPromptRegistry.GetPromptAsync(string! promptKey, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosPrompt!>!
-Lolitacoding.Nacos.Ai.INacosPromptRegistry.SubscribePromptAsync(string! promptKey, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosPrompt?>!
-Lolitacoding.Nacos.Ai.INacosSkillRegistry
-Lolitacoding.Nacos.Ai.INacosSkillRegistry.GetSkillAsync(string! skillName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.Ai.NacosSkill!>!
-Lolitacoding.Nacos.Ai.INacosSkillRegistry.SubscribeSkillAsync(string! skillName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.Ai.NacosSkill?>!
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.DescriptorMediaType.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.DescriptorMediaType.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.EndpointSets.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentEndpointSet!>?
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.EndpointSets.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.EndpointSourceOrder.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.EndpointSourceOrder.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.NacosAgentCallInterface() -> void
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.NativeDescriptor.get -> System.Text.Json.JsonElement?
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.NativeDescriptor.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.Protocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.Protocol.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.ProtocolVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCallInterface.ProtocolVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.ExtendedAgentCard.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.ExtendedAgentCard.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.Extensions.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentExtension!>?
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.Extensions.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.NacosAgentCapabilities() -> void
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.PushNotifications.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.PushNotifications.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.StateTransitionHistory.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.StateTransitionHistory.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.Streaming.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentCapabilities.Streaming.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard
-Lolitacoding.Nacos.Ai.NacosAgentCard.AdditionalInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentInterface!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.AdditionalInterfaces.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Capabilities.get -> Lolitacoding.Nacos.Ai.NacosAgentCapabilities?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Capabilities.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.DefaultInputModes.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.DefaultInputModes.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.DefaultOutputModes.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.DefaultOutputModes.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.DocumentationUrl.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.DocumentationUrl.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.IconUrl.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.IconUrl.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.NacosAgentCard() -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.PreferredTransport.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.PreferredTransport.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.ProtocolVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.ProtocolVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Provider.get -> Lolitacoding.Nacos.Ai.NacosAgentProvider?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Provider.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Security.get -> System.Collections.Generic.List<System.Collections.Generic.Dictionary<string!, System.Collections.Generic.List<string!>!>!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Security.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.SecurityRequirements.get -> System.Collections.Generic.List<System.Collections.Generic.Dictionary<string!, System.Collections.Generic.List<string!>!>!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.SecurityRequirements.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.SecuritySchemes.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.SecuritySchemes.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Signatures.get -> System.Collections.Generic.List<System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Signatures.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Skills.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentSkill!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Skills.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.SupportedInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentInterface!>?
-Lolitacoding.Nacos.Ai.NacosAgentCard.SupportedInterfaces.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.SupportsAuthenticatedExtendedCard.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentCard.SupportsAuthenticatedExtendedCard.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Url.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Url.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCard.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCard.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCardDetail
-Lolitacoding.Nacos.Ai.NacosAgentCardDetail.LatestVersion.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentCardDetail.LatestVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentCardDetail.NacosAgentCardDetail() -> void
-Lolitacoding.Nacos.Ai.NacosAgentCardDetail.RegistrationType.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentCardDetail.RegistrationType.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.EndpointSources.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.EndpointSources.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.MetadataSelector.get -> System.Collections.Generic.Dictionary<string!, string!>?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.MetadataSelector.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.NacosAgentDiscoveryFilter() -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.ProtocolVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.ProtocolVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.Protocols.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.Protocols.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.Transports.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter.Transports.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest.Filter.get -> Lolitacoding.Nacos.Ai.NacosAgentDiscoveryFilter?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest.Filter.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest.NacosAgentDiscoveryRequest() -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest.NamespaceId.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest.NamespaceId.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest.Reference.get -> Lolitacoding.Nacos.Ai.NacosAgentReference?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryRequest.Reference.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.AgentName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.AgentName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.CallInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentCallInterface!>?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.CallInterfaces.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.ContentDigest.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.ContentDigest.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.NacosAgentDiscoveryResult() -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.NamespaceId.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.NamespaceId.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.Tags.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.Tags.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentDiscoveryResult.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Address.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Address.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.NacosAgentEndpoint() -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Path.get -> string!
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Path.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Port.get -> int
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Port.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Protocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Protocol.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.ProtocolVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.ProtocolVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Query.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Query.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.SupportTls.get -> bool
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.SupportTls.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Tenant.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Tenant.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Transport.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Transport.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpoint.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.AgentName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.AgentName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.Endpoints.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint!>?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.Endpoints.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.NacosAgentEndpointBatch() -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.Protocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.Protocol.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.RuntimeVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.RuntimeVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.VersionRange.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointBatch.VersionRange.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.Endpoints.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint!>?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.Endpoints.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.LastUpdatedTime.get -> long?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.LastUpdatedTime.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.NacosAgentEndpointSet() -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.Source.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.Source.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.SourceRevision.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentEndpointSet.SourceRevision.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentExtension
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentExtension.NacosAgentExtension() -> void
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Params.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Params.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Required.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Required.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Uri.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentExtension.Uri.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentInterface
-Lolitacoding.Nacos.Ai.NacosAgentInterface.NacosAgentInterface() -> void
-Lolitacoding.Nacos.Ai.NacosAgentInterface.ProtocolBinding.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentInterface.ProtocolBinding.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentInterface.ProtocolVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentInterface.ProtocolVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentInterface.Tenant.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentInterface.Tenant.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentInterface.Transport.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentInterface.Transport.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentInterface.Url.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentInterface.Url.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.NacosAgentPage() -> void
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.PageItems.get -> System.Collections.Generic.List<T>?
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.PageItems.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.PageNumber.get -> int
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.PageNumber.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.PagesAvailable.get -> int
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.PagesAvailable.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.TotalCount.get -> int
-Lolitacoding.Nacos.Ai.NacosAgentPage<T>.TotalCount.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentProvider
-Lolitacoding.Nacos.Ai.NacosAgentProvider.NacosAgentProvider() -> void
-Lolitacoding.Nacos.Ai.NacosAgentProvider.Organization.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentProvider.Organization.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentProvider.Url.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentProvider.Url.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.AgentName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.AgentName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Author.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Author.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.AutoSubmit.get -> bool
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.AutoSubmit.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.BasedOnVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.BasedOnVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.CallInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentCallInterface!>?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.CallInterfaces.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.ChangeDescription.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.ChangeDescription.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.DisplayName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.DisplayName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Extensions.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Extensions.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.IconUrl.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.IconUrl.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.NacosAgentPublishRequest() -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Provider.get -> Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Provider.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Tags.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Tags.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentPublishRequest.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentReference
-Lolitacoding.Nacos.Ai.NacosAgentReference.AgentName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentReference.AgentName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentReference.Label.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentReference.Label.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentReference.NacosAgentReference() -> void
-Lolitacoding.Nacos.Ai.NacosAgentReference.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentReference.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRegistrationType
-Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider
-Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider.NacosAgentRegistryProvider() -> void
-Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider.Url.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider.Url.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Bindings.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentVersionBinding!>?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Bindings.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Enabled.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Enabled.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Healthy.get -> bool?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Healthy.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Metadata.get -> System.Collections.Generic.Dictionary<string!, string!>?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Metadata.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.NacosAgentRuntimeEndpoint() -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Priority.get -> int?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Priority.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Transport.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Transport.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Uri.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Uri.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Weight.get -> double?
-Lolitacoding.Nacos.Ai.NacosAgentRuntimeEndpoint.Weight.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.AgentNameContains.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.AgentNameContains.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.NacosAgentSearchRequest() -> void
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.PageNo.get -> int?
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.PageNo.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.PageSize.get -> int?
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.PageSize.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.ProtocolsAny.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.ProtocolsAny.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.TagsAll.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentSearchRequest.TagsAll.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Examples.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Examples.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Id.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Id.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill.InputModes.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentSkill.InputModes.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill.NacosAgentSkill() -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill.OutputModes.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentSkill.OutputModes.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Tags.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentSkill.Tags.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec
-Lolitacoding.Nacos.Ai.NacosAgentSpec.BizTags.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.BizTags.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Content.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Content.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Md5.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Md5.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.NacosAgentSpec() -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.NamespaceId.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.NamespaceId.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Resource.get -> System.Collections.Generic.Dictionary<string!, Lolitacoding.Nacos.Ai.NacosAgentSpecResource!>?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Resource.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpec.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Content.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Content.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Metadata.get -> System.Text.Json.JsonElement?
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Metadata.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.NacosAgentSpecResource() -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.ResourceIdentifier.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.ResourceIdentifier.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Type.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSpecResource.Type.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary
-Lolitacoding.Nacos.Ai.NacosAgentSummary.AgentName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.AgentName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.CreateTime.get -> long?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.CreateTime.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.DisplayName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.DisplayName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Extensions.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Extensions.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.IconUrl.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.IconUrl.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.MetaVersion.get -> long?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.MetaVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.NacosAgentSummary() -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.NamespaceId.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.NamespaceId.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Owner.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Owner.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Provider.get -> Lolitacoding.Nacos.Ai.NacosAgentRegistryProvider?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Provider.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Scope.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Scope.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Status.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Status.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Tags.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.Tags.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.UpdateTime.get -> long?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.UpdateTime.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentSummary.VersionInfo.get -> Lolitacoding.Nacos.Ai.NacosAgentVersionInfo?
-Lolitacoding.Nacos.Ai.NacosAgentSummary.VersionInfo.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionBinding
-Lolitacoding.Nacos.Ai.NacosAgentVersionBinding.NacosAgentVersionBinding() -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionBinding.RuntimeVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionBinding.RuntimeVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionBinding.VersionRange.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionBinding.VersionRange.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail.AgentName.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail.AgentName.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail.CallInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentCallInterface!>?
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail.CallInterfaces.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail.NacosAgentVersionDetail() -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail.NamespaceId.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionDetail.NamespaceId.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.EditingVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.EditingVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.Labels.get -> System.Collections.Generic.Dictionary<string!, string!>?
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.Labels.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.NacosAgentVersionInfo() -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.OnlineVersions.get -> System.Collections.Generic.List<Lolitacoding.Nacos.Ai.NacosAgentVersionSummary!>?
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.OnlineVersions.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.ReviewingVersion.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionInfo.ReviewingVersion.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Author.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Author.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.ChangeDescription.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.ChangeDescription.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.ContentDigest.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.ContentDigest.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.CreateTime.get -> long?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.CreateTime.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Labels.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Labels.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.NacosAgentVersionSummary() -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Protocols.get -> System.Collections.Generic.List<string!>?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Protocols.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.PublishPipelineInfo.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.PublishPipelineInfo.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Status.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Status.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.UpdateTime.get -> long?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.UpdateTime.set -> void
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosAgentVersionSummary.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpCapability
-Lolitacoding.Nacos.Ai.NacosMcpCapability.Prompt = 1 -> Lolitacoding.Nacos.Ai.NacosMcpCapability
-Lolitacoding.Nacos.Ai.NacosMcpCapability.Resource = 2 -> Lolitacoding.Nacos.Ai.NacosMcpCapability
-Lolitacoding.Nacos.Ai.NacosMcpCapability.Tool = 0 -> Lolitacoding.Nacos.Ai.NacosMcpCapability
-Lolitacoding.Nacos.Ai.NacosMcpEncryptObject
-Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.Data.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.Data.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.EncryptInfo.get -> System.Collections.Generic.IDictionary<string!, string!>?
-Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.EncryptInfo.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEncryptObject.NacosMcpEncryptObject() -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointData
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Address.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Address.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Headers.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput!>?
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Headers.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.NacosMcpEndpointInfo() -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Path.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Path.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Port.get -> int
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Port.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Protocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo.Protocol.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec
-Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Data.get -> System.Collections.Generic.IDictionary<string!, string!>?
-Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Data.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.NacosMcpEndpointSpec() -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Type.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpEndpointSpec.Type.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpEndpointType
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointData.get -> System.Text.Json.Nodes.JsonNode?
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointData.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointType.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.EndpointType.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Headers.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput!>?
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Headers.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.NacosMcpFrontEndpointConfig() -> void
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Path.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Path.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Protocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Protocol.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Type.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig.Type.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpIcon
-Lolitacoding.Nacos.Ai.NacosMcpIcon.MimeType.get -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType?
-Lolitacoding.Nacos.Ai.NacosMcpIcon.MimeType.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpIcon.NacosMcpIcon() -> void
-Lolitacoding.Nacos.Ai.NacosMcpIcon.Sizes.get -> System.Collections.Generic.IList<string!>?
-Lolitacoding.Nacos.Ai.NacosMcpIcon.Sizes.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpIcon.Src.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpIcon.Src.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpIcon.Theme.get -> Lolitacoding.Nacos.Ai.NacosMcpIconTheme?
-Lolitacoding.Nacos.Ai.NacosMcpIcon.Theme.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
-Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageJpeg = 1 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
-Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageJpg = 2 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
-Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImagePng = 0 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
-Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageSvgXml = 3 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
-Lolitacoding.Nacos.Ai.NacosMcpIconMimeType.ImageWebp = 4 -> Lolitacoding.Nacos.Ai.NacosMcpIconMimeType
-Lolitacoding.Nacos.Ai.NacosMcpIconTheme
-Lolitacoding.Nacos.Ai.NacosMcpIconTheme.Dark = 1 -> Lolitacoding.Nacos.Ai.NacosMcpIconTheme
-Lolitacoding.Nacos.Ai.NacosMcpIconTheme.Light = 0 -> Lolitacoding.Nacos.Ai.NacosMcpIconTheme
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Choices.get -> System.Collections.Generic.IList<string!>?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Choices.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.DefaultValue.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.DefaultValue.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Format.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Format.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsRequired.get -> bool?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsRequired.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsSecret.get -> bool?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.IsSecret.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.NacosMcpKeyValueInput() -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Placeholder.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Placeholder.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Value.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Value.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Variables.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpKeyValueInput.Variables.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpProtocol
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ExportPath.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ExportPath.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.FrontEndpointConfigList.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpFrontEndpointConfig!>?
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.FrontEndpointConfigList.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.NacosMcpRemoteServiceConfig() -> void
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ServiceRef.get -> Lolitacoding.Nacos.Ai.NacosMcpServiceRef?
-Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig.ServiceRef.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpRepository
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Id.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Id.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpRepository.NacosMcpRepository() -> void
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Source.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Source.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Subfolder.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Subfolder.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Url.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpRepository.Url.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.EncryptData.get -> Lolitacoding.Nacos.Ai.NacosMcpEncryptObject?
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.EncryptData.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Extensions.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Extensions.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.NacosMcpResourceSpecification() -> void
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.ResourceTemplates.get -> System.Text.Json.Nodes.JsonArray?
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.ResourceTemplates.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Resources.get -> System.Text.Json.Nodes.JsonArray?
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.Resources.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.SpecificationType.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification.SpecificationType.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.DefaultCredential.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.DefaultCredential.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Id.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Id.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.In.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.In.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.NacosMcpSecurityScheme() -> void
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Scheme.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Scheme.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Type.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme.Type.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer
-Lolitacoding.Nacos.Ai.NacosMcpServer.Capabilities.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpCapability>?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Capabilities.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Enabled.get -> bool
-Lolitacoding.Nacos.Ai.NacosMcpServer.Enabled.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.FrontProtocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.FrontProtocol.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Icons.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpIcon!>?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Icons.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Id.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Id.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.LocalServerConfig.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpServer.LocalServerConfig.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.NacosMcpServer() -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.NamespaceId.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.NamespaceId.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Packages.get -> System.Text.Json.Nodes.JsonArray?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Packages.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Protocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Protocol.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.RemoteServerConfig.get -> Lolitacoding.Nacos.Ai.NacosMcpRemoteServiceConfig?
-Lolitacoding.Nacos.Ai.NacosMcpServer.RemoteServerConfig.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Repository.get -> Lolitacoding.Nacos.Ai.NacosMcpRepository?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Repository.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Status.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Status.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.VersionDetail.get -> Lolitacoding.Nacos.Ai.NacosMcpVersionDetail?
-Lolitacoding.Nacos.Ai.NacosMcpServer.VersionDetail.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServer.WebsiteUrl.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServer.WebsiteUrl.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.AllVersions.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpVersionDetail!>?
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.AllVersions.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.BackendEndpoints.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo!>?
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.BackendEndpoints.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.FrontendEndpoints.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpEndpointInfo!>?
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.FrontendEndpoints.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.NacosMcpServerDetail() -> void
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ResourceSpec.get -> Lolitacoding.Nacos.Ai.NacosMcpResourceSpecification?
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ResourceSpec.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ToolSpec.get -> Lolitacoding.Nacos.Ai.NacosMcpToolSpecification?
-Lolitacoding.Nacos.Ai.NacosMcpServerDetail.ToolSpec.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.GroupName.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.GroupName.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.NacosMcpServiceRef() -> void
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.NamespaceId.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.NamespaceId.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.ServiceName.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.ServiceName.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.TransportProtocol.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpServiceRef.TransportProtocol.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpStatus
-Lolitacoding.Nacos.Ai.NacosMcpTool
-Lolitacoding.Nacos.Ai.NacosMcpTool.Annotations.get -> Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations?
-Lolitacoding.Nacos.Ai.NacosMcpTool.Annotations.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpTool.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpTool.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpTool.InputSchema.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpTool.InputSchema.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpTool.Meta.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpTool.Meta.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpTool.NacosMcpTool() -> void
-Lolitacoding.Nacos.Ai.NacosMcpTool.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpTool.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpTool.OutputSchema.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpTool.OutputSchema.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.DestructiveHint.get -> bool?
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.DestructiveHint.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.IdempotentHint.get -> bool?
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.IdempotentHint.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.NacosMcpToolAnnotations() -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.OpenWorldHint.get -> bool?
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.OpenWorldHint.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.ReadOnlyHint.get -> bool?
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.ReadOnlyHint.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.Title.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpToolAnnotations.Title.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Enabled.get -> bool
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Enabled.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta.InvokeContext.get -> System.Collections.Generic.IDictionary<string!, string!>?
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta.InvokeContext.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta.NacosMcpToolMeta() -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Templates.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpToolMeta.Templates.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.EncryptData.get -> Lolitacoding.Nacos.Ai.NacosMcpEncryptObject?
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.EncryptData.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Extensions.get -> System.Text.Json.Nodes.JsonObject?
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Extensions.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.NacosMcpToolSpecification() -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SecuritySchemes.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpSecurityScheme!>?
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SecuritySchemes.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SpecificationType.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.SpecificationType.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Tools.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosMcpTool!>?
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.Tools.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.ToolsMeta.get -> System.Collections.Generic.IDictionary<string!, Lolitacoding.Nacos.Ai.NacosMcpToolMeta!>?
-Lolitacoding.Nacos.Ai.NacosMcpToolSpecification.ToolsMeta.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.IsLatest.get -> bool?
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.IsLatest.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.NacosMcpVersionDetail() -> void
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.ReleaseDate.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.ReleaseDate.set -> void
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosMcpVersionDetail.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosPrompt
-Lolitacoding.Nacos.Ai.NacosPrompt.Md5.get -> string?
-Lolitacoding.Nacos.Ai.NacosPrompt.Md5.set -> void
-Lolitacoding.Nacos.Ai.NacosPrompt.NacosPrompt() -> void
-Lolitacoding.Nacos.Ai.NacosPrompt.PromptKey.get -> string?
-Lolitacoding.Nacos.Ai.NacosPrompt.PromptKey.set -> void
-Lolitacoding.Nacos.Ai.NacosPrompt.Template.get -> string?
-Lolitacoding.Nacos.Ai.NacosPrompt.Template.set -> void
-Lolitacoding.Nacos.Ai.NacosPrompt.Variables.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.Ai.NacosPromptVariable!>?
-Lolitacoding.Nacos.Ai.NacosPrompt.Variables.set -> void
-Lolitacoding.Nacos.Ai.NacosPrompt.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosPrompt.Version.set -> void
-Lolitacoding.Nacos.Ai.NacosPromptVariable
-Lolitacoding.Nacos.Ai.NacosPromptVariable.DefaultValue.get -> string?
-Lolitacoding.Nacos.Ai.NacosPromptVariable.DefaultValue.set -> void
-Lolitacoding.Nacos.Ai.NacosPromptVariable.Description.get -> string?
-Lolitacoding.Nacos.Ai.NacosPromptVariable.Description.set -> void
-Lolitacoding.Nacos.Ai.NacosPromptVariable.NacosPromptVariable() -> void
-Lolitacoding.Nacos.Ai.NacosPromptVariable.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosPromptVariable.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosSkill
-Lolitacoding.Nacos.Ai.NacosSkill.Archive.get -> System.ReadOnlyMemory<byte>
-Lolitacoding.Nacos.Ai.NacosSkill.Archive.set -> void
-Lolitacoding.Nacos.Ai.NacosSkill.Md5.get -> string?
-Lolitacoding.Nacos.Ai.NacosSkill.Md5.set -> void
-Lolitacoding.Nacos.Ai.NacosSkill.NacosSkill() -> void
-Lolitacoding.Nacos.Ai.NacosSkill.Name.get -> string?
-Lolitacoding.Nacos.Ai.NacosSkill.Name.set -> void
-Lolitacoding.Nacos.Ai.NacosSkill.Version.get -> string?
-Lolitacoding.Nacos.Ai.NacosSkill.Version.set -> void
+Lolitacoding.Nacos.AI.INacosAgentCardRegistry
+Lolitacoding.Nacos.AI.INacosAgentCardRegistry.DeregisterAgentEndpointAsync(string! agentName, Lolitacoding.Nacos.AI.NacosAgentEndpoint! endpoint, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.AI.INacosAgentCardRegistry.GetAgentCardAsync(string! agentName, string? version = null, string? registrationType = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosAgentCardDetail!>!
+Lolitacoding.Nacos.AI.INacosAgentCardRegistry.RegisterAgentEndpointAsync(string! agentName, Lolitacoding.Nacos.AI.NacosAgentEndpoint! endpoint, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.AI.INacosAgentCardRegistry.ReleaseAgentCardAsync(Lolitacoding.Nacos.AI.NacosAgentCard! card, string? registrationType = null, bool setAsLatest = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.AI.INacosAgentCardRegistry.SubscribeAgentCardAsync(string! agentName, string? version = null, string? registrationType = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.AI.NacosAgentCardDetail?>!
+Lolitacoding.Nacos.AI.INacosAgentRegistry
+Lolitacoding.Nacos.AI.INacosAgentRegistry.DeregisterEndpointsAsync(string! agentName, string! protocol, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.AI.INacosAgentRegistry.DiscoverAgentAsync(Lolitacoding.Nacos.AI.NacosAgentReference! reference, Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult!>!
+Lolitacoding.Nacos.AI.INacosAgentRegistry.PublishAgentAsync(Lolitacoding.Nacos.AI.NacosAgentPublishRequest! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosAgentVersionDetail!>!
+Lolitacoding.Nacos.AI.INacosAgentRegistry.RegisterEndpointsAsync(Lolitacoding.Nacos.AI.NacosAgentEndpointBatch! batch, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.AI.INacosAgentRegistry.SearchAgentsAsync(Lolitacoding.Nacos.AI.NacosAgentSearchRequest! request, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosAgentPage<Lolitacoding.Nacos.AI.NacosAgentSummary!>!>!
+Lolitacoding.Nacos.AI.INacosAgentRegistry.WatchAgentAsync(Lolitacoding.Nacos.AI.NacosAgentReference! reference, Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter? filter = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult?>!
+Lolitacoding.Nacos.AI.INacosAgentSpecRegistry
+Lolitacoding.Nacos.AI.INacosAgentSpecRegistry.GetAgentSpecAsync(string! agentSpecName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosAgentSpec!>!
+Lolitacoding.Nacos.AI.INacosAgentSpecRegistry.SubscribeAgentSpecAsync(string! agentSpecName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.AI.NacosAgentSpec?>!
+Lolitacoding.Nacos.AI.INacosAIClient
+Lolitacoding.Nacos.AI.INacosAIClient.Agent.get -> Lolitacoding.Nacos.AI.INacosAgentRegistry!
+Lolitacoding.Nacos.AI.INacosAIClient.AgentCard.get -> Lolitacoding.Nacos.AI.INacosAgentCardRegistry!
+Lolitacoding.Nacos.AI.INacosAIClient.AgentSpec.get -> Lolitacoding.Nacos.AI.INacosAgentSpecRegistry!
+Lolitacoding.Nacos.AI.INacosAIClient.Mcp.get -> Lolitacoding.Nacos.AI.INacosMcpRegistry!
+Lolitacoding.Nacos.AI.INacosAIClient.Prompt.get -> Lolitacoding.Nacos.AI.INacosPromptRegistry!
+Lolitacoding.Nacos.AI.INacosAIClient.Skill.get -> Lolitacoding.Nacos.AI.INacosSkillRegistry!
+Lolitacoding.Nacos.AI.INacosMcpRegistry
+Lolitacoding.Nacos.AI.INacosMcpRegistry.DeregisterServerEndpointAsync(string! name, string! address, int port, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.AI.INacosMcpRegistry.GetServerAsync(string! name, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosMcpServerDetail!>!
+Lolitacoding.Nacos.AI.INacosMcpRegistry.RegisterServerEndpointAsync(string! name, string! address, int port, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+Lolitacoding.Nacos.AI.INacosMcpRegistry.ReleaseServerAsync(Lolitacoding.Nacos.AI.NacosMcpServer! server, Lolitacoding.Nacos.AI.NacosMcpToolSpecification? tools = null, Lolitacoding.Nacos.AI.NacosMcpResourceSpecification? resources = null, Lolitacoding.Nacos.AI.NacosMcpEndpointSpec? endpoint = null, bool createDraft = false, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<string?>!
+Lolitacoding.Nacos.AI.INacosMcpRegistry.SubscribeServerAsync(string! name, string? version = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.AI.NacosMcpServerDetail!>!
+Lolitacoding.Nacos.AI.INacosPromptRegistry
+Lolitacoding.Nacos.AI.INacosPromptRegistry.GetPromptAsync(string! promptKey, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosPrompt!>!
+Lolitacoding.Nacos.AI.INacosPromptRegistry.SubscribePromptAsync(string! promptKey, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.AI.NacosPrompt?>!
+Lolitacoding.Nacos.AI.INacosSkillRegistry
+Lolitacoding.Nacos.AI.INacosSkillRegistry.GetSkillAsync(string! skillName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Lolitacoding.Nacos.AI.NacosSkill!>!
+Lolitacoding.Nacos.AI.INacosSkillRegistry.SubscribeSkillAsync(string! skillName, string? version = null, string? label = null, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<Lolitacoding.Nacos.AI.NacosSkill?>!
+Lolitacoding.Nacos.AI.NacosAgentCallInterface
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.DescriptorMediaType.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.DescriptorMediaType.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.EndpointSets.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentEndpointSet!>?
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.EndpointSets.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.EndpointSourceOrder.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.EndpointSourceOrder.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.NacosAgentCallInterface() -> void
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.NativeDescriptor.get -> System.Text.Json.JsonElement?
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.NativeDescriptor.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.Protocol.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.Protocol.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.ProtocolVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCallInterface.ProtocolVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCapabilities
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.ExtendedAgentCard.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.ExtendedAgentCard.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.Extensions.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentExtension!>?
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.Extensions.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.NacosAgentCapabilities() -> void
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.PushNotifications.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.PushNotifications.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.StateTransitionHistory.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.StateTransitionHistory.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.Streaming.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentCapabilities.Streaming.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard
+Lolitacoding.Nacos.AI.NacosAgentCard.AdditionalInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentInterface!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.AdditionalInterfaces.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Capabilities.get -> Lolitacoding.Nacos.AI.NacosAgentCapabilities?
+Lolitacoding.Nacos.AI.NacosAgentCard.Capabilities.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.DefaultInputModes.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.DefaultInputModes.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.DefaultOutputModes.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.DefaultOutputModes.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.Description.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.DocumentationUrl.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.DocumentationUrl.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.IconUrl.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.IconUrl.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.NacosAgentCard() -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.Name.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.PreferredTransport.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.PreferredTransport.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.ProtocolVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.ProtocolVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Provider.get -> Lolitacoding.Nacos.AI.NacosAgentProvider?
+Lolitacoding.Nacos.AI.NacosAgentCard.Provider.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Security.get -> System.Collections.Generic.List<System.Collections.Generic.Dictionary<string!, System.Collections.Generic.List<string!>!>!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.Security.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.SecurityRequirements.get -> System.Collections.Generic.List<System.Collections.Generic.Dictionary<string!, System.Collections.Generic.List<string!>!>!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.SecurityRequirements.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.SecuritySchemes.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
+Lolitacoding.Nacos.AI.NacosAgentCard.SecuritySchemes.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Signatures.get -> System.Collections.Generic.List<System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.Signatures.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Skills.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentSkill!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.Skills.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.SupportedInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentInterface!>?
+Lolitacoding.Nacos.AI.NacosAgentCard.SupportedInterfaces.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.SupportsAuthenticatedExtendedCard.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentCard.SupportsAuthenticatedExtendedCard.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Url.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.Url.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCard.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCard.Version.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCardDetail
+Lolitacoding.Nacos.AI.NacosAgentCardDetail.LatestVersion.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentCardDetail.LatestVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentCardDetail.NacosAgentCardDetail() -> void
+Lolitacoding.Nacos.AI.NacosAgentCardDetail.RegistrationType.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentCardDetail.RegistrationType.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.EndpointSources.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.EndpointSources.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.MetadataSelector.get -> System.Collections.Generic.Dictionary<string!, string!>?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.MetadataSelector.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.NacosAgentDiscoveryFilter() -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.ProtocolVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.ProtocolVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.Protocols.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.Protocols.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.Transports.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter.Transports.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest.Filter.get -> Lolitacoding.Nacos.AI.NacosAgentDiscoveryFilter?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest.Filter.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest.NacosAgentDiscoveryRequest() -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest.NamespaceId.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest.NamespaceId.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest.Reference.get -> Lolitacoding.Nacos.AI.NacosAgentReference?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryRequest.Reference.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.AgentName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.AgentName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.CallInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentCallInterface!>?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.CallInterfaces.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.ContentDigest.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.ContentDigest.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.Description.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.NacosAgentDiscoveryResult() -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.NamespaceId.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.NamespaceId.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.Tags.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.Tags.set -> void
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentDiscoveryResult.Version.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Address.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Address.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.NacosAgentEndpoint() -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Path.get -> string!
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Path.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Port.get -> int
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Port.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Protocol.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Protocol.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.ProtocolVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.ProtocolVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Query.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Query.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.SupportTls.get -> bool
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.SupportTls.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Tenant.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Tenant.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Transport.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Transport.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpoint.Version.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.AgentName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.AgentName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.Endpoints.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint!>?
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.Endpoints.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.NacosAgentEndpointBatch() -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.Protocol.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.Protocol.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.RuntimeVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.RuntimeVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.VersionRange.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpointBatch.VersionRange.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.Endpoints.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint!>?
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.Endpoints.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.LastUpdatedTime.get -> long?
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.LastUpdatedTime.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.NacosAgentEndpointSet() -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.Source.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.Source.set -> void
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.SourceRevision.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentEndpointSet.SourceRevision.set -> void
+Lolitacoding.Nacos.AI.NacosAgentExtension
+Lolitacoding.Nacos.AI.NacosAgentExtension.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentExtension.Description.set -> void
+Lolitacoding.Nacos.AI.NacosAgentExtension.NacosAgentExtension() -> void
+Lolitacoding.Nacos.AI.NacosAgentExtension.Params.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
+Lolitacoding.Nacos.AI.NacosAgentExtension.Params.set -> void
+Lolitacoding.Nacos.AI.NacosAgentExtension.Required.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentExtension.Required.set -> void
+Lolitacoding.Nacos.AI.NacosAgentExtension.Uri.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentExtension.Uri.set -> void
+Lolitacoding.Nacos.AI.NacosAgentInterface
+Lolitacoding.Nacos.AI.NacosAgentInterface.NacosAgentInterface() -> void
+Lolitacoding.Nacos.AI.NacosAgentInterface.ProtocolBinding.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentInterface.ProtocolBinding.set -> void
+Lolitacoding.Nacos.AI.NacosAgentInterface.ProtocolVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentInterface.ProtocolVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentInterface.Tenant.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentInterface.Tenant.set -> void
+Lolitacoding.Nacos.AI.NacosAgentInterface.Transport.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentInterface.Transport.set -> void
+Lolitacoding.Nacos.AI.NacosAgentInterface.Url.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentInterface.Url.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPage<T>
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.NacosAgentPage() -> void
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.PageItems.get -> System.Collections.Generic.List<T>?
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.PageItems.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.PageNumber.get -> int
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.PageNumber.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.PagesAvailable.get -> int
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.PagesAvailable.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.TotalCount.get -> int
+Lolitacoding.Nacos.AI.NacosAgentPage<T>.TotalCount.set -> void
+Lolitacoding.Nacos.AI.NacosAgentProvider
+Lolitacoding.Nacos.AI.NacosAgentProvider.NacosAgentProvider() -> void
+Lolitacoding.Nacos.AI.NacosAgentProvider.Organization.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentProvider.Organization.set -> void
+Lolitacoding.Nacos.AI.NacosAgentProvider.Url.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentProvider.Url.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.AgentName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.AgentName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Author.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Author.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.AutoSubmit.get -> bool
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.AutoSubmit.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.BasedOnVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.BasedOnVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.CallInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentCallInterface!>?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.CallInterfaces.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.ChangeDescription.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.ChangeDescription.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Description.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.DisplayName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.DisplayName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Extensions.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Extensions.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.IconUrl.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.IconUrl.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.NacosAgentPublishRequest() -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Provider.get -> Lolitacoding.Nacos.AI.NacosAgentRegistryProvider?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Provider.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Tags.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Tags.set -> void
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentPublishRequest.Version.set -> void
+Lolitacoding.Nacos.AI.NacosAgentReference
+Lolitacoding.Nacos.AI.NacosAgentReference.AgentName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentReference.AgentName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentReference.Label.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentReference.Label.set -> void
+Lolitacoding.Nacos.AI.NacosAgentReference.NacosAgentReference() -> void
+Lolitacoding.Nacos.AI.NacosAgentReference.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentReference.Version.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRegistrationType
+Lolitacoding.Nacos.AI.NacosAgentRegistryProvider
+Lolitacoding.Nacos.AI.NacosAgentRegistryProvider.NacosAgentRegistryProvider() -> void
+Lolitacoding.Nacos.AI.NacosAgentRegistryProvider.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentRegistryProvider.Name.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRegistryProvider.Url.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentRegistryProvider.Url.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Bindings.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentVersionBinding!>?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Bindings.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Enabled.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Enabled.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Healthy.get -> bool?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Healthy.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Metadata.get -> System.Collections.Generic.Dictionary<string!, string!>?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Metadata.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.NacosAgentRuntimeEndpoint() -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Priority.get -> int?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Priority.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Transport.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Transport.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Uri.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Uri.set -> void
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Weight.get -> double?
+Lolitacoding.Nacos.AI.NacosAgentRuntimeEndpoint.Weight.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.AgentNameContains.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.AgentNameContains.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.NacosAgentSearchRequest() -> void
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.PageNo.get -> int?
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.PageNo.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.PageSize.get -> int?
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.PageSize.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.ProtocolsAny.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.ProtocolsAny.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.TagsAll.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentSearchRequest.TagsAll.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill
+Lolitacoding.Nacos.AI.NacosAgentSkill.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSkill.Description.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill.Examples.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentSkill.Examples.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill.Id.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSkill.Id.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill.InputModes.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentSkill.InputModes.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill.NacosAgentSkill() -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSkill.Name.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill.OutputModes.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentSkill.OutputModes.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSkill.Tags.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentSkill.Tags.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec
+Lolitacoding.Nacos.AI.NacosAgentSpec.BizTags.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpec.BizTags.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.Content.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpec.Content.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpec.Description.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.Md5.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpec.Md5.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.NacosAgentSpec() -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpec.Name.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.NamespaceId.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpec.NamespaceId.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.Resource.get -> System.Collections.Generic.Dictionary<string!, Lolitacoding.Nacos.AI.NacosAgentSpecResource!>?
+Lolitacoding.Nacos.AI.NacosAgentSpec.Resource.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpec.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpec.Version.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpecResource
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Content.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Content.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Metadata.get -> System.Text.Json.JsonElement?
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Metadata.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.NacosAgentSpecResource() -> void
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Name.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.ResourceIdentifier.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.ResourceIdentifier.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Type.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSpecResource.Type.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary
+Lolitacoding.Nacos.AI.NacosAgentSummary.AgentName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.AgentName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.CreateTime.get -> long?
+Lolitacoding.Nacos.AI.NacosAgentSummary.CreateTime.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.Description.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.DisplayName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.DisplayName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.Extensions.get -> System.Collections.Generic.Dictionary<string!, System.Text.Json.JsonElement>?
+Lolitacoding.Nacos.AI.NacosAgentSummary.Extensions.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.IconUrl.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.IconUrl.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.MetaVersion.get -> long?
+Lolitacoding.Nacos.AI.NacosAgentSummary.MetaVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.NacosAgentSummary() -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.NamespaceId.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.NamespaceId.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.Owner.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.Owner.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.Provider.get -> Lolitacoding.Nacos.AI.NacosAgentRegistryProvider?
+Lolitacoding.Nacos.AI.NacosAgentSummary.Provider.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.Scope.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.Scope.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.Status.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentSummary.Status.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.Tags.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentSummary.Tags.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.UpdateTime.get -> long?
+Lolitacoding.Nacos.AI.NacosAgentSummary.UpdateTime.set -> void
+Lolitacoding.Nacos.AI.NacosAgentSummary.VersionInfo.get -> Lolitacoding.Nacos.AI.NacosAgentVersionInfo?
+Lolitacoding.Nacos.AI.NacosAgentSummary.VersionInfo.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionBinding
+Lolitacoding.Nacos.AI.NacosAgentVersionBinding.NacosAgentVersionBinding() -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionBinding.RuntimeVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionBinding.RuntimeVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionBinding.VersionRange.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionBinding.VersionRange.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail.AgentName.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail.AgentName.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail.CallInterfaces.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentCallInterface!>?
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail.CallInterfaces.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail.NacosAgentVersionDetail() -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail.NamespaceId.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionDetail.NamespaceId.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.EditingVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.EditingVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.Labels.get -> System.Collections.Generic.Dictionary<string!, string!>?
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.Labels.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.NacosAgentVersionInfo() -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.OnlineVersions.get -> System.Collections.Generic.List<Lolitacoding.Nacos.AI.NacosAgentVersionSummary!>?
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.OnlineVersions.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.ReviewingVersion.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionInfo.ReviewingVersion.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Author.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Author.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.ChangeDescription.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.ChangeDescription.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.ContentDigest.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.ContentDigest.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.CreateTime.get -> long?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.CreateTime.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Labels.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Labels.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.NacosAgentVersionSummary() -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Protocols.get -> System.Collections.Generic.List<string!>?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Protocols.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.PublishPipelineInfo.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.PublishPipelineInfo.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Status.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Status.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.UpdateTime.get -> long?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.UpdateTime.set -> void
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosAgentVersionSummary.Version.set -> void
+Lolitacoding.Nacos.AI.NacosMcpCapability
+Lolitacoding.Nacos.AI.NacosMcpCapability.Prompt = 1 -> Lolitacoding.Nacos.AI.NacosMcpCapability
+Lolitacoding.Nacos.AI.NacosMcpCapability.Resource = 2 -> Lolitacoding.Nacos.AI.NacosMcpCapability
+Lolitacoding.Nacos.AI.NacosMcpCapability.Tool = 0 -> Lolitacoding.Nacos.AI.NacosMcpCapability
+Lolitacoding.Nacos.AI.NacosMcpEncryptObject
+Lolitacoding.Nacos.AI.NacosMcpEncryptObject.Data.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpEncryptObject.Data.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEncryptObject.EncryptInfo.get -> System.Collections.Generic.IDictionary<string!, string!>?
+Lolitacoding.Nacos.AI.NacosMcpEncryptObject.EncryptInfo.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEncryptObject.NacosMcpEncryptObject() -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointData
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Address.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Address.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Headers.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpKeyValueInput!>?
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Headers.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.NacosMcpEndpointInfo() -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Path.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Path.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Port.get -> int
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Port.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Protocol.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpEndpointInfo.Protocol.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointSpec
+Lolitacoding.Nacos.AI.NacosMcpEndpointSpec.Data.get -> System.Collections.Generic.IDictionary<string!, string!>?
+Lolitacoding.Nacos.AI.NacosMcpEndpointSpec.Data.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointSpec.NacosMcpEndpointSpec() -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointSpec.Type.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpEndpointSpec.Type.set -> void
+Lolitacoding.Nacos.AI.NacosMcpEndpointType
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.EndpointData.get -> System.Text.Json.Nodes.JsonNode?
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.EndpointData.set -> void
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.EndpointType.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.EndpointType.set -> void
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Headers.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpKeyValueInput!>?
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Headers.set -> void
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.NacosMcpFrontEndpointConfig() -> void
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Path.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Path.set -> void
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Protocol.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Protocol.set -> void
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Type.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig.Type.set -> void
+Lolitacoding.Nacos.AI.NacosMcpIcon
+Lolitacoding.Nacos.AI.NacosMcpIcon.MimeType.get -> Lolitacoding.Nacos.AI.NacosMcpIconMimeType?
+Lolitacoding.Nacos.AI.NacosMcpIcon.MimeType.set -> void
+Lolitacoding.Nacos.AI.NacosMcpIcon.NacosMcpIcon() -> void
+Lolitacoding.Nacos.AI.NacosMcpIcon.Sizes.get -> System.Collections.Generic.IList<string!>?
+Lolitacoding.Nacos.AI.NacosMcpIcon.Sizes.set -> void
+Lolitacoding.Nacos.AI.NacosMcpIcon.Src.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpIcon.Src.set -> void
+Lolitacoding.Nacos.AI.NacosMcpIcon.Theme.get -> Lolitacoding.Nacos.AI.NacosMcpIconTheme?
+Lolitacoding.Nacos.AI.NacosMcpIcon.Theme.set -> void
+Lolitacoding.Nacos.AI.NacosMcpIconMimeType
+Lolitacoding.Nacos.AI.NacosMcpIconMimeType.ImageJpeg = 1 -> Lolitacoding.Nacos.AI.NacosMcpIconMimeType
+Lolitacoding.Nacos.AI.NacosMcpIconMimeType.ImageJpg = 2 -> Lolitacoding.Nacos.AI.NacosMcpIconMimeType
+Lolitacoding.Nacos.AI.NacosMcpIconMimeType.ImagePng = 0 -> Lolitacoding.Nacos.AI.NacosMcpIconMimeType
+Lolitacoding.Nacos.AI.NacosMcpIconMimeType.ImageSvgXml = 3 -> Lolitacoding.Nacos.AI.NacosMcpIconMimeType
+Lolitacoding.Nacos.AI.NacosMcpIconMimeType.ImageWebp = 4 -> Lolitacoding.Nacos.AI.NacosMcpIconMimeType
+Lolitacoding.Nacos.AI.NacosMcpIconTheme
+Lolitacoding.Nacos.AI.NacosMcpIconTheme.Dark = 1 -> Lolitacoding.Nacos.AI.NacosMcpIconTheme
+Lolitacoding.Nacos.AI.NacosMcpIconTheme.Light = 0 -> Lolitacoding.Nacos.AI.NacosMcpIconTheme
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Choices.get -> System.Collections.Generic.IList<string!>?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Choices.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.DefaultValue.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.DefaultValue.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Description.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Format.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Format.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.IsRequired.get -> bool?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.IsRequired.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.IsSecret.get -> bool?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.IsSecret.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.NacosMcpKeyValueInput() -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Name.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Placeholder.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Placeholder.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Value.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Value.set -> void
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Variables.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpKeyValueInput.Variables.set -> void
+Lolitacoding.Nacos.AI.NacosMcpProtocol
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig.ExportPath.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig.ExportPath.set -> void
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig.FrontEndpointConfigList.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpFrontEndpointConfig!>?
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig.FrontEndpointConfigList.set -> void
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig.NacosMcpRemoteServiceConfig() -> void
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig.ServiceRef.get -> Lolitacoding.Nacos.AI.NacosMcpServiceRef?
+Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig.ServiceRef.set -> void
+Lolitacoding.Nacos.AI.NacosMcpRepository
+Lolitacoding.Nacos.AI.NacosMcpRepository.Id.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpRepository.Id.set -> void
+Lolitacoding.Nacos.AI.NacosMcpRepository.NacosMcpRepository() -> void
+Lolitacoding.Nacos.AI.NacosMcpRepository.Source.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpRepository.Source.set -> void
+Lolitacoding.Nacos.AI.NacosMcpRepository.Subfolder.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpRepository.Subfolder.set -> void
+Lolitacoding.Nacos.AI.NacosMcpRepository.Url.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpRepository.Url.set -> void
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.EncryptData.get -> Lolitacoding.Nacos.AI.NacosMcpEncryptObject?
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.EncryptData.set -> void
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.Extensions.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.Extensions.set -> void
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.NacosMcpResourceSpecification() -> void
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.ResourceTemplates.get -> System.Text.Json.Nodes.JsonArray?
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.ResourceTemplates.set -> void
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.Resources.get -> System.Text.Json.Nodes.JsonArray?
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.Resources.set -> void
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.SpecificationType.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpResourceSpecification.SpecificationType.set -> void
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.DefaultCredential.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.DefaultCredential.set -> void
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Id.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Id.set -> void
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.In.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.In.set -> void
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.NacosMcpSecurityScheme() -> void
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Name.set -> void
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Scheme.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Scheme.set -> void
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Type.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpSecurityScheme.Type.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer
+Lolitacoding.Nacos.AI.NacosMcpServer.Capabilities.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpCapability>?
+Lolitacoding.Nacos.AI.NacosMcpServer.Capabilities.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.Description.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Enabled.get -> bool
+Lolitacoding.Nacos.AI.NacosMcpServer.Enabled.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.FrontProtocol.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.FrontProtocol.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Icons.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpIcon!>?
+Lolitacoding.Nacos.AI.NacosMcpServer.Icons.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Id.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.Id.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.LocalServerConfig.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpServer.LocalServerConfig.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.NacosMcpServer() -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.Name.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.NamespaceId.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.NamespaceId.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Packages.get -> System.Text.Json.Nodes.JsonArray?
+Lolitacoding.Nacos.AI.NacosMcpServer.Packages.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Protocol.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.Protocol.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.RemoteServerConfig.get -> Lolitacoding.Nacos.AI.NacosMcpRemoteServiceConfig?
+Lolitacoding.Nacos.AI.NacosMcpServer.RemoteServerConfig.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Repository.get -> Lolitacoding.Nacos.AI.NacosMcpRepository?
+Lolitacoding.Nacos.AI.NacosMcpServer.Repository.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Status.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.Status.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.Version.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.VersionDetail.get -> Lolitacoding.Nacos.AI.NacosMcpVersionDetail?
+Lolitacoding.Nacos.AI.NacosMcpServer.VersionDetail.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServer.WebsiteUrl.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServer.WebsiteUrl.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServerDetail
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.AllVersions.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpVersionDetail!>?
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.AllVersions.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.BackendEndpoints.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpEndpointInfo!>?
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.BackendEndpoints.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.FrontendEndpoints.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpEndpointInfo!>?
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.FrontendEndpoints.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.NacosMcpServerDetail() -> void
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.ResourceSpec.get -> Lolitacoding.Nacos.AI.NacosMcpResourceSpecification?
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.ResourceSpec.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.ToolSpec.get -> Lolitacoding.Nacos.AI.NacosMcpToolSpecification?
+Lolitacoding.Nacos.AI.NacosMcpServerDetail.ToolSpec.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServiceRef
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.GroupName.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.GroupName.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.NacosMcpServiceRef() -> void
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.NamespaceId.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.NamespaceId.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.ServiceName.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.ServiceName.set -> void
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.TransportProtocol.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpServiceRef.TransportProtocol.set -> void
+Lolitacoding.Nacos.AI.NacosMcpStatus
+Lolitacoding.Nacos.AI.NacosMcpTool
+Lolitacoding.Nacos.AI.NacosMcpTool.Annotations.get -> Lolitacoding.Nacos.AI.NacosMcpToolAnnotations?
+Lolitacoding.Nacos.AI.NacosMcpTool.Annotations.set -> void
+Lolitacoding.Nacos.AI.NacosMcpTool.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpTool.Description.set -> void
+Lolitacoding.Nacos.AI.NacosMcpTool.InputSchema.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpTool.InputSchema.set -> void
+Lolitacoding.Nacos.AI.NacosMcpTool.Meta.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpTool.Meta.set -> void
+Lolitacoding.Nacos.AI.NacosMcpTool.NacosMcpTool() -> void
+Lolitacoding.Nacos.AI.NacosMcpTool.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpTool.Name.set -> void
+Lolitacoding.Nacos.AI.NacosMcpTool.OutputSchema.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpTool.OutputSchema.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.DestructiveHint.get -> bool?
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.DestructiveHint.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.IdempotentHint.get -> bool?
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.IdempotentHint.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.NacosMcpToolAnnotations() -> void
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.OpenWorldHint.get -> bool?
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.OpenWorldHint.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.ReadOnlyHint.get -> bool?
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.ReadOnlyHint.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.Title.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpToolAnnotations.Title.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolMeta
+Lolitacoding.Nacos.AI.NacosMcpToolMeta.Enabled.get -> bool
+Lolitacoding.Nacos.AI.NacosMcpToolMeta.Enabled.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolMeta.InvokeContext.get -> System.Collections.Generic.IDictionary<string!, string!>?
+Lolitacoding.Nacos.AI.NacosMcpToolMeta.InvokeContext.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolMeta.NacosMcpToolMeta() -> void
+Lolitacoding.Nacos.AI.NacosMcpToolMeta.Templates.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpToolMeta.Templates.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.EncryptData.get -> Lolitacoding.Nacos.AI.NacosMcpEncryptObject?
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.EncryptData.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.Extensions.get -> System.Text.Json.Nodes.JsonObject?
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.Extensions.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.NacosMcpToolSpecification() -> void
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.SecuritySchemes.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpSecurityScheme!>?
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.SecuritySchemes.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.SpecificationType.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.SpecificationType.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.Tools.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosMcpTool!>?
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.Tools.set -> void
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.ToolsMeta.get -> System.Collections.Generic.IDictionary<string!, Lolitacoding.Nacos.AI.NacosMcpToolMeta!>?
+Lolitacoding.Nacos.AI.NacosMcpToolSpecification.ToolsMeta.set -> void
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail.IsLatest.get -> bool?
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail.IsLatest.set -> void
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail.NacosMcpVersionDetail() -> void
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail.ReleaseDate.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail.ReleaseDate.set -> void
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosMcpVersionDetail.Version.set -> void
+Lolitacoding.Nacos.AI.NacosPrompt
+Lolitacoding.Nacos.AI.NacosPrompt.Md5.get -> string?
+Lolitacoding.Nacos.AI.NacosPrompt.Md5.set -> void
+Lolitacoding.Nacos.AI.NacosPrompt.NacosPrompt() -> void
+Lolitacoding.Nacos.AI.NacosPrompt.PromptKey.get -> string?
+Lolitacoding.Nacos.AI.NacosPrompt.PromptKey.set -> void
+Lolitacoding.Nacos.AI.NacosPrompt.Template.get -> string?
+Lolitacoding.Nacos.AI.NacosPrompt.Template.set -> void
+Lolitacoding.Nacos.AI.NacosPrompt.Variables.get -> System.Collections.Generic.IList<Lolitacoding.Nacos.AI.NacosPromptVariable!>?
+Lolitacoding.Nacos.AI.NacosPrompt.Variables.set -> void
+Lolitacoding.Nacos.AI.NacosPrompt.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosPrompt.Version.set -> void
+Lolitacoding.Nacos.AI.NacosPromptVariable
+Lolitacoding.Nacos.AI.NacosPromptVariable.DefaultValue.get -> string?
+Lolitacoding.Nacos.AI.NacosPromptVariable.DefaultValue.set -> void
+Lolitacoding.Nacos.AI.NacosPromptVariable.Description.get -> string?
+Lolitacoding.Nacos.AI.NacosPromptVariable.Description.set -> void
+Lolitacoding.Nacos.AI.NacosPromptVariable.NacosPromptVariable() -> void
+Lolitacoding.Nacos.AI.NacosPromptVariable.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosPromptVariable.Name.set -> void
+Lolitacoding.Nacos.AI.NacosSkill
+Lolitacoding.Nacos.AI.NacosSkill.Archive.get -> System.ReadOnlyMemory<byte>
+Lolitacoding.Nacos.AI.NacosSkill.Archive.set -> void
+Lolitacoding.Nacos.AI.NacosSkill.Md5.get -> string?
+Lolitacoding.Nacos.AI.NacosSkill.Md5.set -> void
+Lolitacoding.Nacos.AI.NacosSkill.NacosSkill() -> void
+Lolitacoding.Nacos.AI.NacosSkill.Name.get -> string?
+Lolitacoding.Nacos.AI.NacosSkill.Name.set -> void
+Lolitacoding.Nacos.AI.NacosSkill.Version.get -> string?
+Lolitacoding.Nacos.AI.NacosSkill.Version.set -> void
 Lolitacoding.Nacos.Client.NacosClient
-Lolitacoding.Nacos.Client.NacosClient.Ai.get -> Lolitacoding.Nacos.Ai.INacosAiClient!
+Lolitacoding.Nacos.Client.NacosClient.AI.get -> Lolitacoding.Nacos.AI.INacosAIClient!
 Lolitacoding.Nacos.Client.NacosClient.Config.get -> Lolitacoding.Nacos.Config.INacosConfigClient!
 Lolitacoding.Nacos.Client.NacosClient.ConnectAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 Lolitacoding.Nacos.Client.NacosClient.DisposeAsync() -> System.Threading.Tasks.ValueTask
@@ -839,14 +839,14 @@ Lolitacoding.Nacos.NacosAgentWatchTransport.Auto = 0 -> Lolitacoding.Nacos.Nacos
 Lolitacoding.Nacos.NacosAgentWatchTransport.Grpc = 1 -> Lolitacoding.Nacos.NacosAgentWatchTransport
 Lolitacoding.Nacos.NacosAgentWatchTransport.Http = 2 -> Lolitacoding.Nacos.NacosAgentWatchTransport
 Lolitacoding.Nacos.NacosAgentWatchTransport.Polling = 3 -> Lolitacoding.Nacos.NacosAgentWatchTransport
-Lolitacoding.Nacos.NacosAiOptions
-Lolitacoding.Nacos.NacosAiOptions.AgentWatchTransport.get -> Lolitacoding.Nacos.NacosAgentWatchTransport
-Lolitacoding.Nacos.NacosAiOptions.AgentWatchTransport.set -> void
-Lolitacoding.Nacos.NacosAiOptions.CacheRefreshInterval.get -> System.TimeSpan
-Lolitacoding.Nacos.NacosAiOptions.CacheRefreshInterval.set -> void
-Lolitacoding.Nacos.NacosAiOptions.EnableLocalCache.get -> bool
-Lolitacoding.Nacos.NacosAiOptions.EnableLocalCache.set -> void
-Lolitacoding.Nacos.NacosAiOptions.NacosAiOptions() -> void
+Lolitacoding.Nacos.NacosAIOptions
+Lolitacoding.Nacos.NacosAIOptions.AgentWatchTransport.get -> Lolitacoding.Nacos.NacosAgentWatchTransport
+Lolitacoding.Nacos.NacosAIOptions.AgentWatchTransport.set -> void
+Lolitacoding.Nacos.NacosAIOptions.CacheRefreshInterval.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosAIOptions.CacheRefreshInterval.set -> void
+Lolitacoding.Nacos.NacosAIOptions.EnableLocalCache.get -> bool
+Lolitacoding.Nacos.NacosAIOptions.EnableLocalCache.set -> void
+Lolitacoding.Nacos.NacosAIOptions.NacosAIOptions() -> void
 Lolitacoding.Nacos.NacosAuthException
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException() -> void
 Lolitacoding.Nacos.NacosAuthException.NacosAuthException(int errorCode, string! message) -> void
@@ -894,8 +894,8 @@ Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.set -> void
 Lolitacoding.Nacos.NacosNamingOptions.NacosNamingOptions() -> void
 Lolitacoding.Nacos.NacosOptions
-Lolitacoding.Nacos.NacosOptions.Ai.get -> Lolitacoding.Nacos.NacosAiOptions!
-Lolitacoding.Nacos.NacosOptions.Ai.set -> void
+Lolitacoding.Nacos.NacosOptions.AI.get -> Lolitacoding.Nacos.NacosAIOptions!
+Lolitacoding.Nacos.NacosOptions.AI.set -> void
 Lolitacoding.Nacos.NacosOptions.AppName.get -> string?
 Lolitacoding.Nacos.NacosOptions.AppName.set -> void
 Lolitacoding.Nacos.NacosOptions.Config.get -> Lolitacoding.Nacos.NacosConfigOptions!
@@ -1087,23 +1087,23 @@ Lolitacoding.Nacos.Naming.NacosServiceWatchKind.Removed = 2 -> Lolitacoding.Naco
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.NacosWeightedRandomLoadBalancer(System.Random? random = null) -> void
 Lolitacoding.Nacos.Naming.NacosWeightedRandomLoadBalancer.Select(System.Collections.Generic.IReadOnlyList<Lolitacoding.Nacos.Naming.NacosInstance!>! instances) -> Lolitacoding.Nacos.Naming.NacosInstance?
-const Lolitacoding.Nacos.Ai.NacosAgentRegistrationType.Service = "SERVICE" -> string!
-const Lolitacoding.Nacos.Ai.NacosAgentRegistrationType.Url = "URL" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.Address = "address" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.GroupName = "groupName" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.NamespaceId = "namespaceId" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.Port = "port" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpEndpointData.ServiceName = "serviceName" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpEndpointType.Direct = "DIRECT" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpEndpointType.Ref = "REF" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Dubbo = "dubbo" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Http = "http" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Sse = "mcp-sse" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Stdio = "stdio" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpProtocol.Streamable = "mcp-streamable" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpStatus.Active = "active" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpStatus.Deleted = "deleted" -> string!
-const Lolitacoding.Nacos.Ai.NacosMcpStatus.Deprecated = "deprecated" -> string!
+const Lolitacoding.Nacos.AI.NacosAgentRegistrationType.Service = "SERVICE" -> string!
+const Lolitacoding.Nacos.AI.NacosAgentRegistrationType.Url = "URL" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpEndpointData.Address = "address" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpEndpointData.GroupName = "groupName" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpEndpointData.NamespaceId = "namespaceId" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpEndpointData.Port = "port" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpEndpointData.ServiceName = "serviceName" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpEndpointType.Direct = "DIRECT" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpEndpointType.Ref = "REF" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpProtocol.Dubbo = "dubbo" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpProtocol.Http = "http" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpProtocol.Sse = "mcp-sse" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpProtocol.Stdio = "stdio" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpProtocol.Streamable = "mcp-streamable" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpStatus.Active = "active" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpStatus.Deleted = "deleted" -> string!
+const Lolitacoding.Nacos.AI.NacosMcpStatus.Deprecated = "deprecated" -> string!
 const Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter.FilterName = "Lolitacoding.Nacos.Config.NacosConfigEncryptionFilter" -> string!
 const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.ActivitySourceName = "Lolitacoding.Nacos" -> string!
 const Lolitacoding.Nacos.Diagnostics.NacosDiagnostics.MeterName = "Lolitacoding.Nacos" -> string!

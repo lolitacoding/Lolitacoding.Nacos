@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -39,19 +39,19 @@ public sealed class AgentWatchIntegrationTests
         // The publish is a precondition — the watch is what this test is about — so a refusal that is
         // the server's own read-back timing is repeated rather than reported.
         await NacosEventually.WritesAsync(
-            () => client.Ai.Agent.PublishAgentAsync(Publish(agentName, "1.0.0"), ct),
+            () => client.AI.Agent.PublishAgentAsync(Publish(agentName, "1.0.0"), ct),
             ct);
 
         // The watch is opened once the first version is the one a discovery resolves, so the first
         // element it reports is a fact about the agent rather than about how far the publish got.
         await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0",
             ct);
 
         await using IAsyncEnumerator<NacosAgentDiscoveryResult?> changes =
-            client.Ai.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
+            client.AI.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
                 .GetAsyncEnumerator(ct);
 
         // The wait is bounded rather than open-ended, so a watch that installed itself and then never
@@ -65,7 +65,7 @@ public sealed class AgentWatchIntegrationTests
         // server sees after the watch was installed, and a repeated publish of a version that exists
         // is answered with the version rather than refused.
         await NacosEventually.PushedAsync(
-            changeCt => client.Ai.Agent.PublishAgentAsync(Publish(agentName, "2.0.0"), changeCt),
+            changeCt => client.AI.Agent.PublishAgentAsync(Publish(agentName, "2.0.0"), changeCt),
             changes,
             value => value?.Version == "2.0.0",
             ct);
@@ -86,17 +86,17 @@ public sealed class AgentWatchIntegrationTests
         string agentName = NacosHttp.UniqueId("rad-http-watch");
 
         await NacosEventually.WritesAsync(
-            () => client.Ai.Agent.PublishAgentAsync(Publish(agentName, "1.0.0"), ct),
+            () => client.AI.Agent.PublishAgentAsync(Publish(agentName, "1.0.0"), ct),
             ct);
 
         await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0",
             ct);
 
         await using IAsyncEnumerator<NacosAgentDiscoveryResult?> changes =
-            client.Ai.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
+            client.AI.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
                 .GetAsyncEnumerator(ct);
 
         // The batch is registered against the fingerprint of the state just read, so this also proves
@@ -108,7 +108,7 @@ public sealed class AgentWatchIntegrationTests
         changes.Current.Version.ShouldBe("1.0.0");
 
         await NacosEventually.PushedAsync(
-            changeCt => client.Ai.Agent.PublishAgentAsync(Publish(agentName, "2.0.0"), changeCt),
+            changeCt => client.AI.Agent.PublishAgentAsync(Publish(agentName, "2.0.0"), changeCt),
             changes,
             value => value?.Version == "2.0.0",
             ct);
@@ -127,7 +127,7 @@ public sealed class AgentWatchIntegrationTests
         string agentName = NacosHttp.UniqueId("rad-absent-watch");
 
         await using IAsyncEnumerator<NacosAgentDiscoveryResult?> changes =
-            client.Ai.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
+            client.AI.Agent.WatchAgentAsync(new NacosAgentReference { AgentName = agentName }, ct: ct)
                 .GetAsyncEnumerator(ct);
 
         // An agent that was never published is a state the watch reports rather than a failure of it,
@@ -186,7 +186,7 @@ public sealed class AgentWatchIntegrationTests
             {
                 ServerAddresses = [container.HttpAddress],
                 ConnectionTimeout = TimeSpan.FromSeconds(15),
-                Ai = new NacosAiOptions
+                AI = new NacosAIOptions
                 {
                     // The interval is the base of the watch's retry backoff, and a short one keeps a
                     // retried read from slowing a test down.

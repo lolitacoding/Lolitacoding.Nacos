@@ -1,4 +1,4 @@
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Locking;
 using Lolitacoding.Nacos.Naming;
@@ -47,7 +47,7 @@ public sealed class NacosClient : IAsyncDisposable, IDisposable
     /// Like the lock client it is not connected until the first AI operation, so reading this
     /// property costs nothing to an application that never uses the registry.
     /// </remarks>
-    public INacosAiClient Ai => _factory.Ai;
+    public INacosAIClient AI => _factory.AI;
 
     /// <summary>
     /// Creates a client from the supplied options.

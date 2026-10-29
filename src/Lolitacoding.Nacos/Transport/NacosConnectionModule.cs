@@ -33,7 +33,7 @@ internal enum NacosConnectionModule
     Lock,
 
     /// <summary>The AI registry. The server discards connections that do not declare it.</summary>
-    Ai,
+    AI,
 }
 
 /// <summary>
@@ -52,7 +52,7 @@ internal static class NacosConnectionModuleExtensions
         NacosConnectionModule.Config => NacosModule.Config,
         NacosConnectionModule.Naming => NacosModule.Naming,
         NacosConnectionModule.Lock => NacosModule.Lock,
-        NacosConnectionModule.Ai => NacosModule.Ai,
+        NacosConnectionModule.AI => NacosModule.AI,
         _ => throw new ArgumentOutOfRangeException(
             nameof(module), module, "The Nacos connection module has no known label."),
     };

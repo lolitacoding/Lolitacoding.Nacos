@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -43,7 +43,7 @@ public sealed class AgentRegistryIntegrationTests
         // autoSubmit is set, so the request asks for it: otherwise the retry would answer with that
         // draft. The first publish is submitted by the pipeline either way.
         NacosAgentVersionDetail published = await NacosEventually.WritesAsync(
-            () => client.Ai.Agent.PublishAgentAsync(
+            () => client.AI.Agent.PublishAgentAsync(
                 new NacosAgentPublishRequest
                 {
                     AgentName = agentName,
@@ -62,10 +62,10 @@ public sealed class AgentRegistryIntegrationTests
         // submitted as it is published, and a retry is submitted because autoSubmit is set. That is
         // what gives the discovery below something to resolve without an approval step.
         published.Version.ShouldBe("1.0.0");
-        published.Status.ShouldBe(NacosAiStatus.VersionOnline);
+        published.Status.ShouldBe(NacosAIStatus.VersionOnline);
 
         NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0" && value.CallInterfaces is { Count: > 0 },
             ct);
@@ -87,7 +87,7 @@ public sealed class AgentRegistryIntegrationTests
         string agentName = NacosHttp.UniqueId("rad-search");
 
         await NacosEventually.WritesAsync(
-            () => client.Ai.Agent.PublishAgentAsync(
+            () => client.AI.Agent.PublishAgentAsync(
                 new NacosAgentPublishRequest
                 {
                     AgentName = agentName,
@@ -105,7 +105,7 @@ public sealed class AgentRegistryIntegrationTests
         // projection on a short poll. The wait therefore spans that task, which is why it is given
         // longer than a read that only waits for the publish to be applied.
         NacosAgentPage<NacosAgentSummary> page = await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.SearchAgentsAsync(
+            () => client.AI.Agent.SearchAgentsAsync(
                 new NacosAgentSearchRequest
                 {
                     AgentNameContains = agentName,
@@ -134,7 +134,7 @@ public sealed class AgentRegistryIntegrationTests
         // that was never published arrives as the AI module's own resource-not-found. The watch
         // decides what to do about an absent agent from that code, which is why it is pinned here.
         NacosServerException exception = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = NacosHttp.UniqueId("rad-absent") }, ct: ct));
 
         exception.ErrorCode.ShouldBe(20004);
@@ -151,7 +151,7 @@ public sealed class AgentRegistryIntegrationTests
         string agentName = NacosHttp.UniqueId("rad-endpoints");
 
         await NacosEventually.WritesAsync(
-            () => client.Ai.Agent.PublishAgentAsync(
+            () => client.AI.Agent.PublishAgentAsync(
                 new NacosAgentPublishRequest
                 {
                     AgentName = agentName,
@@ -164,12 +164,12 @@ public sealed class AgentRegistryIntegrationTests
             ct);
 
         await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => value.Version == "1.0.0",
             ct);
 
-        await client.Ai.Agent.RegisterEndpointsAsync(
+        await client.AI.Agent.RegisterEndpointsAsync(
             new NacosAgentEndpointBatch
             {
                 AgentName = agentName,
@@ -194,7 +194,7 @@ public sealed class AgentRegistryIntegrationTests
         // The registered endpoint is what a caller is meant to reach, so it has to be what the
         // discovery reports rather than something only the publisher can see.
         NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName },
                 ct: ct),
             value => RuntimeUris(value).Contains("http://10.0.0.7:9000/a2a"),
@@ -214,7 +214,7 @@ public sealed class AgentRegistryIntegrationTests
         string agentName = NacosHttp.UniqueId("rad-withdraw");
 
         await NacosEventually.WritesAsync(
-            () => client.Ai.Agent.PublishAgentAsync(
+            () => client.AI.Agent.PublishAgentAsync(
                 new NacosAgentPublishRequest
                 {
                     AgentName = agentName,
@@ -225,7 +225,7 @@ public sealed class AgentRegistryIntegrationTests
                 ct),
             ct);
 
-        await client.Ai.Agent.RegisterEndpointsAsync(
+        await client.AI.Agent.RegisterEndpointsAsync(
             new NacosAgentEndpointBatch
             {
                 AgentName = agentName,
@@ -248,17 +248,17 @@ public sealed class AgentRegistryIntegrationTests
             ct);
 
         await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName }, ct: ct),
             value => RuntimeUris(value).Contains("http://10.0.0.8:9001/a2a"),
             ct);
 
-        await client.Ai.Agent.DeregisterEndpointsAsync(agentName, "a2a", ct);
+        await client.AI.Agent.DeregisterEndpointsAsync(agentName, "a2a", ct);
 
         // The removal is by protocol because the endpoints a process registered are only meaningful
         // as a set, so what a discovery reports afterwards has none of them.
         NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
-            () => client.Ai.Agent.DiscoverAgentAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
                 new NacosAgentReference { AgentName = agentName },
                 ct: ct),
             value => !RuntimeUris(value).Contains("http://10.0.0.8:9001/a2a"),

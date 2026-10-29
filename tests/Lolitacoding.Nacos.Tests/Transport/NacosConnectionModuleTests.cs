@@ -17,7 +17,7 @@ public sealed class NacosConnectionModuleTests
         NacosConnectionModule.Config.ToLabel().ShouldBe("config");
         NacosConnectionModule.Naming.ToLabel().ShouldBe("naming");
         NacosConnectionModule.Lock.ToLabel().ShouldBe("lock");
-        NacosConnectionModule.Ai.ToLabel().ShouldBe("ai");
+        NacosConnectionModule.AI.ToLabel().ShouldBe("ai");
     }
 
     [Fact]

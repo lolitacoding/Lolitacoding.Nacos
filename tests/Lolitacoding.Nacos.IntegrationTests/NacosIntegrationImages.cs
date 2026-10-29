@@ -53,10 +53,10 @@ internal static class NacosIntegrationImages
     /// suite is checked against that serves the registry; the newer releases are checked through
     /// this same variable.
     /// </remarks>
-    public static readonly string AiImage =
+    public static readonly string AIImage =
         Environment.GetEnvironmentVariable("NACOS_AI_TEST_IMAGE") is { Length: > 0 } image
             ? image
-            : PinnedAiImage;
+            : PinnedAIImage;
 
     /// <summary>
     /// The image the RAD agent registry tests run against: <c>NACOS_AGENT_TEST_IMAGE</c> when it is
@@ -91,7 +91,7 @@ internal static class NacosIntegrationImages
     /// run has confirmed that release serves the whole contract, or up when a newer feature — the
     /// agent registry in particular — needs a newer server.
     /// </remarks>
-    private const string PinnedAiImage = "nacos/nacos-server:v3.2.4";
+    private const string PinnedAIImage = "nacos/nacos-server:v3.2.4";
 
     /// <summary>
     /// The pinned release the lock tests are checked against.

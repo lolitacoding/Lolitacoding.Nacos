@@ -95,7 +95,7 @@ public sealed class NacosGrpcConnectionTests
         };
 
         await using NacosGrpcConnection connection =
-            CreateConnection(factory, module: NacosConnectionModule.Ai, extraLabels: extraLabels);
+            CreateConnection(factory, module: NacosConnectionModule.AI, extraLabels: extraLabels);
         await connection.ConnectAsync(TestContext.Current.CancellationToken);
 
         ConnectionSetupRequest setup =

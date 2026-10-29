@@ -365,7 +365,7 @@ Under `NacosOptions.LocalCacheDirectory`. When it is unset, a per-user folder is
 ```
 
 Set `Config.EnableLocalCache = false`, `Naming.EnableLocalCache = false` or
-`Ai.EnableLocalCache = false` to disable caching.
+`AI.EnableLocalCache = false` to disable caching.
 Cached values are only used when the server is unreachable; `NacosConfigResult.FromLocalCache` and
 `NacosServiceInfo.FromLocalCache` tell you when that happened.
 
@@ -381,7 +381,7 @@ failure is swallowed so it never fails the lookup, which is why it has to be rep
 
 ## Does the AI registry cache survive a restart?
 
-Yes, when `Ai.EnableLocalCache` is on (the default). An MCP, prompt, skill, agent-specification or
+Yes, when `AI.EnableLocalCache` is on (the default). An MCP, prompt, skill, agent-specification or
 agent-card **subscription** writes the resource it read to the snapshot directory, and a client that
 starts while Nacos is unreachable is answered from that copy instead of failing — which is the
 difference between an agent host that comes back up during an outage and one that cannot start.
@@ -417,9 +417,9 @@ whole watch set together with the fingerprint of the state it holds, and the ser
 open until one of those fingerprints no longer matches or the long-poll timeout elapses. It is the
 same interest expressed in a way that survives a channel that cannot be pushed to.
 
-`NacosAiOptions.AgentWatchTransport` decides which one is used. `Auto` (the default) prefers gRPC,
+`NacosAIOptions.AgentWatchTransport` decides which one is used. `Auto` (the default) prefers gRPC,
 falls back to the batch when the push is not available, and falls back to re-reading at
-`Ai.CacheRefreshInterval` when neither is; `Grpc`, `Http` and `Polling` pin one. Pin `Http` when the
+`AI.CacheRefreshInterval` when neither is; `Grpc`, `Http` and `Polling` pin one. Pin `Http` when the
 push channel is unreliable but a long poll passes through the proxy, pin `Polling` when the proxy
 holds long polls open or blocks them, and leave `Auto` alone otherwise. See
 [the protocol notes](protocol-notes.md#rad-agent-watch) for the endpoint, the fingerprint and the

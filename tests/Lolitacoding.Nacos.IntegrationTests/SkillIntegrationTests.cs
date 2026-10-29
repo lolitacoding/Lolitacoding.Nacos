@@ -1,5 +1,5 @@
 using System.IO.Compression;
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -41,7 +41,7 @@ public sealed class SkillIntegrationTests
     public async Task PublishAndRead_RoundTripsThroughARealServer()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -67,7 +67,7 @@ public sealed class SkillIntegrationTests
         // than only on the version resolving — a read that stopped at the version would hand back a
         // skill with nothing in it.
         NacosSkill skill = await NacosEventually.BecomesAsync(
-            () => client.Ai.Skill.GetSkillAsync(skillName, ct: ct),
+            () => client.AI.Skill.GetSkillAsync(skillName, ct: ct),
             value => value.Version == FirstVersion && value.Archive.Length > 0,
             ct);
 
@@ -91,7 +91,7 @@ public sealed class SkillIntegrationTests
     public async Task GetSkillAsync_ResolvesAVersionAndALabelTheWayTheServerDoes()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -135,7 +135,7 @@ public sealed class SkillIntegrationTests
 
         // A read that names no version resolves to the version labelled latest.
         NacosSkill latest = await NacosEventually.BecomesAsync(
-            () => client.Ai.Skill.GetSkillAsync(skillName, ct: ct),
+            () => client.AI.Skill.GetSkillAsync(skillName, ct: ct),
             value => value.Version == SecondVersion && value.Archive.Length > 0,
             ct);
 
@@ -144,14 +144,14 @@ public sealed class SkillIntegrationTests
 
         // A read that names a version resolves to that version rather than to the current one, which
         // is what lets a caller pin an older version after a newer one was published.
-        NacosSkill pinned = await client.Ai.Skill.GetSkillAsync(skillName, FirstVersion, ct: ct);
+        NacosSkill pinned = await client.AI.Skill.GetSkillAsync(skillName, FirstVersion, ct: ct);
 
         pinned.Version.ShouldBe(FirstVersion);
         ReadEntries(pinned)[string.Concat(skillName, "/SKILL.md")].ShouldContain("Version one.");
 
         // A label is a pointer the server moves; reading it back is what shows the client sends the
         // label rather than guessing which version it points at.
-        NacosSkill labelled = await client.Ai.Skill.GetSkillAsync(skillName, label: "stable", ct: ct);
+        NacosSkill labelled = await client.AI.Skill.GetSkillAsync(skillName, label: "stable", ct: ct);
 
         labelled.Version.ShouldBe(FirstVersion);
     }
@@ -160,7 +160,7 @@ public sealed class SkillIntegrationTests
     public async Task GetSkillAsync_ReportsAnUnknownSkillAndAnUnknownVersion()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -184,12 +184,12 @@ public sealed class SkillIntegrationTests
             ct: ct);
 
         NacosServerException unknownSkill = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.Skill.GetSkillAsync(NacosHttp.UniqueId("skill-nothing"), ct: ct));
+            () => client.AI.Skill.GetSkillAsync(NacosHttp.UniqueId("skill-nothing"), ct: ct));
 
         unknownSkill.ErrorCode.ShouldBe(404);
 
         NacosServerException unknownVersion = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.Skill.GetSkillAsync(skillName, "9.9.9", ct: ct));
+            () => client.AI.Skill.GetSkillAsync(skillName, "9.9.9", ct: ct));
 
         unknownVersion.ErrorCode.ShouldBe(404);
     }
@@ -198,7 +198,7 @@ public sealed class SkillIntegrationTests
     public async Task SubscribeSkillAsync_ReportsANewVersion()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container, TimeSpan.FromMilliseconds(500));
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -219,7 +219,7 @@ public sealed class SkillIntegrationTests
             ct: ct);
 
         await using IAsyncEnumerator<NacosSkill?> changes =
-            client.Ai.Skill.SubscribeSkillAsync(skillName, ct: ct).GetAsyncEnumerator(ct);
+            client.AI.Skill.SubscribeSkillAsync(skillName, ct: ct).GetAsyncEnumerator(ct);
 
         (await changes.MoveNextAsync()).ShouldBeTrue();
         changes.Current.ShouldNotBeNull();
@@ -247,7 +247,7 @@ public sealed class SkillIntegrationTests
     public async Task SubscribeSkillAsync_ReportsAWithdrawal()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container, TimeSpan.FromMilliseconds(500));
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -268,7 +268,7 @@ public sealed class SkillIntegrationTests
             ct: ct);
 
         await using IAsyncEnumerator<NacosSkill?> changes =
-            client.Ai.Skill.SubscribeSkillAsync(skillName, ct: ct).GetAsyncEnumerator(ct);
+            client.AI.Skill.SubscribeSkillAsync(skillName, ct: ct).GetAsyncEnumerator(ct);
 
         (await changes.MoveNextAsync()).ShouldBeTrue();
         changes.Current.ShouldNotBeNull();
@@ -313,7 +313,7 @@ public sealed class SkillIntegrationTests
             {
                 ServerAddresses = [container.HttpAddress],
                 ConnectionTimeout = TimeSpan.FromSeconds(15),
-                Ai = new NacosAiOptions
+                AI = new NacosAIOptions
                 {
                     CacheRefreshInterval = cacheRefreshInterval ?? TimeSpan.FromSeconds(10),
                 },

@@ -1,4 +1,4 @@
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Auth;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Internal;
@@ -34,7 +34,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     private readonly NacosConfigClient _config;
     private readonly NacosNamingClient _naming;
     private readonly NacosLockClient _lock;
-    private readonly NacosAiClient _ai;
+    private readonly NacosAIClient _ai;
     private readonly NacosEndpointServerListProvider? _endpointProvider;
     private readonly ILogger<NacosClientFactory> _logger;
 
@@ -47,7 +47,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         NacosConfigClient config,
         NacosNamingClient naming,
         NacosLockClient @lock,
-        NacosAiClient ai,
+        NacosAIClient ai,
         NacosEndpointServerListProvider? endpointProvider,
         ILogger<NacosClientFactory> logger)
     {
@@ -80,7 +80,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// Like the lock client this one is not connected until it is first used, so an application
     /// that never asks the registry for anything pays nothing for it.
     /// </remarks>
-    public INacosAiClient Ai => _ai;
+    public INacosAIClient AI => _ai;
 
     /// <summary>
     /// Creates the clients and their per-module connections.
@@ -181,7 +181,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
 
         NacosConfigSnapshotStore? configSnapshots = CreateConfigSnapshotStore(options, loggerFactory);
         NacosServiceSnapshotStore? namingSnapshots = CreateServiceSnapshotStore(options, loggerFactory);
-        NacosAiSnapshotStore? aiSnapshots = CreateAiSnapshotStore(options, loggerFactory);
+        NacosAISnapshotStore? aiSnapshots = CreateAISnapshotStore(options, loggerFactory);
 
         var config = new NacosConfigClient(
             options,
@@ -206,7 +206,7 @@ internal sealed class NacosClientFactory : IAsyncDisposable
             random,
             authProvider);
 
-        var ai = new NacosAiClient(
+        var ai = new NacosAIClient(
             options,
             servers,
             channels,
@@ -415,12 +415,12 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// <param name="options">The client options.</param>
     /// <param name="loggerFactory">The factory the store logs through.</param>
     /// <returns>The store, or <see langword="null"/> when caching is disabled.</returns>
-    private static NacosAiSnapshotStore? CreateAiSnapshotStore(
+    private static NacosAISnapshotStore? CreateAISnapshotStore(
         NacosOptions options,
         ILoggerFactory loggerFactory) =>
-        options.Ai.EnableLocalCache
-            ? new NacosAiSnapshotStore(
-                ResolveCacheDirectory(options), loggerFactory.CreateLogger<NacosAiSnapshotStore>())
+        options.AI.EnableLocalCache
+            ? new NacosAISnapshotStore(
+                ResolveCacheDirectory(options), loggerFactory.CreateLogger<NacosAISnapshotStore>())
             : null;
 
     /// <summary>

@@ -37,7 +37,7 @@ and `Naming`.
 | `Reconnect` | `NacosReconnectOptions` | see below | Reconnect policy. |
 | `Config` | `NacosConfigOptions` | see below | Configuration-centre options. |
 | `Naming` | `NacosNamingOptions` | see below | Naming options. |
-| `Ai` | `NacosAiOptions` | see below | AI registry options. |
+| `AI` | `NacosAIOptions` | see below | AI registry options. |
 
 ### Address-server discovery
 
@@ -112,7 +112,7 @@ stay invisible until the outage that needs it. The naming store reports `5010` (
 | `EnableLocalCache` | `bool` | `true` | Write the last known service list to disk so a restart during an outage can still resolve it. |
 | `FuzzyWatchResyncInterval` | `TimeSpan` | 3 min | How often every naming pattern watch is re-sent so a push lost on a healthy connection is repaired. The server answers a re-sent watch with a diff, so the repetition is idempotent. Must be positive. |
 
-### `NacosAiOptions`
+### `NacosAIOptions`
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |

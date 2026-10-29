@@ -1,4 +1,4 @@
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -35,7 +35,7 @@ public sealed class AgentSpecIntegrationTests
     public async Task PublishAndRead_RoundTripsThroughARealServer()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -60,7 +60,7 @@ public sealed class AgentSpecIntegrationTests
         // it is populated from the stored manifest a moment later — so the wait is on the state the
         // assertions below are about, not just on the version being resolvable.
         NacosAgentSpec spec = await NacosEventually.BecomesAsync(
-            () => client.Ai.AgentSpec.GetAgentSpecAsync(agentSpecName, ct: ct),
+            () => client.AI.AgentSpec.GetAgentSpecAsync(agentSpecName, ct: ct),
             value => value.Version == FirstVersion && value.Resource is { Count: > 0 },
             ct);
 
@@ -86,7 +86,7 @@ public sealed class AgentSpecIntegrationTests
     public async Task GetAgentSpecAsync_ResolvesALabelBeforeAVersion()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -129,26 +129,26 @@ public sealed class AgentSpecIntegrationTests
 
         // A read that names no selector resolves through latest, which the second publish moved.
         NacosAgentSpec latest = await NacosEventually.BecomesAsync(
-            () => client.Ai.AgentSpec.GetAgentSpecAsync(agentSpecName, ct: ct),
+            () => client.AI.AgentSpec.GetAgentSpecAsync(agentSpecName, ct: ct),
             value => value.Version == SecondVersion,
             ct);
 
         latest.Description.ShouldBe("Version two.");
 
         // A label wins over a version on this resource, which is the opposite order to a prompt's.
-        NacosAgentSpec both = await client.Ai.AgentSpec.GetAgentSpecAsync(
+        NacosAgentSpec both = await client.AI.AgentSpec.GetAgentSpecAsync(
             agentSpecName, version: SecondVersion, label: "stable", ct: ct);
 
         both.Version.ShouldBe(FirstVersion);
         both.Description.ShouldBe("Version one.");
 
         // Naming the version alone pins it, and naming the label alone resolves through it.
-        NacosAgentSpec pinned = await client.Ai.AgentSpec.GetAgentSpecAsync(
+        NacosAgentSpec pinned = await client.AI.AgentSpec.GetAgentSpecAsync(
             agentSpecName, version: SecondVersion, ct: ct);
 
         pinned.Version.ShouldBe(SecondVersion);
 
-        NacosAgentSpec labelled = await client.Ai.AgentSpec.GetAgentSpecAsync(
+        NacosAgentSpec labelled = await client.AI.AgentSpec.GetAgentSpecAsync(
             agentSpecName, label: "stable", ct: ct);
 
         labelled.Version.ShouldBe(FirstVersion);
@@ -158,7 +158,7 @@ public sealed class AgentSpecIntegrationTests
     public async Task GetAgentSpecAsync_ReportsAnUnknownNameAndAnUnknownVersion()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -181,12 +181,12 @@ public sealed class AgentSpecIntegrationTests
         // A release first, so that the version error is the registry's answer to a version rather
         // than to a name that does not exist at all. The two are different failures.
         NacosServerException unknownName = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.AgentSpec.GetAgentSpecAsync(NacosHttp.UniqueId("spec-nothing"), ct: ct));
+            () => client.AI.AgentSpec.GetAgentSpecAsync(NacosHttp.UniqueId("spec-nothing"), ct: ct));
 
         unknownName.ErrorCode.ShouldBe(404);
 
         NacosServerException unknownVersion = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.AgentSpec.GetAgentSpecAsync(agentSpecName, "9.9.9", ct: ct));
+            () => client.AI.AgentSpec.GetAgentSpecAsync(agentSpecName, "9.9.9", ct: ct));
 
         unknownVersion.ErrorCode.ShouldBe(404);
     }
@@ -195,7 +195,7 @@ public sealed class AgentSpecIntegrationTests
     public async Task SubscribeAgentSpecAsync_ReportsANewVersion()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container, TimeSpan.FromMilliseconds(500));
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -216,7 +216,7 @@ public sealed class AgentSpecIntegrationTests
             ct: ct);
 
         await using IAsyncEnumerator<NacosAgentSpec?> changes =
-            client.Ai.AgentSpec.SubscribeAgentSpecAsync(agentSpecName, ct: ct).GetAsyncEnumerator(ct);
+            client.AI.AgentSpec.SubscribeAgentSpecAsync(agentSpecName, ct: ct).GetAsyncEnumerator(ct);
 
         (await changes.MoveNextAsync()).ShouldBeTrue();
         changes.Current.ShouldNotBeNull();
@@ -244,7 +244,7 @@ public sealed class AgentSpecIntegrationTests
     public async Task SubscribeAgentSpecAsync_ReportsAWithdrawal()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container, TimeSpan.FromMilliseconds(500));
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -265,7 +265,7 @@ public sealed class AgentSpecIntegrationTests
             ct: ct);
 
         await using IAsyncEnumerator<NacosAgentSpec?> changes =
-            client.Ai.AgentSpec.SubscribeAgentSpecAsync(agentSpecName, ct: ct).GetAsyncEnumerator(ct);
+            client.AI.AgentSpec.SubscribeAgentSpecAsync(agentSpecName, ct: ct).GetAsyncEnumerator(ct);
 
         (await changes.MoveNextAsync()).ShouldBeTrue();
         changes.Current.ShouldNotBeNull();
@@ -290,7 +290,7 @@ public sealed class AgentSpecIntegrationTests
             {
                 ServerAddresses = [container.HttpAddress],
                 ConnectionTimeout = TimeSpan.FromSeconds(15),
-                Ai = new NacosAiOptions
+                AI = new NacosAIOptions
                 {
                     CacheRefreshInterval = cacheRefreshInterval ?? TimeSpan.FromSeconds(10),
                 },

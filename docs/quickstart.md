@@ -158,7 +158,7 @@ public sealed class MyService(NacosClient nacos)
 ```
 
 `AddNacos` registers `NacosClient` and each feature client — `INacosConfigClient`,
-`INacosNamingClient`, `INacosLockClient` and `INacosAiClient` — as singletons, each resolving to the
+`INacosNamingClient`, `INacosLockClient` and `INacosAIClient` — as singletons, each resolving to the
 instance the shared client holds so a second registration never opens a second connection. It also
 adds a hosted service that connects on startup and closes the connection on shutdown. There are
 three overloads:
@@ -396,18 +396,18 @@ connection for it.
 
 ## 11. Use the AI registry
 
-`client.Ai` reaches the AI registry, the part of Nacos that holds MCP servers, prompts, skills, agent
+`client.AI` reaches the AI registry, the part of Nacos that holds MCP servers, prompts, skills, agent
 specifications and agents. This release covers the MCP server registry — reading a released server,
 releasing one, following one, and publishing the address it is reachable at — the prompt registry, the
 skill registry, the agent-specification registry, the A2A agent card registry and the RAD agent
 registry, including the RAD watch that lets an agent be followed by push rather than by polling.
 
 ```csharp
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 
 // A read is a direct query: it reports what the server holds at that moment. The version is
 // optional — leaving it out asks for the one the server currently serves.
-NacosMcpServerDetail server = await client.Ai.Mcp.GetServerAsync("weather", cancellationToken);
+NacosMcpServerDetail server = await client.AI.Mcp.GetServerAsync("weather", cancellationToken);
 
 foreach (NacosMcpTool tool in server.ToolSpec?.Tools ?? [])
 {
@@ -442,7 +442,7 @@ var tools = new NacosMcpToolSpecification
     Tools = [new NacosMcpTool { Name = "forecast", Description = "Tomorrow's weather." }],
 };
 
-string? id = await client.Ai.Mcp.ReleaseServerAsync(specification, tools, cancellationToken);
+string? id = await client.AI.Mcp.ReleaseServerAsync(specification, tools, cancellationToken);
 ```
 
 Following a server is a subscription. Nacos pushes configuration and service changes but has no MCP
@@ -452,7 +452,7 @@ path:
 
 ```csharp
 await foreach (NacosMcpServerDetail change in
-    client.Ai.Mcp.SubscribeServerAsync("weather", ct: cancellationToken))
+    client.AI.Mcp.SubscribeServerAsync("weather", ct: cancellationToken))
 {
     Console.WriteLine($"{change.Name} {change.VersionDetail?.Version} (latest: {change.VersionDetail?.IsLatest})");
 }
@@ -462,7 +462,7 @@ A server reached over the network is published as a Naming service, and its endp
 it, so it becomes discoverable and health checked like any other instance:
 
 ```csharp
-await client.Ai.Mcp.RegisterServerEndpointAsync("weather", "10.0.0.7", 8080, "1.2.0", cancellationToken);
+await client.AI.Mcp.RegisterServerEndpointAsync("weather", "10.0.0.7", 8080, "1.2.0", cancellationToken);
 ```
 
 ### Prompts
@@ -473,7 +473,7 @@ whatever version it labels `latest`; the version in the answer is the one that w
 can be read without knowing where it points.
 
 ```csharp
-NacosPrompt prompt = await client.Ai.Prompt.GetPromptAsync(
+NacosPrompt prompt = await client.AI.Prompt.GetPromptAsync(
     "greeting", label: "stable", ct: cancellationToken);
 
 Console.WriteLine(prompt.Version);    // the version the label resolved to
@@ -487,7 +487,7 @@ cannot be confused with one that has not appeared yet.
 
 ```csharp
 await foreach (NacosPrompt? change in
-    client.Ai.Prompt.SubscribePromptAsync("greeting", label: "stable", ct: cancellationToken))
+    client.AI.Prompt.SubscribePromptAsync("greeting", label: "stable", ct: cancellationToken))
 {
     Console.WriteLine(change is null ? "(withdrawn)" : $"{change.Version}: {change.Template}");
 }
@@ -503,7 +503,7 @@ rather than as JSON. Reading one therefore needs a reachable HTTP endpoint and d
 connection at all:
 
 ```csharp
-NacosSkill skill = await client.Ai.Skill.GetSkillAsync(
+NacosSkill skill = await client.AI.Skill.GetSkillAsync(
     "release-notes", label: "stable", ct: cancellationToken);
 
 Console.WriteLine(skill.Version);   // the version the label resolved to
@@ -525,7 +525,7 @@ served:
 
 ```csharp
 await foreach (NacosSkill? change in
-    client.Ai.Skill.SubscribeSkillAsync("release-notes", ct: cancellationToken))
+    client.AI.Skill.SubscribeSkillAsync("release-notes", ct: cancellationToken))
 {
     Console.WriteLine(change is null ? "(withdrawn)" : change.Version);
 }
@@ -543,7 +543,7 @@ skill, so it does not open the AI connection either:
 
 ```csharp
 NacosAgentSpec spec =
-    await client.Ai.AgentSpec.GetAgentSpecAsync("support-worker", ct: cancellationToken);
+    await client.AI.AgentSpec.GetAgentSpecAsync("support-worker", ct: cancellationToken);
 
 Console.WriteLine(spec.Version);   // the version the selector resolved to
 Console.WriteLine(spec.Md5);       // the hash of the published content
@@ -568,7 +568,7 @@ that stopped being served:
 
 ```csharp
 await foreach (NacosAgentSpec? change in
-    client.Ai.AgentSpec.SubscribeAgentSpecAsync("support-worker", ct: cancellationToken))
+    client.AI.AgentSpec.SubscribeAgentSpecAsync("support-worker", ct: cancellationToken))
 {
     Console.WriteLine(change is null ? "(withdrawn)" : change.Version);
 }
@@ -587,7 +587,7 @@ opens it:
 
 ```csharp
 NacosAgentCardDetail card =
-    await client.Ai.AgentCard.GetAgentCardAsync("support-agent", ct: cancellationToken);
+    await client.AI.AgentCard.GetAgentCardAsync("support-agent", ct: cancellationToken);
 
 Console.WriteLine($"{card.Name} {card.Version} -> {card.Url}");
 
@@ -620,7 +620,7 @@ var card = new NacosAgentCard
     ],
 };
 
-await client.Ai.AgentCard.ReleaseAgentCardAsync(
+await client.AI.AgentCard.ReleaseAgentCardAsync(
     card, registrationType: NacosAgentRegistrationType.Service, setAsLatest: true, ct: cancellationToken);
 ```
 
@@ -630,7 +630,7 @@ declared interface is what the card falls back to while nothing is registered; o
 the registry assembles the card's address from it:
 
 ```csharp
-await client.Ai.AgentCard.RegisterAgentEndpointAsync(
+await client.AI.AgentCard.RegisterAgentEndpointAsync(
     "support-agent",
     new NacosAgentEndpoint
     {
@@ -650,7 +650,7 @@ following a prompt, with the same `null` element for one that stopped being serv
 
 ```csharp
 await foreach (NacosAgentCardDetail? change in
-    client.Ai.AgentCard.SubscribeAgentCardAsync("support-agent", ct: cancellationToken))
+    client.AI.AgentCard.SubscribeAgentCardAsync("support-agent", ct: cancellationToken))
 {
     Console.WriteLine(change is null ? "(withdrawn)" : change.Version);
 }
@@ -666,7 +666,7 @@ agent is a versioned resource with metadata, call interfaces and runtime endpoin
 discovered the way the other AI resources are managed.
 
 ```csharp
-NacosAgentVersionDetail published = await client.Ai.Agent.PublishAgentAsync(
+NacosAgentVersionDetail published = await client.AI.Agent.PublishAgentAsync(
     new NacosAgentPublishRequest
     {
         AgentName = "support-agent",
@@ -698,7 +698,7 @@ Discovery is how a caller learns where to call the agent. The filter narrows the
 endpoints the caller can actually use:
 
 ```csharp
-NacosAgentDiscoveryResult discovered = await client.Ai.Agent.DiscoverAgentAsync(
+NacosAgentDiscoveryResult discovered = await client.AI.Agent.DiscoverAgentAsync(
     new NacosAgentReference { AgentName = "support-agent", Label = "stable" },
     new NacosAgentDiscoveryFilter { Transports = ["JSONRPC"], EndpointSources = ["RUNTIME"] },
     cancellationToken);
@@ -714,7 +714,7 @@ so a redeploy supersedes the previous set instead of accumulating beside it. The
 which agent versions its endpoints serve:
 
 ```csharp
-await client.Ai.Agent.RegisterEndpointsAsync(
+await client.AI.Agent.RegisterEndpointsAsync(
     new NacosAgentEndpointBatch
     {
         AgentName = "support-agent",
@@ -732,7 +732,7 @@ await client.Ai.Agent.RegisterEndpointsAsync(
 Searching browses the registry by name fragment, tags and protocols:
 
 ```csharp
-NacosAgentPage<NacosAgentSummary> page = await client.Ai.Agent.SearchAgentsAsync(
+NacosAgentPage<NacosAgentSummary> page = await client.AI.Agent.SearchAgentsAsync(
     new NacosAgentSearchRequest { AgentNameContains = "support", PageNo = 1, PageSize = 20 },
     cancellationToken);
 ```
@@ -740,7 +740,7 @@ NacosAgentPage<NacosAgentSummary> page = await client.Ai.Agent.SearchAgentsAsync
 A watch is the push half of discovery, so following an agent does not cost a read per interval:
 
 ```csharp
-await foreach (NacosAgentDiscoveryResult? agent in client.Ai.Agent.WatchAgentAsync(
+await foreach (NacosAgentDiscoveryResult? agent in client.AI.Agent.WatchAgentAsync(
     new NacosAgentReference { AgentName = "support-agent", Label = "stable" },
     ct: cancellationToken))
 {
@@ -769,7 +769,7 @@ Five things are worth knowing before relying on this:
   which server each module needs.
 - `GetServerAsync` is a direct query, so it always reports the server's current state — and needs the
   server to be reachable. `SubscribeServerAsync` is the exception: it caches the last detail it read
-  and re-reads the server every `NacosAiOptions.CacheRefreshInterval` (10 s by default), because there
+  and re-reads the server every `NacosAIOptions.CacheRefreshInterval` (10 s by default), because there
   is no push to subscribe to. A failed re-read leaves the cached copy in place and is retried, so a
   watcher outlives a control-plane outage.
 - An endpoint lives and dies with the connection that published it, so the client replays it after a
@@ -782,7 +782,7 @@ Five things are worth knowing before relying on this:
   the `accessToken` header the client OpenAPI reads rather than as a bearer header. An agent card is
   the opposite: it is served over the AI connection, so reading one opens it.
 
-`samples/Sample.AiRegistry` is a runnable host that resolves `INacosAiClient` and shows every one of
+`samples/Sample.AIRegistry` is a runnable host that resolves `INacosAIClient` and shows every one of
 these resources, plus a subscription, in one place.
 
 ## Next steps

@@ -17,6 +17,6 @@
     <Project Path="samples/Sample.ConfigConsole/Sample.ConfigConsole.csproj" />
     <Project Path="samples/Sample.AspNetCore/Sample.AspNetCore.csproj" />
     <Project Path="samples/Sample.Aspire.AppHost/Sample.Aspire.AppHost.csproj" />
-    <Project Path="samples/Sample.AiRegistry/Sample.AiRegistry.csproj" />
+    <Project Path="samples/Sample.AIRegistry/Sample.AIRegistry.csproj" />
   </Folder>
 </Solution>

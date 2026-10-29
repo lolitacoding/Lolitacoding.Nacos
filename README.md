@@ -140,7 +140,7 @@ builder.Services.AddNacos(options =>
 ```
 
 `AddNacos` registers `NacosClient` and each feature client — `INacosConfigClient`, `INacosNamingClient`,
-`INacosLockClient`, `INacosAiClient` — as singletons that resolve to the instance the shared client
+`INacosLockClient`, `INacosAIClient` — as singletons that resolve to the instance the shared client
 holds, so a second registration never opens a second connection.
 
 ### Configuration provider with hot reload
@@ -244,10 +244,10 @@ acquires and releases, so renewals and queued waiting need a 3.3 server;
 ### AI registry
 
 ```csharp
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 
 // What the server currently serves, with the tools, resources and endpoints it resolved.
-NacosMcpServerDetail server = await client.Ai.Mcp.GetServerAsync("weather", cancellationToken);
+NacosMcpServerDetail server = await client.AI.Mcp.GetServerAsync("weather", cancellationToken);
 
 foreach (NacosMcpTool tool in server.ToolSpec?.Tools ?? [])
 {
@@ -257,7 +257,7 @@ foreach (NacosMcpTool tool in server.ToolSpec?.Tools ?? [])
 // Nacos has no MCP change push, so a subscription re-reads the server on the configured interval
 // and yields the detail again whenever it changed.
 await foreach (NacosMcpServerDetail change in
-    client.Ai.Mcp.SubscribeServerAsync("weather", ct: cancellationToken))
+    client.AI.Mcp.SubscribeServerAsync("weather", ct: cancellationToken))
 {
     Console.WriteLine(change.VersionDetail?.Version);
 }
@@ -265,21 +265,21 @@ await foreach (NacosMcpServerDetail change in
 // A prompt read resolves the version the server currently points at — a version, a label, or latest —
 // and a subscription is the same poll, with a null element reporting that the prompt is gone.
 await foreach (NacosPrompt? prompt in
-    client.Ai.Prompt.SubscribePromptAsync("greeting", label: "stable", ct: cancellationToken))
+    client.AI.Prompt.SubscribePromptAsync("greeting", label: "stable", ct: cancellationToken))
 {
     Console.WriteLine(prompt?.Template);
 }
 
 // A skill is a directory served as a ZIP archive, so the read hands back the archive together with
 // the version it resolved to and the hash of the published content.
-NacosSkill skill = await client.Ai.Skill.GetSkillAsync("release-notes", ct: cancellationToken);
+NacosSkill skill = await client.AI.Skill.GetSkillAsync("release-notes", ct: cancellationToken);
 
 Console.WriteLine($"{skill.Version} ({skill.Md5}), {skill.Archive.Length} bytes");
 
 // An agent specification is a package — a manifest plus the files the worker loads — served as one
 // JSON object, with the version and the hash in the response headers rather than in the body.
 NacosAgentSpec spec =
-    await client.Ai.AgentSpec.GetAgentSpecAsync("support-worker", ct: cancellationToken);
+    await client.AI.AgentSpec.GetAgentSpecAsync("support-worker", ct: cancellationToken);
 
 Console.WriteLine($"{spec.Version} ({spec.Md5}), {spec.Resource?.Count} resource(s)");
 Console.WriteLine(spec.Content);   // the manifest, exactly as the registry stored it
@@ -287,21 +287,21 @@ Console.WriteLine(spec.Content);   // the manifest, exactly as the registry stor
 // An agent card is how an A2A agent advertises itself; reading one opens the AI connection, and an
 // endpoint registered against a service-backed card is what its address is assembled from.
 NacosAgentCardDetail card =
-    await client.Ai.AgentCard.GetAgentCardAsync("support-agent", ct: cancellationToken);
+    await client.AI.AgentCard.GetAgentCardAsync("support-agent", ct: cancellationToken);
 
 Console.WriteLine($"{card.Name} {card.Version} -> {card.Url}");
 
 // A RAD agent can be followed instead of polled. Nacos 3.3 pushes a hint when the answer may have
 // changed, the client reads it again and reports only what the read found, and a null element says
 // the agent stopped being served.
-await foreach (NacosAgentDiscoveryResult? agent in client.Ai.Agent.WatchAgentAsync(
+await foreach (NacosAgentDiscoveryResult? agent in client.AI.Agent.WatchAgentAsync(
     new NacosAgentReference { AgentName = "support-agent" }, ct: cancellationToken))
 {
     Console.WriteLine(agent?.Version);
 }
 ```
 
-`client.Ai` reaches the Nacos AI registry. This release covers the MCP server registry —
+`client.AI` reaches the Nacos AI registry. This release covers the MCP server registry —
 `GetServerAsync` reads one server, by name and optionally by version, `ReleaseServerAsync` publishes
 one version of one with its tool list, `SubscribeServerAsync` follows one and reports the changes, and
 `RegisterServerEndpointAsync` / `DeregisterServerEndpointAsync` publish the address a server is
@@ -325,7 +325,7 @@ a local copy, and an endpoint is a Naming instance rather than an AI record, so 
 health checked like any other instance. A prompt read is always the server's answer, including the
 version a label resolves to, while a prompt subscription re-reads on the interval and therefore has
 the same local copy an MCP subscription has. A subscription can also keep that copy on disk
-(`Ai.EnableLocalCache`, the shared `LocalCacheDirectory`), so a process that restarts while Nacos is
+(`AI.EnableLocalCache`, the shared `LocalCacheDirectory`), so a process that restarts while Nacos is
 unreachable starts from what it last read; the official Java client keeps these caches in memory only,
 and [the protocol notes](docs/protocol-notes.md#the-local-failover-cache) record the extension. A skill
 and an agent specification are the two resources
@@ -345,7 +345,7 @@ its watch from **3.3** on;
 says which server each module needs. The AI connection is opened on first use, like the lock
 connection, and carries the `ai` module label plus the per-client identifier Nacos records with
 everything the client publishes. See
-[quick start §11](docs/quickstart.md#11-use-the-ai-registry) and `samples/Sample.AiRegistry`, which
+[quick start §11](docs/quickstart.md#11-use-the-ai-registry) and `samples/Sample.AIRegistry`, which
 reads every resource from a host and follows an MCP server.
 
 ### Observability

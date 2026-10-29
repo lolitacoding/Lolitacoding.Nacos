@@ -23,7 +23,7 @@ internal static class NacosModule
     public const string Lock = "lock";
 
     /// <summary>The AI registry module.</summary>
-    public const string Ai = "ai";
+    public const string AI = "ai";
 
     /// <summary>The transport-internal module.</summary>
     public const string Internal = "internal";

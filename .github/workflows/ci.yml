@@ -183,8 +183,8 @@ jobs:
           --results-directory ./TestResults
           --filter-class Lolitacoding.Nacos.IntegrationTests.AgentCardIntegrationTests
           --filter-class Lolitacoding.Nacos.IntegrationTests.AgentSpecIntegrationTests
-          --filter-class Lolitacoding.Nacos.IntegrationTests.AiIntegrationTests
-          --filter-class Lolitacoding.Nacos.IntegrationTests.AiLocalCacheIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AIIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AILocalCacheIntegrationTests
           --filter-class Lolitacoding.Nacos.IntegrationTests.PromptIntegrationTests
           --filter-class Lolitacoding.Nacos.IntegrationTests.SkillIntegrationTests
 

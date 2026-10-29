@@ -397,7 +397,7 @@ and its own request names:
 - **There is no change push.** Nacos pushes configuration and service changes, but it has no MCP
   change notification: the official client discovers a change by re-reading the server on an interval
   (`NacosMcpServerCacheHolder` plus a scheduled update task). A subscription here is therefore a
-  cached copy refreshed every `NacosAiOptions.CacheRefreshInterval`, and it is the only operation in
+  cached copy refreshed every `NacosAIOptions.CacheRefreshInterval`, and it is the only operation in
   the registry that does not simply report what the server said. A read that fails leaves the cached
   copy in place and is retried, so a watcher outlives a control-plane outage; a `404` is not a failure
   either — a subscription to a name that has not been released yet stays open and reports it when it
@@ -489,7 +489,7 @@ Three places where `nacos-develop` does something this client does not.
    last listener unsubscribes, so the next subscriber reads the server again; here the entry stays
    until the server stops serving it. A caller that needs the server's word rather than a copy calls
    `GetPromptAsync`, which never consults the cache.
-3. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval` the MCP subscription also
+3. The refresh interval is the single `NacosAIOptions.CacheRefreshInterval` the MCP subscription also
    uses, where the official client reads a separate `nacosAiPromptCacheUpdateInterval`. One knob is a
    deliberate simplification: both subscriptions are the same kind of poll and the default is the same
    10 s either way.
@@ -562,7 +562,7 @@ Three places, matching the three the prompt registry has.
    the last listener unsubscribes; here the entry stays until the server stops serving it. A caller
    that needs the server's word rather than a copy calls `GetSkillAsync`, which never consults the
    cache.
-3. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval`, where the official client
+3. The refresh interval is the single `NacosAIOptions.CacheRefreshInterval`, where the official client
    reads a separate `nacosAiSkillCacheUpdateInterval`. Both are the same kind of poll with the same
    10 s default.
 
@@ -660,7 +660,7 @@ The same three as the prompt and skill registries, for the same reasons.
 1. A subscription whose selector is already cached is answered from the cache without a read.
 2. The cached copy outlives its last subscriber; `GetAgentSpecAsync` never consults the cache, so it
    always reports the server's word.
-3. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval`, where the official client
+3. The refresh interval is the single `NacosAIOptions.CacheRefreshInterval`, where the official client
    reads a per-resource interval of its own.
 
 One more, which is not a simplification but a consequence of the `304` above: the refresh reads the
@@ -719,7 +719,7 @@ states that it does not have it — a server that says nothing may still serve t
 1. A subscription whose selector is already cached is answered from the cache without a read, and the
    cached card outlives its last subscriber; `GetAgentCardAsync` never consults the cache, so it
    always reports the server's word.
-2. The refresh interval is the single `NacosAiOptions.CacheRefreshInterval`. A card carries no content
+2. The refresh interval is the single `NacosAIOptions.CacheRefreshInterval`. A card carries no content
    hash, so every refresh is an unconditional read — there is no conditional form of the request to
    use instead.
 3. The replay record is one entry per endpoint — keyed by agent name, address, port and path — and
@@ -883,7 +883,7 @@ routes the request to the AI module.
    `AgentWatchTransportRouter` picks the transport per watch, upgrades a downgraded watch back to gRPC
    when the wire returns, and decides fallback from the error code of each install. This client
    selects the transport when a watch is installed and again after a reconnect:
-   `NacosAiOptions.AgentWatchTransport` is `Auto` by default, which prefers gRPC, falls back to the
+   `NacosAIOptions.AgentWatchTransport` is `Auto` by default, which prefers gRPC, falls back to the
    HTTP batch when the gRPC install failed for a reason another transport could fix, and falls back
    to polling when neither is usable; `Grpc`, `Http` and `Polling` pin one transport. A batch the
    server refuses for good moves its watches to polling for the rest of the connection's life rather
@@ -908,7 +908,7 @@ routes the request to the AI module.
    client speaks to, a refusal of the credentials, a refusal to take the load, or a reply outside the
    contract ends the watch and is raised to the caller; a dropped connection, a server that is still
    starting, or a read that failed for a reason of its own is not, and is retried with bounded jittered
-   backoff. The retry schedule is this client's (`NacosOptions.Ai.CacheRefreshInterval` as the base,
+   backoff. The retry schedule is this client's (`NacosOptions.AI.CacheRefreshInterval` as the base,
    doubling to a minute, spread over four-fifths to six-fifths), not the official client's
    `AgentWatchRetryPolicy`.
 5. **An absent agent is recognised under every spelling the server uses.** The gRPC error mapper
@@ -920,7 +920,7 @@ routes the request to the AI module.
 ### The local failover cache
 
 - Every AI resource a subscription holds can also be written to the snapshot directory
-  (`NacosOptions.LocalCacheDirectory`) when `NacosAiOptions.EnableLocalCache` is on, and read back when
+  (`NacosOptions.LocalCacheDirectory`) when `NacosAIOptions.EnableLocalCache` is on, and read back when
   the control plane cannot be reached. The official client keeps these caches in memory only
   (`NacosMcpServerCacheHolder` and the rest of `client/ai/cache`, plus the `watch` package), so this is
   an extension rather than a port; the multi-language contract lets a client document its own
@@ -957,7 +957,7 @@ those travel over the AI connection, and only the resources the server exposes a
 skill and an agent specification — are read over HTTP.
 
 The watch is the one exception, because it has a second contract on the server:
-`NacosAiOptions.AgentWatchTransport` selects gRPC, the HTTP batch long poll, periodic polling, or
+`NacosAIOptions.AgentWatchTransport` selects gRPC, the HTTP batch long poll, periodic polling, or
 `Auto`, which tries them in that order. The batch and the polling fallback are described in
 [RAD agent watch](#rad-agent-watch). Automatic transport selection for the other AI surfaces remains
 unimplemented: a server whose gRPC abilities are absent while its HTTP AI surface is present is

@@ -212,7 +212,7 @@ public sealed class NacosOptions
     /// <summary>
     /// Gets or sets the AI registry specific options.
     /// </summary>
-    public NacosAiOptions Ai { get; set; } = new();
+    public NacosAIOptions AI { get; set; } = new();
 
     /// <summary>
     /// Gets or sets the TLS settings applied to servers configured with the <c>https</c> scheme.
@@ -307,7 +307,7 @@ public sealed class NacosOptions
         ValidateNamespace();
         Config.Validate();
         Naming.Validate();
-        Ai.Validate();
+        AI.Validate();
         Tls.Validate();
         Reconnect.Validate();
     }
@@ -598,7 +598,7 @@ public sealed class NacosConfigOptions
 /// without the caller having to poll and so that a subscription outlives a control-plane outage. A
 /// resource the process only reads is served straight from the server.
 /// </remarks>
-public sealed class NacosAiOptions
+public sealed class NacosAIOptions
 {
     /// <summary>
     /// Gets or sets a value indicating whether AI resources are cached locally for failover.
@@ -657,13 +657,13 @@ public sealed class NacosAiOptions
         if (CacheRefreshInterval <= TimeSpan.Zero)
         {
             throw new NacosConfigurationException(
-                "NacosAiOptions.CacheRefreshInterval must be greater than zero.");
+                "NacosAIOptions.CacheRefreshInterval must be greater than zero.");
         }
 
         if (!Enum.IsDefined(AgentWatchTransport))
         {
             throw new NacosConfigurationException(
-                "NacosAiOptions.AgentWatchTransport is not a defined value.");
+                "NacosAIOptions.AgentWatchTransport is not a defined value.");
         }
     }
 }
@@ -690,7 +690,7 @@ public enum NacosAgentWatchTransport
     Http,
 
     /// <summary>
-    /// Re-reads the agent on <see cref="NacosAiOptions.CacheRefreshInterval"/> without asking the
+    /// Re-reads the agent on <see cref="NacosAIOptions.CacheRefreshInterval"/> without asking the
     /// server for a push.
     /// </summary>
     /// <remarks>

@@ -1,4 +1,4 @@
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -28,7 +28,7 @@ public sealed class AgentCardIntegrationTests
     public async Task ReleaseAndRead_RoundTripsThroughARealServer()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -46,11 +46,11 @@ public sealed class AgentCardIntegrationTests
             Skills = [new NacosAgentSkill { Id = "plan", Name = "Plan a trip", Tags = ["travel"] }],
         };
 
-        await client.Ai.AgentCard.ReleaseAgentCardAsync(
+        await client.AI.AgentCard.ReleaseAgentCardAsync(
             card, NacosA2a.EndpointTypeUrl, setAsLatest: true, ct: ct);
 
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
-            () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            () => client.AI.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => value.Version == "1.0.0" && value.Skills is { Count: > 0 },
             ct);
 
@@ -70,13 +70,13 @@ public sealed class AgentCardIntegrationTests
     public async Task GetAgentCardAsync_ReportsAnUnknownAgent()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
 
         NacosServerException exception = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.AgentCard.GetAgentCardAsync(NacosHttp.UniqueId("agent-absent"), ct: ct));
+            () => client.AI.AgentCard.GetAgentCardAsync(NacosHttp.UniqueId("agent-absent"), ct: ct));
 
         // A missing agent is reported as the not-found code, which is what the subscription turns
         // into the null element that announces a withdrawal.
@@ -87,7 +87,7 @@ public sealed class AgentCardIntegrationTests
     public async Task GetAgentCardAsync_InjectsTheRegisteredEndpointIntoAServiceCard()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -104,10 +104,10 @@ public sealed class AgentCardIntegrationTests
             SupportedInterfaces = [PlaceholderInterface()],
         };
 
-        await client.Ai.AgentCard.ReleaseAgentCardAsync(
+        await client.AI.AgentCard.ReleaseAgentCardAsync(
             card, NacosA2a.EndpointTypeService, setAsLatest: true, ct: ct);
 
-        await client.Ai.AgentCard.RegisterAgentEndpointAsync(
+        await client.AI.AgentCard.RegisterAgentEndpointAsync(
             agentName,
             new NacosAgentEndpoint
             {
@@ -123,7 +123,7 @@ public sealed class AgentCardIntegrationTests
         // endpoints registered against it, which is what makes an agent callable at an address only
         // known at runtime.
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
-            () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            () => client.AI.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => value.Url == "http://10.0.0.7:9000/a2a" && value.SupportedInterfaces is { Count: 1 },
             ct);
 
@@ -136,7 +136,7 @@ public sealed class AgentCardIntegrationTests
     public async Task DeregisterAgentEndpointAsync_RemovesTheEndpointFromTheCard()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -149,7 +149,7 @@ public sealed class AgentCardIntegrationTests
             SupportedInterfaces = [PlaceholderInterface()],
         };
 
-        await client.Ai.AgentCard.ReleaseAgentCardAsync(
+        await client.AI.AgentCard.ReleaseAgentCardAsync(
             card, NacosA2a.EndpointTypeService, setAsLatest: true, ct: ct);
 
         var endpoint = new NacosAgentEndpoint
@@ -161,19 +161,19 @@ public sealed class AgentCardIntegrationTests
             ProtocolVersion = "0.2.5",
         };
 
-        await client.Ai.AgentCard.RegisterAgentEndpointAsync(agentName, endpoint, ct);
+        await client.AI.AgentCard.RegisterAgentEndpointAsync(agentName, endpoint, ct);
 
         await NacosEventually.BecomesAsync(
-            () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            () => client.AI.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => !string.IsNullOrEmpty(value.Url),
             ct);
 
-        await client.Ai.AgentCard.DeregisterAgentEndpointAsync(agentName, endpoint, ct);
+        await client.AI.AgentCard.DeregisterAgentEndpointAsync(agentName, endpoint, ct);
 
         // With no runtime endpoint left, the card falls back to the interface it declared, so the
         // registered address is gone and the placeholder is what a caller sees.
         NacosAgentCardDetail read = await NacosEventually.BecomesAsync(
-            () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            () => client.AI.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             value => value.Url == PlaceholderUrl && value.SupportedInterfaces is { Count: 1 },
             ct);
 
@@ -185,14 +185,14 @@ public sealed class AgentCardIntegrationTests
     public async Task SubscribeAgentCardAsync_ReportsANewVersion()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client =
             CreateClient(container, TimeSpan.FromMilliseconds(500));
 
         CancellationToken ct = TestContext.Current.CancellationToken;
         string agentName = NacosHttp.UniqueId("agent-watch");
 
-        await client.Ai.AgentCard.ReleaseAgentCardAsync(
+        await client.AI.AgentCard.ReleaseAgentCardAsync(
             new NacosAgentCard
             {
                 Name = agentName,
@@ -208,18 +208,18 @@ public sealed class AgentCardIntegrationTests
         // the release has to be visible before the subscription is opened; otherwise the test races
         // the server's read-back and asserts against a null it asked for.
         await NacosEventually.BecomesAsync(
-            () => client.Ai.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            () => client.AI.AgentCard.GetAgentCardAsync(agentName, ct: ct),
             card => card.Version == "1.0.0",
             ct);
 
         await using IAsyncEnumerator<NacosAgentCardDetail?> changes =
-            client.Ai.AgentCard.SubscribeAgentCardAsync(agentName, ct: ct).GetAsyncEnumerator(ct);
+            client.AI.AgentCard.SubscribeAgentCardAsync(agentName, ct: ct).GetAsyncEnumerator(ct);
 
         (await changes.MoveNextAsync()).ShouldBeTrue();
         changes.Current.ShouldNotBeNull();
         changes.Current.Version.ShouldBe("1.0.0");
 
-        await client.Ai.AgentCard.ReleaseAgentCardAsync(
+        await client.AI.AgentCard.ReleaseAgentCardAsync(
             new NacosAgentCard
             {
                 Name = agentName,
@@ -265,7 +265,7 @@ public sealed class AgentCardIntegrationTests
             {
                 ServerAddresses = [container.HttpAddress],
                 ConnectionTimeout = TimeSpan.FromSeconds(15),
-                Ai = new NacosAiOptions
+                AI = new NacosAIOptions
                 {
                     CacheRefreshInterval = cacheRefreshInterval ?? TimeSpan.FromSeconds(10),
                 },

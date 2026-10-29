@@ -1,4 +1,4 @@
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Client;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -40,7 +40,7 @@ public sealed class PromptIntegrationTests
     public async Task PublishAndQuery_RoundTripsThroughARealServer()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -63,7 +63,7 @@ public sealed class PromptIntegrationTests
         // before the version is servable, and a read that gets there first is answered the way an
         // unknown key is.
         NacosPrompt latest = await NacosEventually.BecomesAsync(
-            () => client.Ai.Prompt.GetPromptAsync(promptKey, ct: ct),
+            () => client.AI.Prompt.GetPromptAsync(promptKey, ct: ct),
             value => value.Version == SecondVersion && value.Variables is { Count: > 0 },
             ct);
 
@@ -82,7 +82,7 @@ public sealed class PromptIntegrationTests
 
         // A read that names a version resolves to that version rather than to the current one, which
         // is what lets a caller pin an older version after a newer one was published.
-        NacosPrompt pinned = await client.Ai.Prompt.GetPromptAsync(promptKey, FirstVersion, ct: ct);
+        NacosPrompt pinned = await client.AI.Prompt.GetPromptAsync(promptKey, FirstVersion, ct: ct);
 
         pinned.Version.ShouldBe(FirstVersion);
         pinned.Template.ShouldBe("Hello {{name}} from 1.0.0");
@@ -93,7 +93,7 @@ public sealed class PromptIntegrationTests
             http, container.HttpAddress, promptKey, """{"stable":"1.0.0"}""", token, ct);
 
         NacosPrompt labelled = await NacosEventually.BecomesAsync(
-            () => client.Ai.Prompt.GetPromptAsync(promptKey, label: "stable", ct: ct),
+            () => client.AI.Prompt.GetPromptAsync(promptKey, label: "stable", ct: ct),
             value => value.Version == FirstVersion,
             ct);
 
@@ -105,7 +105,7 @@ public sealed class PromptIntegrationTests
     public async Task GetPromptAsync_ReportsAnUnknownKeyAsAServerError()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container);
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -121,21 +121,21 @@ public sealed class PromptIntegrationTests
             http, container.HttpAddress, published, FirstVersion, "Hello {{name}}", null, token, ct);
 
         await NacosEventually.BecomesAsync(
-            () => client.Ai.Prompt.GetPromptAsync(published, ct: ct),
+            () => client.AI.Prompt.GetPromptAsync(published, ct: ct),
             value => value.Version == FirstVersion,
             ct);
 
         // Missing is an error rather than an empty answer, so a caller cannot mistake a typo in a key
         // for a prompt that exists with nothing in it.
         NacosServerException exception = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.Prompt.GetPromptAsync(NacosHttp.UniqueId("prompt-absent"), ct: ct));
+            () => client.AI.Prompt.GetPromptAsync(NacosHttp.UniqueId("prompt-absent"), ct: ct));
 
         exception.ErrorCode.ShouldBe(404);
         exception.Message.ShouldContain("not found");
 
         // A version that was never published is a failure too, even though the key exists.
         NacosServerException unpinned = await Should.ThrowAsync<NacosServerException>(
-            () => client.Ai.Prompt.GetPromptAsync(published, "9.9.9", ct: ct));
+            () => client.AI.Prompt.GetPromptAsync(published, "9.9.9", ct: ct));
 
         unpinned.ErrorCode.ShouldBe(404);
     }
@@ -144,7 +144,7 @@ public sealed class PromptIntegrationTests
     public async Task SubscribePromptAsync_ReportsANewerVersionOfARealPrompt()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
 
         // The interval is short because it is the only thing that makes a subscription fire, and a
         // test that waited ten seconds for it would be a slow way to prove nothing.
@@ -160,7 +160,7 @@ public sealed class PromptIntegrationTests
             http, container.HttpAddress, promptKey, FirstVersion, "Hello from 1.0.0", null, token, ct);
 
         await using IAsyncEnumerator<NacosPrompt?> changes =
-            client.Ai.Prompt.SubscribePromptAsync(promptKey, ct: ct).GetAsyncEnumerator(ct);
+            client.AI.Prompt.SubscribePromptAsync(promptKey, ct: ct).GetAsyncEnumerator(ct);
 
         // The current state is the first element, and the subscription is live once it has been
         // consumed: the refresh loop starts before the seed is read, so a change made now is seen.
@@ -183,7 +183,7 @@ public sealed class PromptIntegrationTests
     public async Task SubscribePromptAsync_ReportsARelabelledVersion()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container, TimeSpan.FromMilliseconds(500));
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -204,7 +204,7 @@ public sealed class PromptIntegrationTests
             http, container.HttpAddress, promptKey, """{"stable":"1.0.0"}""", token, ct);
 
         await using IAsyncEnumerator<NacosPrompt?> changes =
-            client.Ai.Prompt.SubscribePromptAsync(promptKey, label: "stable", ct: ct).GetAsyncEnumerator(ct);
+            client.AI.Prompt.SubscribePromptAsync(promptKey, label: "stable", ct: ct).GetAsyncEnumerator(ct);
 
         (await changes.MoveNextAsync()).ShouldBeTrue();
 
@@ -225,7 +225,7 @@ public sealed class PromptIntegrationTests
     public async Task SubscribePromptAsync_ReportsAWithdrawal()
     {
         await using NacosContainer container =
-            await NacosContainer.StartAsync(NacosIntegrationImages.AiImage);
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
         await using NacosClientFactory client = CreateClient(container, TimeSpan.FromMilliseconds(500));
 
         CancellationToken ct = TestContext.Current.CancellationToken;
@@ -238,7 +238,7 @@ public sealed class PromptIntegrationTests
             http, container.HttpAddress, promptKey, FirstVersion, "Hello from 1.0.0", null, token, ct);
 
         await using IAsyncEnumerator<NacosPrompt?> changes =
-            client.Ai.Prompt.SubscribePromptAsync(promptKey, ct: ct).GetAsyncEnumerator(ct);
+            client.AI.Prompt.SubscribePromptAsync(promptKey, ct: ct).GetAsyncEnumerator(ct);
 
         (await changes.MoveNextAsync()).ShouldBeTrue();
         changes.Current!.Version.ShouldBe(FirstVersion);
@@ -260,7 +260,7 @@ public sealed class PromptIntegrationTests
             {
                 ServerAddresses = [container.HttpAddress],
                 ConnectionTimeout = TimeSpan.FromSeconds(15),
-                Ai = new NacosAiOptions
+                AI = new NacosAIOptions
                 {
                     CacheRefreshInterval = cacheRefreshInterval ?? TimeSpan.FromSeconds(10),
                 },

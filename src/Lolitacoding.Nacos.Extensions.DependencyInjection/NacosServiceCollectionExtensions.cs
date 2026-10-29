@@ -125,7 +125,7 @@ public static class NacosServiceCollectionExtensions
         services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Config);
         services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Naming);
         services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Lock);
-        services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().Ai);
+        services.TryAddSingleton(sp => sp.GetRequiredService<NacosClient>().AI);
 
         // The hosted service owns the startup connection so that a host's own start-up ordering
         // decides when Nacos is contacted; disposal of the singleton client closes the connection.

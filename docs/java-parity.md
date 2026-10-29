@@ -17,6 +17,11 @@ branch (see `.gitignore`: it is a reference clone for reading the protocol, not 
 | `maintainer-client` | `AiMaintainerService` and the naming maintainer client: the administrative surface, not the runtime client. |
 | `specs/en` | The normative description of each protocol, used to decide what a gap actually is. |
 
+Java spells the AI module `Ai` — `AiService`, `AiConstants`, `AiRemoteConstants` — while this
+library spells the same acronym `AI` (`Lolitacoding.Nacos.AI`, `INacosAIClient`). Two-letter
+acronyms are upper-cased in .NET, and the neighbouring `Microsoft.Extensions.AI` uses the same
+spelling. Java names are quoted verbatim here and in the source comments.
+
 The scope is deliberately **Nacos 3.x runtime client behaviour**. Anything that only exists to
 administer a server, to render the console, or to integrate with Spring or the JVM is listed at
 the bottom with the reason it is not implemented here.
@@ -31,7 +36,7 @@ the bottom with the reason it is not implemented here.
 | P1-4 | Configuration filter chain and encrypted data key | `ConfigService.addConfigFilter(IConfigFilter)`, built-in `ConfigEncryptionFilter`, `ConfigQueryResponse.EncryptedDataKey` | **Done** — `INacosConfigFilter`, `INacosConfigClient.AddConfigFilter`, `NacosConfigEncryptionFilter`, `INacosConfigEncryptionProvider`, `NacosConfigResult.EncryptedDataKey` | The published extension point for encrypting or transforming configuration on the way in and out. Dropping the key also makes an encrypted configuration unreadable. |
 | P1-5 | Service list paging | `NamingService.getServicesOfServer(pageNo, pageSize, groupName, selector)` | **Done** — `INacosNamingClient.GetServicesAsync`, `NacosServiceListPage` (selector omitted: the server ignores it) | Enumerates a namespace a page at a time; the fallback for anything fuzzy watch cannot cover. |
 | P2-6 | Batch instance registration | `NamingService.batchRegisterInstance(...)` / `batchDeregisterInstance(...)` (`BatchInstanceRequest`, type `BATCH_REGISTER_INSTANCE`) | **Done** — `INacosNamingClient.RegisterInstancesAsync` / `DeregisterInstancesAsync` | Registers many instances of one service in one round trip. |
-| P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | **Done** — `NacosAiOptions.AgentWatchTransport`, `NacosAgentWatchTransport`, `NacosAgentDiscoveryCanonicalizer` | The watch path for deployments where the gRPC push channel is unavailable. |
+| P2-7 | AI agent batch watch over HTTP long-poll | `AgentWatchBatchRequest`/`Response`, `AgentWatchTransportRouter` | **Done** — `NacosAIOptions.AgentWatchTransport`, `NacosAgentWatchTransport`, `NacosAgentDiscoveryCanonicalizer` | The watch path for deployments where the gRPC push channel is unavailable. |
 | P2-8 | Encrypted configuration snapshot at rest | `LocalEncryptedDataKeyProcessor` and the encryption filter | **Done** — closed by P1-4; a snapshot keeps the stored ciphertext and the wrapped key | A process that fails over to disk must not write the plaintext of an encrypted configuration there. |
 | P2-9 | Address-server discovery | `PropertyKeyConst.ENDPOINT`, `ServerListManager` address-server polling | **Done** — `NacosOptions.Endpoint` and its five companions, `NacosServerList`, `NacosEndpointServerListProvider` | Deployments that hand out the server list through an address server cannot use this client. |
 | P2-10 | Server status | `ConfigService.getServerStatus()`, `NamingService.getServerStatus()` | **Done** — `INacosConfigClient.ServerStatus` / `INacosNamingClient.ServerStatus`, `NacosServerStatus` | A health check needs to answer "am I connected" without issuing a request. |
@@ -293,10 +298,10 @@ The .NET surface is the same `WatchAgentAsync` with a transport preference:
 
 | Java | Here |
 | --- | --- |
-| `AgentTransportMode` (`GRPC`, `HTTP`, `AUTO`) on the AI client config | `NacosAiOptions.AgentWatchTransport` (`NacosAgentWatchTransport.Auto`, `Grpc`, `Http`, `Polling`) |
+| `AgentTransportMode` (`GRPC`, `HTTP`, `AUTO`) on the AI client config | `NacosAIOptions.AgentWatchTransport` (`NacosAgentWatchTransport.Auto`, `Grpc`, `Http`, `Polling`) |
 | `AgentWatchBatchRequest` / `AgentWatchBatchResponse` | internal `AgentWatchBatchItem` / `AgentWatchBatchResponse` |
 | `AgentDiscoveryCanonicalizer` / `EndpointCanonicalizer` | `NacosAgentDiscoveryCanonicalizer` / `NacosAgentEndpointCanonicalizer` |
-| `PollingAgentWatchTransport` | `Polling` mode: re-read at `Ai.CacheRefreshInterval` |
+| `PollingAgentWatchTransport` | `Polling` mode: re-read at `AI.CacheRefreshInterval` |
 
 - `Auto` (the default) installs the gRPC watch when the connection advertises `radWatchV1`, falls
   back to the batch when the gRPC install fails for a reason another transport could fix, and falls

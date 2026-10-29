@@ -1,4 +1,4 @@
-using Lolitacoding.Nacos.Ai;
+using Lolitacoding.Nacos.AI;
 using Lolitacoding.Nacos.Client;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Extensions.DependencyInjection;
@@ -32,7 +32,7 @@ public sealed class NacosServiceCollectionExtensionsTests
         provider.GetRequiredService<INacosConfigClient>().ShouldBeSameAs(client.Config);
         provider.GetRequiredService<INacosNamingClient>().ShouldBeSameAs(client.Naming);
         provider.GetRequiredService<INacosLockClient>().ShouldBeSameAs(client.Lock);
-        provider.GetRequiredService<INacosAiClient>().ShouldBeSameAs(client.Ai);
+        provider.GetRequiredService<INacosAIClient>().ShouldBeSameAs(client.AI);
         provider.GetRequiredService<TimeProvider>().ShouldBe(TimeProvider.System);
     }
 
