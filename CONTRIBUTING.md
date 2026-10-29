@@ -90,6 +90,13 @@ Pull requests should:
 3. Include the output of `dotnet build -c Release` and `dotnet test`.
 4. Update `PLAN.md` when reality diverges from the plan, rather than diverging silently.
 
+## Releasing
+
+A tag publishes, and the version comes from the tag through MinVer. The pipeline re-validates the
+packages it pushes, and publishing stays switched off until `NUGET_PUBLISH_ENABLED` is set, so a tag
+is also the rehearsal. See [`docs/releasing.md`](docs/releasing.md) for the tag format, the gates
+every release runs, and the trusted-publishing migration.
+
 ## Protocol changes
 
 When touching the wire protocol, cite the upstream source you verified the behaviour against

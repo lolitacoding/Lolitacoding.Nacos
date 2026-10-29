@@ -367,6 +367,7 @@ builder.Services.AddOpenTelemetry()
 - [FAQ](docs/faq.md)
 - [Protocol notes](docs/protocol-notes.md) — upstream references for every protocol detail.
 - [Java SDK parity](docs/java-parity.md) — what the official client has, what this one does, and why.
+- [Releasing](docs/releasing.md) — the tag format, the gates, and how a package reaches nuget.org.
 
 ## Building
 
