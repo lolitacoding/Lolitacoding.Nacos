@@ -17,6 +17,9 @@ artifacts/
 *.userosscache
 *.sln.docstates
 *.DotSettings.user
+## Launch profiles are generated per machine; the Aspire AppHost picks its dashboard ports when it
+## first runs, so the pinned ports in one would only be a collision waiting to happen.
+**/Properties/launchSettings.json
 
 ## Test results
 [Tt]est[Rr]esult*/

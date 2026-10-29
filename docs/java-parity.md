@@ -6,7 +6,8 @@ slices are cut from; each implemented slice removes a row and is recorded in `PL
 
 ## What was compared
 
-The comparison is surface by surface, against the `nacos-develop` submodule:
+The comparison is surface by surface, against a local checkout of the upstream `nacos-develop`
+branch (see `.gitignore`: it is a reference clone for reading the protocol, not a build dependency):
 
 | Java module | What it contributes |
 | --- | --- |
