@@ -7,7 +7,7 @@
     Microsoft.Testing.Platform. This script builds them and then invokes each
     executable directly.
 
-    Why not `dotnet test`: the .NET 10 SDK drives Microsoft.Testing.Platform test
+    Why not `dotnet test`: the .NET SDK drives Microsoft.Testing.Platform test
     hosts over a named pipe, and a sandboxed environment (such as the DSH harness)
     denies child processes access to named pipes. Invoking the test executable
     directly avoids that IPC hop entirely and produces identical results, so the
@@ -46,7 +46,7 @@ if (-not $NoBuild) {
 }
 
 $projectDir = Split-Path -Parent $projectPath
-$binDir = Join-Path $projectDir "bin/$Configuration/net10.0"
+$binDir = Join-Path $projectDir "bin/$Configuration/net11.0"
 $exe = Join-Path $binDir ((Split-Path -Leaf $projectDir) + '.exe')
 
 if (-not (Test-Path -LiteralPath $exe)) {

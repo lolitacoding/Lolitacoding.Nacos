@@ -270,7 +270,7 @@ jobs:
 
       - name: Validate the packages
         # A real check of what the publish job is about to push: exactly the seven libraries, each
-        # with its symbols, its README, its nuspec and its net10.0 assembly. An empty or partial
+        # with its symbols, its README, its nuspec and its net11.0 assembly. An empty or partial
         # artifacts directory must fail here rather than at the feed.
         run: |
           count_pkg=$(find ./artifacts -maxdepth 1 -name '*.nupkg' | wc -l)
@@ -294,8 +294,8 @@ jobs:
             # -Z1 lists the entry names alone, so each check is an exact match rather than a
             # substring that another package's path could satisfy.
             unzip -Z1 "$pkg" > entries.txt
-            grep -qx "lib/net10.0/$assembly.dll" entries.txt \
-              || { echo "$assembly: $pkg has no lib/net10.0/$assembly.dll"; exit 1; }
+            grep -qx "lib/net11.0/$assembly.dll" entries.txt \
+              || { echo "$assembly: $pkg has no lib/net11.0/$assembly.dll"; exit 1; }
             grep -qx "README.md" entries.txt \
               || { echo "$assembly: $pkg has no README.md"; exit 1; }
             grep -qx "$assembly.nuspec" entries.txt \

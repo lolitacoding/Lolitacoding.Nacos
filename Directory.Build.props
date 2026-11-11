@@ -1,11 +1,16 @@
 <Project>
 
   <PropertyGroup>
-    <!-- Target platform: .NET 10 only, with the newest language features. -->
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Target platform: .NET 11 only, with the newest language features. -->
+    <TargetFramework>net11.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- .NET 11 runtime async. Async methods compile to resumable calls the runtime drives
+         directly instead of a compiler-generated state machine; async iterators still use one.
+         The switch is a compiler feature flag, not an SDK property, so it travels in Features. -->
+    <Features>$(Features);runtime-async=on</Features>
 
     <!-- Quality gates. -->
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
