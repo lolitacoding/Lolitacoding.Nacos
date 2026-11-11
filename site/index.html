@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lolitacoding — 为 .NET 写的 Nacos 3 客户端</title>
+<meta name="description" content="Lolitacoding.Nacos 是一个只面向 .NET 11 与 Nacos 3.x 的客户端 SDK：配置中心、服务注册与发现、分布式锁、AI 注册中心，原生 AOT 友好，与 IConfiguration、依赖注入和 Aspire 直接对齐。">
+<meta name="theme-color" content="#07090c">
+<meta name="color-scheme" content="dark">
+<link rel="canonical" href="https://lolitacoding.github.io/Lolitacoding.Nacos/">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Lolitacoding">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:title" content="Lolitacoding — 为 .NET 写的 Nacos 3 客户端">
+<meta property="og:description" content="只面向 .NET 11 与 Nacos 3.x 的客户端 SDK：配置中心、服务发现、分布式锁、AI 注册中心。">
+<meta property="og:url" content="https://lolitacoding.github.io/Lolitacoding.Nacos/">
+<meta name="twitter:card" content="summary">
+<link rel="stylesheet" href="assets/styles.css">
+<script>document.documentElement.classList.replace('no-js', 'js');</script>
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Lolitacoding.Nacos",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows, Linux, macOS",
+  "description": ".NET 11 client SDK for Nacos 3.x: configuration, service discovery, distributed locking and the AI registry.",
+  "url": "https://lolitacoding.github.io/Lolitacoding.Nacos/",
+  "license": "https://www.apache.org/licenses/LICENSE-2.0",
+  "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+}
+</script>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要内容</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="#top" aria-label="Lolitacoding 首页">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect x="0.5" y="0.5" width="31" height="31" rx="8" fill="none" stroke="currentColor" stroke-opacity=".35"/>
+        <path d="M11 8v14h9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"/>
+        <circle cx="22.5" cy="10" r="2.2" fill="currentColor"/>
+      </svg>
+      <span class="brand-name">Lolitacoding</span>
+    </a>
+
+    <nav class="site-nav" aria-label="主导航">
+      <a href="#why">特性</a>
+      <a href="#versions">版本</a>
+      <a href="#code">代码</a>
+      <a href="#packages">包</a>
+      <a href="#start">开始</a>
+    </nav>
+
+    <a class="btn btn-ghost header-cta" href="https://github.com/lolitacoding/Lolitacoding.Nacos">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor">
+        <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.4 7.4 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+      </svg>
+      <span>GitHub</span>
+    </a>
+  </div>
+</header>
+
+<main id="main">
+  <section class="hero" id="top">
+    <div class="hero-glow" aria-hidden="true"></div>
+    <div class="wrap hero-inner">
+      <div class="hero-copy">
+        <p class="eyebrow"><span class="dot" aria-hidden="true"></span>预览版 0.1.0-preview 准备中</p>
+        <h1>把 Nacos 3 接进 .NET<br><em>不该是一场翻译工作。</em></h1>
+        <p class="lede">
+          <strong>Lolitacoding.Nacos</strong> 是只面向 <strong>.NET 11</strong> 与 <strong>Nacos 3.x</strong> 的客户端 SDK：
+          配置中心、服务注册与发现、分布式锁、AI 注册中心，共用一条连接与一套选项。
+          它和 <code>IConfiguration</code>、依赖注入、<code>HttpClient</code>、Aspire 直接对齐，而不是各自为政。
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#start">五分钟跑通</a>
+          <a class="btn btn-ghost" href="#why">为什么再写一个</a>
+        </div>
+        <dl class="hero-stats">
+          <div><dt>目标框架</dt><dd>net11.0</dd></div>
+          <div><dt>单元测试</dt><dd>926</dd></div>
+          <div><dt>集成测试</dt><dd>64</dd></div>
+          <div><dt>构建警告</dt><dd>0</dd></div>
+        </dl>
+      </div>
+
+      <div class="hero-code" aria-label="安装与最小示例">
+        <div class="window">
+          <div class="window-bar" aria-hidden="true">
+            <span class="window-dots"><i></i><i></i><i></i></span>
+            <span class="window-title">terminal</span>
+          </div>
+<pre class="code" tabindex="0"><code><span class="tok-prompt">$</span> dotnet add package Lolitacoding.Nacos --prerelease
+
+<span class="tok-com">// Program.cs</span>
+<span class="tok-key">using</span> Lolitacoding.Nacos;
+
+<span class="tok-key">var</span> options = <span class="tok-key">new</span> <span class="tok-type">NacosOptions</span>
+{
+    ServerAddresses = [<span class="tok-str">"http://127.0.0.1:8848"</span>],
+    AppName = <span class="tok-str">"my-service"</span>,
+};
+
+<span class="tok-key">await using</span> <span class="tok-type">NacosClient</span> client = <span class="tok-type">NacosClient</span>.Create(options);
+<span class="tok-key">await</span> client.ConnectAsync();
+
+<span class="tok-type">NacosConfigResult</span> result = <span class="tok-key">await</span> client.Config
+    .GetConfigAsync(<span class="tok-key">new</span> <span class="tok-type">NacosConfigKey</span>(<span class="tok-str">"appsettings.json"</span>));
+
+Console.WriteLine(result.Exists ? result.Content : <span class="tok-str">"(not set)"</span>);</code></pre>
+        </div>
+        <p class="hero-note">构造不连接；<code>ConnectAsync</code> 之后才发请求。</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="why">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker">01 — 特性</p>
+        <h2>为什么再写一个 Nacos 客户端</h2>
+        <p class="section-lede">
+          把 Java 客户端逐行翻译过来，得到的只是一个能编译的 Java 程序。
+          这个库反过来：先问 .NET 里这件事本来该怎么做，再决定协议怎么落地。
+        </p>
+      </header>
+
+      <div class="grid grid-3">
+        <article class="card">
+          <p class="card-num">01</p>
+          <h3>只有 .NET 11</h3>
+          <p>没有多目标框架，没有 <code>netstandard</code> 垫片。C# 15 的联合类型让「一条 watch 事件有四种形状」变成可穷举的模式匹配；运行时异步把 <code>async</code> 方法交给运行时恢复，不再生成状态机。源生成 JSON、<code>Span&lt;T&gt;</code>、<code>Channel&lt;T&gt;</code> 照常直接用。</p>
+        </article>
+        <article class="card">
+          <p class="card-num">02</p>
+          <h3>Native AOT 不是事后补的</h3>
+          <p>没有反射序列化，没有运行时生成代码。仓库里每一个 <code>IL2xxx</code> / <code>IL3xxx</code> 都是错误，CI 每次都会真的发布一次 AOT 程序。</p>
+        </article>
+        <article class="card">
+          <p class="card-num">03</p>
+          <h3>按 .NET 的形状设计</h3>
+          <p><code>IConfiguration</code> 提供程序、DI 单例、<code>IHostedService</code>、<code>IHttpClientFactory</code>、<code>IOptionsMonitor</code> 热更新——不是包一层，而是就是那个接口。</p>
+        </article>
+        <article class="card">
+          <p class="card-num">04</p>
+          <h3>协议照上游，一个字都不猜</h3>
+          <p>gRPC 走 Nacos 的私有协议，鉴权走 v3 HTTP OpenAPI。每个字段都在 <code>docs/protocol-notes.md</code> 里标了 Java 源码出处，<code>https://</code> 即加密传输。</p>
+        </article>
+        <article class="card">
+          <p class="card-num">05</p>
+          <h3>可观测性是一等公民</h3>
+          <p>内置 <code>ActivitySource</code> 与 <code>Meter</code>，一行接进 OpenTelemetry，不必自己给 SDK 包埋点。</p>
+        </article>
+        <article class="card">
+          <p class="card-num">06</p>
+          <h3>Aspire 里起一个 Nacos</h3>
+          <p>AppHost 里 <code>AddNacos("nacos")</code> 拉容器、注入连接串，客户端用 <code>AddNacosClient()</code> 接上；本地开发不必先手动装一个服务端。</p>
+        </article>
+      </div>
+
+      <aside class="pledge">
+        <p class="pledge-title">我们不做的三件事</p>
+        <ul>
+          <li><strong>不兼容 Nacos 2.x。</strong> 3.x 的协议不一样，兼容只会让两套代码互相拖累。</li>
+          <li><strong>不多目标框架。</strong> 支持 <code>netstandard2.0</code> 意味着放弃 <code>Span</code>、<code>Channel</code> 和源生成。</li>
+          <li><strong>不用反射序列化。</strong> 它会让 AOT 和裁剪变成一句口号。</li>
+        </ul>
+      </aside>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="versions">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker">02 — 版本</p>
+        <h2>你的服务端能提供什么</h2>
+        <p class="section-lede">
+          Nacos 3 的各模块不是同一批发布的。这张表是客户端判断能力的依据，也是 CI 里那三个镜像的来源。
+        </p>
+      </header>
+
+      <div class="table-wrap">
+        <table class="table-versions">
+          <caption class="sr-only">Nacos 服务端版本与客户端能力对照</caption>
+          <thead>
+            <tr><th scope="col">能力</th><th scope="col">需要的 Nacos</th><th scope="col">说明</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">配置中心 · 服务发现 · 鉴权</th><td><span class="tag">3.x</span></td><td>核心 gRPC 协议与 v3 HTTP OpenAPI。</td></tr>
+            <tr><th scope="row">AI：MCP 注册中心</th><td><span class="tag">3.0.3+</span></td><td>读取、发布、订阅 MCP server 及其端点。</td></tr>
+            <tr><th scope="row">AI：Agent Card</th><td><span class="tag">3.1.0+</span></td><td>A2A 智能体名片与 service-backed 端点。</td></tr>
+            <tr><th scope="row">AI：Prompt / Skill / Agent Spec</th><td><span class="tag">3.2.0+</span></td><td>Prompt 与 Agent Spec 支持标签解析；Skill 以 ZIP 下发。</td></tr>
+            <tr><th scope="row">分布式锁：租约续期与排队</th><td><span class="tag tag-warm">3.3+</span></td><td>3.2 的锁模块只有获取与释放。</td></tr>
+            <tr><th scope="row">AI：RAD Agent 与推送式 watch</th><td><span class="tag tag-warm">3.3+</span></td><td>服务端推「可能变了」的提示，客户端再读一次。</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="code">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker">03 — 代码</p>
+        <h2>四个模块，一条连接</h2>
+        <p class="section-lede">
+          <code>NacosClient</code> 持有连接，<code>Config</code>、<code>Naming</code>、<code>Lock</code>、<code>AI</code>
+          是它的四个门面。连接按需打开，用完随客户端一起释放。
+        </p>
+      </header>
+
+      <div class="tabs" data-tabs>
+        <div class="tablist" role="tablist" aria-label="代码示例">
+          <button class="tab" role="tab" id="tab-config" aria-controls="panel-config" aria-selected="true" data-tab>配置中心</button>
+          <button class="tab" role="tab" id="tab-naming" aria-controls="panel-naming" aria-selected="false" tabindex="-1" data-tab>服务发现</button>
+          <button class="tab" role="tab" id="tab-lock" aria-controls="panel-lock" aria-selected="false" tabindex="-1" data-tab>分布式锁</button>
+          <button class="tab" role="tab" id="tab-ai" aria-controls="panel-ai" aria-selected="false" tabindex="-1" data-tab>AI 注册中心</button>
+        </div>
+
+        <div class="panel" role="tabpanel" id="panel-config" aria-labelledby="tab-config" data-panel>
+<pre class="code" tabindex="0"><code><span class="tok-com">// 读取；配置不存在不是错误，看 result.Exists。</span>
+<span class="tok-key">var</span> key = <span class="tok-key">new</span> <span class="tok-type">NacosConfigKey</span>(<span class="tok-str">"appsettings.json"</span>, NacosConstants.DefaultGroup);
+<span class="tok-type">NacosConfigResult</span> result = <span class="tok-key">await</span> client.Config.GetConfigAsync(key);
+
+<span class="tok-com">// 发布。</span>
+<span class="tok-key">await</span> client.Config.PublishConfigAsync(
+    key, <span class="tok-str">"""{"Logging":{"LogLevel":"Debug"}}"""</span>, contentType: <span class="tok-str">"json"</span>);
+
+<span class="tok-com">// 监听变更。序列不会自己结束，除非取消令牌触发。</span>
+<span class="tok-key">await foreach</span> (<span class="tok-type">NacosConfigChange</span> change <span class="tok-key">in</span> client.Config.ListenAsync(key))
+{
+    Console.WriteLine(<span class="tok-str">$"{change.Key} (md5 {change.PreviousMd5}): {change.Content}"</span>);
+}
+
+<span class="tok-com">// 按通配符跟随一组配置的成员变化。联合类型让四种事件形状可穷举。</span>
+<span class="tok-key">await foreach</span> (<span class="tok-type">NacosConfigWatchEvent</span> item <span class="tok-key">in</span>
+    client.Config.WatchAsync(<span class="tok-str">"feature.*"</span>, NacosConstants.DefaultGroup))
+{
+    <span class="tok-key">switch</span> (item)
+    {
+        <span class="tok-key">case</span> <span class="tok-type">NacosConfigWatchAdded</span> added:
+            Console.WriteLine(<span class="tok-str">$"+ {added.Key}"</span>);
+            <span class="tok-key">break</span>;
+        <span class="tok-key">case</span> <span class="tok-type">NacosConfigWatchRemoved</span> removed:
+            Console.WriteLine(<span class="tok-str">$"- {removed.Key}"</span>);
+            <span class="tok-key">break</span>;
+        <span class="tok-key">case</span> <span class="tok-type">NacosConfigWatchCompleted</span> completed:
+            Console.WriteLine(<span class="tok-str">$"{completed.GroupKeyPattern} 已对齐"</span>);
+            <span class="tok-key">break</span>;
+    }
+}</code></pre>
+        </div>
+
+        <div class="panel" role="tabpanel" id="panel-naming" aria-labelledby="tab-naming" data-panel>
+<pre class="code" tabindex="0"><code><span class="tok-key">using</span> Lolitacoding.Nacos.Naming;
+
+<span class="tok-key">var</span> service = <span class="tok-key">new</span> <span class="tok-type">NacosServiceKey</span>(<span class="tok-str">"order-service"</span>, NacosConstants.DefaultGroup);
+
+<span class="tok-key">await</span> client.Naming.RegisterInstanceAsync(
+    service, <span class="tok-key">new</span> <span class="tok-type">NacosInstance</span>(<span class="tok-str">"10.0.0.5"</span>, <span class="tok-num">8080</span>));
+
+<span class="tok-com">// 一条连接对一个服务只发布一组实例，所以多实例用批量接口。</span>
+<span class="tok-key">await</span> client.Naming.RegisterInstancesAsync(payment, [
+    <span class="tok-key">new</span> <span class="tok-type">NacosInstance</span>(<span class="tok-str">"10.0.0.6"</span>, <span class="tok-num">8080</span>),
+    <span class="tok-key">new</span> <span class="tok-type">NacosInstance</span>(<span class="tok-str">"10.0.0.7"</span>, <span class="tok-num">8080</span>),
+]);
+
+<span class="tok-type">NacosServiceInfo</span> info = <span class="tok-key">await</span> client.Naming.GetInstancesAsync(service);
+
+<span class="tok-com">// 只保留带标签的实例；过滤在客户端，订阅仍然只开一条。</span>
+<span class="tok-key">var</span> goldOnly = <span class="tok-type">NacosInstanceSelectors</span>.Metadata(
+    <span class="tok-key">new</span> <span class="tok-type">Dictionary</span>&lt;<span class="tok-key">string</span>, <span class="tok-key">string</span>&gt; { [<span class="tok-str">"tier"</span>] = <span class="tok-str">"gold"</span> });
+
+<span class="tok-key">await foreach</span> (<span class="tok-type">NacosServiceChange</span> change <span class="tok-key">in</span>
+    client.Naming.SubscribeAsync(service, goldOnly))
+{
+    Console.WriteLine(<span class="tok-str">$"{change.Instances.Count} 个 gold 实例"</span>);
+}</code></pre>
+        </div>
+
+        <div class="panel" role="tabpanel" id="panel-lock" aria-labelledby="tab-lock" data-panel>
+<pre class="code" tabindex="0"><code><span class="tok-key">using</span> Lolitacoding.Nacos.Locking;
+
+<span class="tok-type">NacosLock</span> nightlyLock = client.Lock.GetLock(
+    <span class="tok-key">new</span> <span class="tok-type">NacosLockKey</span>(<span class="tok-str">"nightly-reindex"</span>),
+    <span class="tok-key">new</span> <span class="tok-type">NacosLockOptions</span> { LeaseDuration = <span class="tok-type">TimeSpan</span>.FromSeconds(<span class="tok-num">15</span>) });
+
+<span class="tok-key">await using</span> <span class="tok-type">NacosLockLease</span> lease = <span class="tok-key">await</span> nightlyLock.AcquireAsync(ct);
+
+<span class="tok-com">// …… 被保护的临界区 ……</span>
+
+<span class="tok-com">// 没有 fencing token：锁随连接消失，提交前自己确认还握着。</span>
+<span class="tok-key">if</span> (!lease.IsHeld)
+{
+    <span class="tok-com">// 这次执行的效果可能不再独占。</span>
+}</code></pre>
+        </div>
+
+        <div class="panel" role="tabpanel" id="panel-ai" aria-labelledby="tab-ai" data-panel>
+<pre class="code" tabindex="0"><code><span class="tok-key">using</span> Lolitacoding.Nacos.AI;
+
+<span class="tok-com">// MCP：服务器当前提供的工具、资源与端点。</span>
+<span class="tok-type">NacosMcpServerDetail</span> server = <span class="tok-key">await</span> client.AI.Mcp.GetServerAsync(<span class="tok-str">"weather"</span>, ct);
+
+<span class="tok-key">foreach</span> (<span class="tok-type">NacosMcpTool</span> tool <span class="tok-key">in</span> server.ToolSpec?.Tools ?? [])
+{
+    Console.WriteLine(tool.Name);
+}
+
+<span class="tok-com">// Nacos 没有 MCP 变更推送：订阅就是按间隔重读，变了才再报。</span>
+<span class="tok-key">await foreach</span> (<span class="tok-type">NacosMcpServerDetail</span> change <span class="tok-key">in</span>
+    client.AI.Mcp.SubscribeServerAsync(<span class="tok-str">"weather"</span>, ct: ct))
+{
+    Console.WriteLine(change.VersionDetail?.Version);
+}
+
+<span class="tok-com">// Prompt、Skill、Agent Spec、Agent Card，以及 3.3 的 RAD Agent watch。</span>
+<span class="tok-type">NacosSkill</span> skill = <span class="tok-key">await</span> client.AI.Skill.GetSkillAsync(<span class="tok-str">"release-notes"</span>, ct);
+Console.WriteLine(<span class="tok-str">$"{skill.Version} ({skill.Md5}), {skill.Archive.Length} bytes"</span>);</code></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section section-alt" id="packages">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker">04 — 包</p>
+        <h2>七个包，按需取用</h2>
+        <p class="section-lede">
+          核心包不依赖任何 DI 容器；扩展包各自只做一件事，Aspire 的两个包把服务端和客户端连起来。
+        </p>
+      </header>
+
+      <div class="table-wrap">
+        <table class="packages">
+          <caption class="sr-only">NuGet 包列表</caption>
+          <colgroup><col class="col-pkg"><col></colgroup>
+          <thead>
+            <tr><th scope="col">包</th><th scope="col">用途</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row"><code>Lolitacoding.Nacos</code><span class="pkg-note">核心</span></th>
+              <td>协议、传输、Config / Naming / Lock / AI 客户端。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>Lolitacoding.Nacos.<wbr>Extensions.<wbr>DependencyInjection</code></th>
+              <td><code>AddNacos(...)</code>、选项绑定与校验、生命周期管理。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>Lolitacoding.Nacos.<wbr>Extensions.<wbr>Configuration</code></th>
+              <td><code>AddNacosConfiguration(...)</code> 配置提供程序，带变更令牌与热更新。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>Lolitacoding.Nacos.<wbr>Extensions.<wbr>ServiceDiscovery</code></th>
+              <td>接进 <code>Microsoft.Extensions.ServiceDiscovery</code>，用 <code>http+nacos://order-service</code> 寻址。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>Lolitacoding.Nacos.AspNetCore</code></th>
+              <td>ASP.NET Core 应用启动时注册实例、停止时注销。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>Lolitacoding.Aspire.<wbr>Hosting.Nacos</code></th>
+              <td>AppHost 里编排一个 Nacos 服务端容器。</td>
+            </tr>
+            <tr>
+              <th scope="row"><code>Lolitacoding.Aspire.Nacos</code></th>
+              <td>客户端侧 <code>AddNacosClient(...)</code>，绑定注入的连接串。</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="start">
+    <div class="wrap">
+      <header class="section-head">
+        <p class="kicker">05 — 开始</p>
+        <h2>五分钟，从空项目到连上</h2>
+      </header>
+
+      <ol class="steps">
+        <li>
+          <div class="step-body">
+            <h3>装包</h3>
+            <p>预览版发布后可直接安装；在那之前从源码构建。</p>
+          </div>
+          <div class="step-code"><code>dotnet add package Lolitacoding.Nacos --prerelease</code></div>
+        </li>
+        <li>
+          <div class="step-body">
+            <h3>连上</h3>
+            <p>构造不连接，<code>ConnectAsync</code> 才建立连接；也可以交给 DI 托管。</p>
+          </div>
+          <div class="step-code">
+<pre class="code" tabindex="0"><code><span class="tok-type">NacosClient</span> client = <span class="tok-type">NacosClient</span>.Create(<span class="tok-key">new</span> <span class="tok-type">NacosOptions</span>
+{
+    ServerAddresses = [<span class="tok-str">"http://127.0.0.1:8848"</span>],
+});
+<span class="tok-key">await</span> client.ConnectAsync();</code></pre>
+          </div>
+        </li>
+        <li>
+          <div class="step-body">
+            <h3>接进宿主</h3>
+            <p>用扩展包把连接交给容器，而不是自己管生命周期。</p>
+          </div>
+          <div class="step-code">
+<pre class="code" tabindex="0"><code>builder.Services.AddNacos(options =&gt;
+{
+    options.ServerAddresses = [<span class="tok-str">"http://127.0.0.1:8848"</span>];
+    options.Namespace = <span class="tok-str">"public"</span>;
+});
+
+builder.AddNacosConfiguration(options =&gt;
+{
+    options.DataIds = [<span class="tok-str">"appsettings.json"</span>];
+    options.Optional = <span class="tok-key">true</span>;
+});</code></pre>
+          </div>
+        </li>
+      </ol>
+
+      <div class="docs">
+        <h3>接着读</h3>
+        <ul class="doc-list">
+          <li><a href="https://github.com/lolitacoding/Lolitacoding.Nacos/blob/main/docs/quickstart.md">快速开始<span>从配置中心到分布式锁，十一节</span></a></li>
+          <li><a href="https://github.com/lolitacoding/Lolitacoding.Nacos/blob/main/docs/configuration.md">配置参考<span>每一个选项与默认值</span></a></li>
+          <li><a href="https://github.com/lolitacoding/Lolitacoding.Nacos/blob/main/docs/aspire.md">Aspire 编排<span>AppHost 与客户端两侧</span></a></li>
+          <li><a href="https://github.com/lolitacoding/Lolitacoding.Nacos/blob/main/docs/migration-from-nacos-sdk-csharp.md">从 nacos-sdk-csharp 迁移<span>API 对照表</span></a></li>
+          <li><a href="https://github.com/lolitacoding/Lolitacoding.Nacos/blob/main/docs/faq.md">FAQ<span>版本、失败与边界情况</span></a></li>
+          <li><a href="https://github.com/lolitacoding/Lolitacoding.Nacos/blob/main/docs/protocol-notes.md">协议笔记<span>每个字段的上游出处</span></a></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap footer-inner">
+    <div class="footer-brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+        <rect x="0.5" y="0.5" width="31" height="31" rx="8" fill="none" stroke="currentColor" stroke-opacity=".35"/>
+        <path d="M11 8v14h9" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="square"/>
+        <circle cx="22.5" cy="10" r="2.2" fill="currentColor"/>
+      </svg>
+      <p><strong>Lolitacoding</strong><br><span>为 .NET 写的基础设施客户端。</span></p>
+    </div>
+    <nav class="footer-nav" aria-label="页脚导航">
+      <a href="https://github.com/lolitacoding/Lolitacoding.Nacos">源码</a>
+      <a href="https://github.com/lolitacoding/Lolitacoding.Nacos/issues">问题反馈</a>
+      <a href="https://github.com/lolitacoding/Lolitacoding.Nacos/blob/main/LICENSE">Apache-2.0</a>
+    </nav>
+    <p class="footer-note">© 2026 Lolitacoding · 与阿里巴巴集团无隶属关系，Nacos 是其各自的商标。</p>
+  </div>
+</footer>
+
+<script src="assets/main.js" defer></script>
+</body>
+</html>

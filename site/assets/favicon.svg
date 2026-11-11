@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Lolitacoding">
+  <rect width="64" height="64" rx="14" fill="#0c1016"/>
+  <rect x="1" y="1" width="62" height="62" rx="13.5" fill="none" stroke="#5eead4" stroke-opacity=".35" stroke-width="2"/>
+  <path d="M22 16v28h18" fill="none" stroke="#e7edf5" stroke-width="5" stroke-linecap="square"/>
+  <circle cx="45" cy="20" r="4.5" fill="#5eead4"/>
+</svg>
