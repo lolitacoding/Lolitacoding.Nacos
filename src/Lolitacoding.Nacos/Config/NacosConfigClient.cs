@@ -1403,6 +1403,25 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     }
 
     /// <summary>
+    /// Maps a deduplicated change onto the union case that carries it.
+    /// </summary>
+    /// <param name="kind">The kind of change, which is never the completion marker here.</param>
+    /// <param name="groupKeyPattern">The pattern the subscription watches.</param>
+    /// <param name="key">The configuration.</param>
+    /// <returns>The event to enqueue.</returns>
+    private static NacosConfigWatchEvent CreateWatchEvent(
+        NacosConfigWatchKind kind,
+        string groupKeyPattern,
+        NacosConfigKey key) => kind switch
+        {
+            NacosConfigWatchKind.Added => new NacosConfigWatchAdded(groupKeyPattern, key),
+            NacosConfigWatchKind.Modified => new NacosConfigWatchModified(groupKeyPattern, key),
+            NacosConfigWatchKind.Removed => new NacosConfigWatchRemoved(groupKeyPattern, key),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind), kind, "A configuration event cannot be the completion marker."),
+        };
+
+    /// <summary>
     /// Delivers one event to every subscription, suppressing what a subscription already knows.
     /// </summary>
     /// <param name="registration">The watch that produced the event.</param>
@@ -1431,7 +1450,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
                 // Unbounded on purpose: dropping an add or a remove would silently corrupt the
                 // consumer's view of the matched set, and no later event repairs it.
                 subscription.Queue.Writer.TryWrite(
-                    new NacosConfigWatchEvent(kind, registration.Pattern, key));
+                    CreateWatchEvent(kind, registration.Pattern, key));
             }
         }
     }
@@ -1453,10 +1472,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             }
 
             subscription.Initialized = true;
-            subscription.Queue.Writer.TryWrite(new NacosConfigWatchEvent(
-                NacosConfigWatchKind.InitialSyncCompleted,
-                registration.Pattern,
-                key: null));
+            subscription.Queue.Writer.TryWrite(
+                new NacosConfigWatchCompleted(registration.Pattern));
         }
 
         if (first)
@@ -1487,8 +1504,7 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             }
 
             subscription.KnownKeys.Add(groupKey);
-            subscription.Queue.Writer.TryWrite(new NacosConfigWatchEvent(
-                NacosConfigWatchKind.Added,
+            subscription.Queue.Writer.TryWrite(new NacosConfigWatchAdded(
                 registration.Pattern,
                 new NacosConfigKey(dataId, group, tenant)));
         }
@@ -1499,10 +1515,8 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         }
 
         subscription.Initialized = true;
-        subscription.Queue.Writer.TryWrite(new NacosConfigWatchEvent(
-            NacosConfigWatchKind.InitialSyncCompleted,
-            registration.Pattern,
-            key: null));
+        subscription.Queue.Writer.TryWrite(
+            new NacosConfigWatchCompleted(registration.Pattern));
     }
 
     /// <summary>

@@ -1642,6 +1642,26 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <summary>
+    /// Maps a deduplicated change onto the union case that carries it.
+    /// </summary>
+    /// <param name="kind">The kind of change, which is never the completion marker here.</param>
+    /// <param name="groupKeyPattern">The pattern the subscription watches.</param>
+    /// <param name="service">The service.</param>
+    /// <returns>The event to enqueue.</returns>
+    private static NacosServiceWatchEvent CreateWatchEvent(
+        NacosServiceWatchKind kind,
+        string groupKeyPattern,
+        NacosServiceKey service) => kind switch
+        {
+            NacosServiceWatchKind.Added => new NacosServiceWatchAdded(groupKeyPattern, service),
+            NacosServiceWatchKind.InstancesChanged =>
+                new NacosServiceWatchInstancesChanged(groupKeyPattern, service),
+            NacosServiceWatchKind.Removed => new NacosServiceWatchRemoved(groupKeyPattern, service),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(kind), kind, "A naming event cannot be the completion marker."),
+        };
+
+    /// <summary>
     /// Delivers one event to every subscription, suppressing what a subscription already knows.
     /// </summary>
     /// <param name="registration">The watch that produced the event.</param>
@@ -1670,7 +1690,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
                 // Unbounded on purpose: dropping an add or a remove would silently corrupt the
                 // consumer's view of the matched set, and no later event repairs it.
                 subscription.Queue.Writer.TryWrite(
-                    new NacosServiceWatchEvent(kind, registration.Pattern, service));
+                    CreateWatchEvent(kind, registration.Pattern, service));
             }
         }
     }
@@ -1692,10 +1712,8 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             }
 
             subscription.Initialized = true;
-            subscription.Queue.Writer.TryWrite(new NacosServiceWatchEvent(
-                NacosServiceWatchKind.InitialSyncCompleted,
-                registration.Pattern,
-                service: null));
+            subscription.Queue.Writer.TryWrite(
+                new NacosServiceWatchCompleted(registration.Pattern));
         }
 
         if (first)
@@ -1726,8 +1744,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             }
 
             subscription.KnownKeys.Add(serviceKey);
-            subscription.Queue.Writer.TryWrite(new NacosServiceWatchEvent(
-                NacosServiceWatchKind.Added,
+            subscription.Queue.Writer.TryWrite(new NacosServiceWatchAdded(
                 registration.Pattern,
                 new NacosServiceKey(serviceName, group, namespaceId)));
         }
@@ -1738,10 +1755,8 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         }
 
         subscription.Initialized = true;
-        subscription.Queue.Writer.TryWrite(new NacosServiceWatchEvent(
-            NacosServiceWatchKind.InitialSyncCompleted,
-            registration.Pattern,
-            service: null));
+        subscription.Queue.Writer.TryWrite(
+            new NacosServiceWatchCompleted(registration.Pattern));
     }
 
     /// <summary>

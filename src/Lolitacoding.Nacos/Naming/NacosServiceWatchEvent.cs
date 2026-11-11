@@ -19,6 +19,11 @@ namespace Lolitacoding.Nacos.Naming;
 /// reports it rather than dropping it, but no current server sends one for a service the watch
 /// already holds.
 /// </para>
+/// <para>
+/// <see cref="NacosServiceWatchEvent"/> is a union, so a consumer normally switches on the case
+/// instead of comparing this enum; the enum remains the vocabulary of
+/// <see cref="NacosServiceWatchEvent.Kind"/>.
+/// </para>
 /// </remarks>
 public enum NacosServiceWatchKind
 {
@@ -53,41 +58,89 @@ public enum NacosServiceWatchKind
 /// One event from a naming fuzzy watch.
 /// </summary>
 /// <remarks>
-/// <see cref="Service"/> is the service the event is about, or <see langword="null"/> for
-/// <see cref="NacosServiceWatchKind.InitialSyncCompleted"/>. <see cref="GroupKeyPattern"/> is
-/// always the pattern the subscription was opened with, so a consumer that multiplexes several
-/// watches can tell them apart.
+/// <para>
+/// The union has four cases, one per shape the protocol can produce: a service entering the matched
+/// set, one already in it changing, one leaving it, and the marker that ends the initial catch-up.
+/// Matching on the case is exhaustive, so a consumer cannot forget that the completion marker
+/// carries no service.
+/// </para>
+/// <para>
+/// <see cref="GroupKeyPattern"/> is always the pattern the subscription was opened with, so a
+/// consumer that multiplexes several watches can tell them apart. <see cref="Service"/> is the
+/// service the event is about, or <see langword="null"/> for
+/// <see cref="NacosServiceWatchKind.InitialSyncCompleted"/>.
+/// </para>
 /// </remarks>
-public sealed record NacosServiceWatchEvent
+public readonly union NacosServiceWatchEvent(
+    NacosServiceWatchAdded,
+    NacosServiceWatchInstancesChanged,
+    NacosServiceWatchRemoved,
+    NacosServiceWatchCompleted)
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NacosServiceWatchEvent"/> record.
-    /// </summary>
-    /// <param name="kind">The kind of change.</param>
-    /// <param name="groupKeyPattern">The pattern the subscription watches.</param>
-    /// <param name="service">The service, or <see langword="null"/> for the completion marker.</param>
-    internal NacosServiceWatchEvent(
-        NacosServiceWatchKind kind,
-        string groupKeyPattern,
-        NacosServiceKey? service)
-    {
-        Kind = kind;
-        GroupKeyPattern = groupKeyPattern;
-        Service = service;
-    }
-
     /// <summary>Gets the kind of change.</summary>
-    public NacosServiceWatchKind Kind { get; }
+    public NacosServiceWatchKind Kind => Value switch
+    {
+        NacosServiceWatchAdded => NacosServiceWatchKind.Added,
+        NacosServiceWatchInstancesChanged => NacosServiceWatchKind.InstancesChanged,
+        NacosServiceWatchRemoved => NacosServiceWatchKind.Removed,
+        NacosServiceWatchCompleted => NacosServiceWatchKind.InitialSyncCompleted,
+        _ => throw new InvalidOperationException(
+            "A default NacosServiceWatchEvent carries no case; it is not a value the client produces."),
+    };
 
     /// <summary>
     /// Gets the pattern this subscription watches, as
     /// <c>namespace&gt;&gt;groupPattern&gt;&gt;serviceNamePattern</c>.
     /// </summary>
-    public string GroupKeyPattern { get; }
+    public string GroupKeyPattern => Value switch
+    {
+        NacosServiceWatchAdded added => added.GroupKeyPattern,
+        NacosServiceWatchInstancesChanged changed => changed.GroupKeyPattern,
+        NacosServiceWatchRemoved removed => removed.GroupKeyPattern,
+        NacosServiceWatchCompleted completed => completed.GroupKeyPattern,
+        _ => throw new InvalidOperationException(
+            "A default NacosServiceWatchEvent carries no case; it is not a value the client produces."),
+    };
 
     /// <summary>
     /// Gets the service the event is about, or <see langword="null"/> when <see cref="Kind"/> is
     /// <see cref="NacosServiceWatchKind.InitialSyncCompleted"/>.
     /// </summary>
-    public NacosServiceKey? Service { get; }
+    public NacosServiceKey? Service => Value switch
+    {
+        NacosServiceWatchAdded added => added.Service,
+        NacosServiceWatchInstancesChanged changed => changed.Service,
+        NacosServiceWatchRemoved removed => removed.Service,
+        NacosServiceWatchCompleted => null,
+        _ => throw new InvalidOperationException(
+            "A default NacosServiceWatchEvent carries no case; it is not a value the client produces."),
+    };
 }
+
+/// <summary>
+/// A service that started matching the watched pattern.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+/// <param name="Service">The service that now matches.</param>
+public sealed record NacosServiceWatchAdded(string GroupKeyPattern, NacosServiceKey Service);
+
+/// <summary>
+/// An already matched service's instance list changed.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+/// <param name="Service">The service whose instances changed.</param>
+public sealed record NacosServiceWatchInstancesChanged(string GroupKeyPattern, NacosServiceKey Service);
+
+/// <summary>
+/// A service that stopped matching the watched pattern.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+/// <param name="Service">The service that no longer matches.</param>
+public sealed record NacosServiceWatchRemoved(string GroupKeyPattern, NacosServiceKey Service);
+
+/// <summary>
+/// The initial catch-up is complete: every service that matched when the watch began has been
+/// reported.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+public sealed record NacosServiceWatchCompleted(string GroupKeyPattern);

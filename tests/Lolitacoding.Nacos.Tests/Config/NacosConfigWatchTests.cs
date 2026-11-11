@@ -63,17 +63,61 @@ public sealed class NacosConfigWatchTests
         });
 
         await NextAsync(pending);
+        NacosConfigWatchAdded first = events.Current.Value.ShouldBeOfType<NacosConfigWatchAdded>();
+        first.Key.DataId.ShouldBe("app.one");
+        first.GroupKeyPattern.ShouldBe(Pattern);
         events.Current.Kind.ShouldBe(NacosConfigWatchKind.Added);
-        events.Current.Key!.DataId.ShouldBe("app.one");
-        events.Current.GroupKeyPattern.ShouldBe(Pattern);
 
         await NextAsync(events);
-        events.Current.Kind.ShouldBe(NacosConfigWatchKind.Added);
-        events.Current.Key!.DataId.ShouldBe("app.two");
+        events.Current.Value.ShouldBeOfType<NacosConfigWatchAdded>().Key.DataId.ShouldBe("app.two");
 
         await NextAsync(events);
+        events.Current.Value.ShouldBeOfType<NacosConfigWatchCompleted>()
+            .GroupKeyPattern.ShouldBe(Pattern);
         events.Current.Kind.ShouldBe(NacosConfigWatchKind.InitialSyncCompleted);
         events.Current.Key.ShouldBeNull();
+    }
+
+    [Fact]
+    public void WatchEvent_IsAUnionOfTheFourShapes()
+    {
+        var key = new NacosConfigKey("app.one", Group);
+
+        NacosConfigWatchEvent[] events =
+        [
+            new NacosConfigWatchAdded(Pattern, key),
+            new NacosConfigWatchModified(Pattern, key),
+            new NacosConfigWatchRemoved(Pattern, key),
+            new NacosConfigWatchCompleted(Pattern),
+        ];
+
+        events.Select(item => item.Kind).ShouldBe(
+        [
+            NacosConfigWatchKind.Added,
+            NacosConfigWatchKind.Modified,
+            NacosConfigWatchKind.Removed,
+            NacosConfigWatchKind.InitialSyncCompleted,
+        ]);
+
+        events.Select(item => item.GroupKeyPattern).Distinct().ShouldBe([Pattern]);
+        events[..3].Select(item => item.Key).ShouldBe([key, key, key]);
+        events[3].Key.ShouldBeNull();
+
+        // The union is exhaustive: this switch needs no default, and each arm sees only the payload
+        // its own case carries.
+        events.Select(item => item switch
+        {
+            NacosConfigWatchAdded added => $"added {added.Key}",
+            NacosConfigWatchModified modified => $"modified {modified.Key}",
+            NacosConfigWatchRemoved removed => $"removed {removed.Key}",
+            NacosConfigWatchCompleted completed => $"completed {completed.GroupKeyPattern}",
+        }).ShouldBe(
+        [
+            $"added {key}",
+            $"modified {key}",
+            $"removed {key}",
+            $"completed {Pattern}",
+        ]);
     }
 
     [Fact]

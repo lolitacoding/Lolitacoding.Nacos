@@ -62,18 +62,63 @@ public sealed class NacosServiceWatchTests
         });
 
         await NextAsync(pending);
+        NacosServiceWatchAdded first = events.Current.Value.ShouldBeOfType<NacosServiceWatchAdded>();
+        first.Service.ServiceName.ShouldBe("app.one");
+        first.Service.Namespace.ShouldBe("public");
+        first.GroupKeyPattern.ShouldBe(Pattern);
         events.Current.Kind.ShouldBe(NacosServiceWatchKind.Added);
-        events.Current.Service!.ServiceName.ShouldBe("app.one");
-        events.Current.Service.Namespace.ShouldBe("public");
-        events.Current.GroupKeyPattern.ShouldBe(Pattern);
 
         await NextAsync(events);
-        events.Current.Kind.ShouldBe(NacosServiceWatchKind.Added);
-        events.Current.Service!.ServiceName.ShouldBe("app.two");
+        events.Current.Value.ShouldBeOfType<NacosServiceWatchAdded>()
+            .Service.ServiceName.ShouldBe("app.two");
 
         await NextAsync(events);
+        events.Current.Value.ShouldBeOfType<NacosServiceWatchCompleted>()
+            .GroupKeyPattern.ShouldBe(Pattern);
         events.Current.Kind.ShouldBe(NacosServiceWatchKind.InitialSyncCompleted);
         events.Current.Service.ShouldBeNull();
+    }
+
+    [Fact]
+    public void WatchEvent_IsAUnionOfTheFourShapes()
+    {
+        var service = new NacosServiceKey("app.one", Group, "public");
+
+        NacosServiceWatchEvent[] events =
+        [
+            new NacosServiceWatchAdded(Pattern, service),
+            new NacosServiceWatchInstancesChanged(Pattern, service),
+            new NacosServiceWatchRemoved(Pattern, service),
+            new NacosServiceWatchCompleted(Pattern),
+        ];
+
+        events.Select(item => item.Kind).ShouldBe(
+        [
+            NacosServiceWatchKind.Added,
+            NacosServiceWatchKind.InstancesChanged,
+            NacosServiceWatchKind.Removed,
+            NacosServiceWatchKind.InitialSyncCompleted,
+        ]);
+
+        events.Select(item => item.GroupKeyPattern).Distinct().ShouldBe([Pattern]);
+        events[..3].Select(item => item.Service).ShouldBe([service, service, service]);
+        events[3].Service.ShouldBeNull();
+
+        // The union is exhaustive: this switch needs no default, and each arm sees only the payload
+        // its own case carries.
+        events.Select(item => item switch
+        {
+            NacosServiceWatchAdded added => $"added {added.Service}",
+            NacosServiceWatchInstancesChanged changed => $"changed {changed.Service}",
+            NacosServiceWatchRemoved removed => $"removed {removed.Service}",
+            NacosServiceWatchCompleted completed => $"completed {completed.GroupKeyPattern}",
+        }).ShouldBe(
+        [
+            $"added {service}",
+            $"changed {service}",
+            $"removed {service}",
+            $"completed {Pattern}",
+        ]);
     }
 
     [Fact]

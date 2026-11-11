@@ -14,6 +14,10 @@ namespace Lolitacoding.Nacos.Config;
 /// The event carries coordinates only. The push that produced it carries no content either, so a
 /// consumer that needs the new value reads it with <see cref="INacosConfigClient.GetConfigAsync"/>.
 /// </para>
+/// <para>
+/// <see cref="NacosConfigWatchEvent"/> is a union, so a consumer normally switches on the case
+/// instead of comparing this enum; the enum remains the vocabulary of <see cref="NacosConfigWatchEvent.Kind"/>.
+/// </para>
 /// </remarks>
 public enum NacosConfigWatchKind
 {
@@ -51,41 +55,89 @@ public enum NacosConfigWatchKind
 /// One event from a configuration fuzzy watch.
 /// </summary>
 /// <remarks>
-/// <see cref="Key"/> is the configuration the event is about, or <see langword="null"/> for
-/// <see cref="NacosConfigWatchKind.InitialSyncCompleted"/>. <see cref="GroupKeyPattern"/> is always
-/// the pattern the subscription was opened with, so a consumer that multiplexes several watches can
-/// tell them apart.
+/// <para>
+/// The union has four cases, one per shape the protocol can produce: a configuration entering the
+/// matched set, one that already matched changing, one leaving it, and the marker that ends the
+/// initial catch-up. Matching on the case is exhaustive, so a consumer cannot forget that the
+/// completion marker carries no configuration.
+/// </para>
+/// <para>
+/// <see cref="GroupKeyPattern"/> is always the pattern the subscription was opened with, so a
+/// consumer that multiplexes several watches can tell them apart. <see cref="Key"/> is the
+/// configuration the event is about, or <see langword="null"/> for
+/// <see cref="NacosConfigWatchKind.InitialSyncCompleted"/>.
+/// </para>
 /// </remarks>
-public sealed record NacosConfigWatchEvent
+public readonly union NacosConfigWatchEvent(
+    NacosConfigWatchAdded,
+    NacosConfigWatchModified,
+    NacosConfigWatchRemoved,
+    NacosConfigWatchCompleted)
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NacosConfigWatchEvent"/> record.
-    /// </summary>
-    /// <param name="kind">The kind of change.</param>
-    /// <param name="groupKeyPattern">The pattern the subscription watches.</param>
-    /// <param name="key">The configuration, or <see langword="null"/> for the completion marker.</param>
-    internal NacosConfigWatchEvent(
-        NacosConfigWatchKind kind,
-        string groupKeyPattern,
-        NacosConfigKey? key)
-    {
-        Kind = kind;
-        GroupKeyPattern = groupKeyPattern;
-        Key = key;
-    }
-
     /// <summary>Gets the kind of change.</summary>
-    public NacosConfigWatchKind Kind { get; }
+    public NacosConfigWatchKind Kind => Value switch
+    {
+        NacosConfigWatchAdded => NacosConfigWatchKind.Added,
+        NacosConfigWatchModified => NacosConfigWatchKind.Modified,
+        NacosConfigWatchRemoved => NacosConfigWatchKind.Removed,
+        NacosConfigWatchCompleted => NacosConfigWatchKind.InitialSyncCompleted,
+        _ => throw new InvalidOperationException(
+            "A default NacosConfigWatchEvent carries no case; it is not a value the client produces."),
+    };
 
     /// <summary>
     /// Gets the pattern this subscription watches, as
     /// <c>namespace&gt;&gt;groupPattern&gt;&gt;dataIdPattern</c>.
     /// </summary>
-    public string GroupKeyPattern { get; }
+    public string GroupKeyPattern => Value switch
+    {
+        NacosConfigWatchAdded added => added.GroupKeyPattern,
+        NacosConfigWatchModified modified => modified.GroupKeyPattern,
+        NacosConfigWatchRemoved removed => removed.GroupKeyPattern,
+        NacosConfigWatchCompleted completed => completed.GroupKeyPattern,
+        _ => throw new InvalidOperationException(
+            "A default NacosConfigWatchEvent carries no case; it is not a value the client produces."),
+    };
 
     /// <summary>
     /// Gets the configuration the event is about, or <see langword="null"/> when
     /// <see cref="Kind"/> is <see cref="NacosConfigWatchKind.InitialSyncCompleted"/>.
     /// </summary>
-    public NacosConfigKey? Key { get; }
+    public NacosConfigKey? Key => Value switch
+    {
+        NacosConfigWatchAdded added => added.Key,
+        NacosConfigWatchModified modified => modified.Key,
+        NacosConfigWatchRemoved removed => removed.Key,
+        NacosConfigWatchCompleted => null,
+        _ => throw new InvalidOperationException(
+            "A default NacosConfigWatchEvent carries no case; it is not a value the client produces."),
+    };
 }
+
+/// <summary>
+/// A configuration that started matching the watched pattern.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+/// <param name="Key">The configuration that now matches.</param>
+public sealed record NacosConfigWatchAdded(string GroupKeyPattern, NacosConfigKey Key);
+
+/// <summary>
+/// An already matched configuration changed.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+/// <param name="Key">The configuration that changed.</param>
+public sealed record NacosConfigWatchModified(string GroupKeyPattern, NacosConfigKey Key);
+
+/// <summary>
+/// A configuration that stopped matching the watched pattern.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+/// <param name="Key">The configuration that no longer matches.</param>
+public sealed record NacosConfigWatchRemoved(string GroupKeyPattern, NacosConfigKey Key);
+
+/// <summary>
+/// The initial catch-up is complete: every configuration that matched when the watch began has
+/// been reported.
+/// </summary>
+/// <param name="GroupKeyPattern">The pattern the subscription watches.</param>
+public sealed record NacosConfigWatchCompleted(string GroupKeyPattern);
