@@ -1,14 +1,16 @@
 # Lolitacoding.Nacos
 
-Modern **.NET 10** client SDK for [Nacos](https://nacos.io) 3.x — configuration center,
+Modern **.NET 11** client SDK for [Nacos](https://nacos.io) 3.x — configuration center,
 service registration & discovery, distributed locking, and the AI registry.
 
 [![CI](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml/badge.svg)](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml)
 
 ## Why another Nacos client?
 
-- **Only .NET 10.** No multi-targeting, no legacy `netstandard` shims — C# 14, `System.Text.Json`
-  source generation, `Span<T>`, `Channel<T>`, `TimeProvider` and `IAsyncEnumerable` are used directly.
+- **Only .NET 11.** No multi-targeting, no legacy `netstandard` shims — C# 15 unions turn a watch
+  event into an exhaustive `switch`, runtime async hands `async` methods to the runtime instead of a
+  generated state machine, and `System.Text.Json` source generation, `Span<T>`, `Channel<T>` and
+  `TimeProvider` are used directly.
 - **Native AOT and trimming friendly.** No reflection-based serialization, no runtime code
   generation; every `IL2xxx`/`IL3xxx` warning is an error in this repository.
 - **First-class .NET integration.** `IConfiguration`, dependency injection, `IHostedService`,
@@ -66,11 +68,26 @@ await foreach (NacosConfigChange change in client.Config.ListenAsync(key))
 
 // Follow a pattern instead of one key: the server keeps the matching set in sync, so this
 // discovers configurations whose names the process does not know. It reports membership, not
-// content - ListenAsync above is what follows a value.
+// content - ListenAsync above is what follows a value. The union makes the four shapes
+// exhaustive: an add, a modify, a remove, and the marker that ends the initial catch-up.
 await foreach (NacosConfigWatchEvent item in
     client.Config.WatchAsync("feature.*", NacosConstants.DefaultGroup))
 {
-    Console.WriteLine($"{item.Kind}: {item.Key}");
+    switch (item)
+    {
+        case NacosConfigWatchAdded added:
+            Console.WriteLine($"+ {added.Key}");
+            break;
+        case NacosConfigWatchModified modified:
+            Console.WriteLine($"~ {modified.Key}");
+            break;
+        case NacosConfigWatchRemoved removed:
+            Console.WriteLine($"- {removed.Key}");
+            break;
+        case NacosConfigWatchCompleted completed:
+            Console.WriteLine($"{completed.GroupKeyPattern} is in sync");
+            break;
+    }
 }
 ```
 
@@ -109,7 +126,21 @@ IReadOnlyList<NacosInstance> instances = info.HealthyInstances;
 await foreach (NacosServiceWatchEvent item in
     client.Naming.WatchAsync("order-*", NacosConstants.DefaultGroup))
 {
-    Console.WriteLine($"{item.Kind}: {item.Service}");
+    switch (item)
+    {
+        case NacosServiceWatchAdded added:
+            Console.WriteLine($"+ {added.Service}");
+            break;
+        case NacosServiceWatchInstancesChanged changed:
+            Console.WriteLine($"~ {changed.Service}");
+            break;
+        case NacosServiceWatchRemoved removed:
+            Console.WriteLine($"- {removed.Service}");
+            break;
+        case NacosServiceWatchCompleted completed:
+            Console.WriteLine($"{completed.GroupKeyPattern} is in sync");
+            break;
+    }
 }
 
 // Follow one service's instances, keeping only those that carry a label. The filter runs on the
@@ -368,6 +399,12 @@ builder.Services.AddOpenTelemetry()
 - [Protocol notes](docs/protocol-notes.md) — upstream references for every protocol detail.
 - [Java SDK parity](docs/java-parity.md) — what the official client has, what this one does, and why.
 - [Releasing](docs/releasing.md) — the tag format, the gates, and how a package reaches nuget.org.
+
+## Website
+
+The project site lives in [`site/`](site/) and is published by GitHub Pages from `main`:
+<https://lolitacoding.github.io/Lolitacoding.Nacos/>. It is plain HTML and CSS with no build step —
+see [`site/README.md`](site/README.md) for the layout and how a change reaches the site.
 
 ## Building
 

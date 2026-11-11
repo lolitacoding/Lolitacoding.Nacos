@@ -6,7 +6,7 @@
 
 为 Nacos 提供现代化的 .NET 客户端 SDK：
 
-- 仅面向 **.NET 10**（`net10.0`），充分使用新语言特性（C# 14、`System.Text.Json` 源生成、`Span`、`Channel<T>`、`TimeProvider`、`IAsyncEnumerable` 等）。
+- 仅面向 **.NET 11**（`net11.0`），充分使用新语言特性（C# 15 联合类型、运行时异步、`System.Text.Json` 源生成、`Span`、`Channel<T>`、`TimeProvider`、`IAsyncEnumerable` 等）。
 - 仅支持 **Nacos 3.x** 服务端（不再支持 2.x；见第 6 节"待核对事项"）。
 - 覆盖核心能力：**配置中心（Config）**、**服务注册发现（Naming）**、**分布式锁（Lock）** 与 **AI 注册中心（MCP / Prompt / Skill / AgentSpec / Agent）**。
 - 提供与 .NET 生态的一等集成：`IConfiguration`、`Microsoft.Extensions.DependencyInjection`、`IHostedService`、`HttpClientFactory`、`Microsoft.Extensions.ServiceDiscovery`（可选依赖）。
@@ -23,7 +23,7 @@
 Lolitacoding.Nacos/
 ├─ Directory.Build.props
 ├─ Directory.Packages.props          # 中央包版本管理
-├─ global.json                       # 固定 .NET 10 SDK
+├─ global.json                       # 固定 .NET 11 SDK
 ├─ .editorconfig
 ├─ Lolitacoding.Nacos.slnx
 ├─ src/
@@ -49,7 +49,7 @@ Lolitacoding.Nacos/
 ## 3. 全局约定（AI 必须遵守）
 
 **构建与质量**
-- `TargetFramework=net10.0`，`LangVersion=latest`，`Nullable=enable`，`ImplicitUsings=enable`，`TreatWarningsAsErrors=true`。
+- `TargetFramework=net11.0`，`LangVersion=latest`，`Nullable=enable`，`ImplicitUsings=enable`，`TreatWarningsAsErrors=true`。
 - 启用 `IsAotCompatible=true`（核心库），所有 trim/AOT 警告视为错误。
 - 使用 `Directory.Packages.props` 中央管理版本；`.csproj` 中不写包版本号。
 - 版本号使用 MinVer（基于 git tag）；开启 SourceLink、符号包（`snupkg`）、确定性构建。
@@ -443,7 +443,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 #### P0-1 · 配置模糊监听（✅ 已完成）
 
 - **缺口**：`fuzzyWatch` 是本客户端唯一对服务端显式声明为 `false` 的协议能力（`AbilityKey.SERVER_FUZZY_WATCH`）。官方入口是 `ConfigService.fuzzyWatch(dataIdPattern, groupPattern, watcher)` / `fuzzyWatchWithGroupKeys(...)`；它解决的是「按模式发现不知道名字的配置」——精确监听必须先知道 dataId，模糊监听才知道有哪些。
-- **公共面**：`INacosConfigClient.WatchAsync(dataIdPattern, groupPattern, ct)` 返回 `IAsyncEnumerable<NacosConfigWatchEvent>`，形状与 `ListenAsync` 一致；重载 `WatchAsync(groupPattern, ct)` 用 `*` 作为 dataId 模式。`NacosConfigWatchKind` 为 `Added` / `Modified` / `Removed` / `InitialSyncCompleted`，事件携带 `GroupKeyPattern` 与 `Key`（完成标记的 `Key` 为 null）。`NacosConfigOptions.FuzzyWatchResyncInterval` 默认 3 分钟、校验必须大于 0。重载的 `ct` 是**必填**的：两个重载若都带可选 `ct`，只传一个字符串的调用会有歧义（RS0026 直接报错），因此文档要求不需要取消时显式传 `CancellationToken.None`。
+- **公共面**：`INacosConfigClient.WatchAsync(dataIdPattern, groupPattern, ct)` 返回 `IAsyncEnumerable<NacosConfigWatchEvent>`，形状与 `ListenAsync` 一致；重载 `WatchAsync(groupPattern, ct)` 用 `*` 作为 dataId 模式。`NacosConfigWatchEvent` 是 C# 15 联合类型，四个 case 为 `NacosConfigWatchAdded` / `NacosConfigWatchModified` / `NacosConfigWatchRemoved` / `NacosConfigWatchCompleted`，每个 case 自己携带 `GroupKeyPattern` 与 `Key`（完成 case 只有 `GroupKeyPattern`），因此 `switch` 可穷举且不存在「标记却没有 key」的半空对象；`Kind` / `Key` / `GroupKeyPattern` 仍作为兼容计算属性保留，`Kind` 的取值为 `NacosConfigWatchKind` 的 `Added` / `Modified` / `Removed` / `InitialSyncCompleted`（完成标记的 `Key` 为 null）。`NacosConfigOptions.FuzzyWatchResyncInterval` 默认 3 分钟、校验必须大于 0。重载的 `ct` 是**必填**的：两个重载若都带可选 `ct`，只传一个字符串的调用会有歧义（RS0026 直接报错），因此文档要求不需要取消时显式传 `CancellationToken.None`。
 - **协议**：`ConfigFuzzyWatchRequest{groupKeyPattern, receivedGroupKeys, watchType, initializing}`、`ConfigFuzzyWatchSyncRequest{groupKeyPattern, contexts[{groupKey, changedType}], syncType, totalBatch, currentBatch}`、`ConfigFuzzyWatchChangeNotifyRequest{groupKey, changeType}`。模式是 `namespace>>groupPattern>>dataIdPattern`，命名空间取客户端配置（空则 `public`），一个 watch 不能跨命名空间；group key 是 `dataId+group[+tenant]`，只有 `+`→`%2B`、`%`→`%25` 两种转义，其余百分号转义或第四段一律视为非法 key——记日志后跳过该项，不拖垮整批。模式匹配复刻 `FuzzyGroupKeyPattern`：无 `*` 即相等、`*` 全匹配、`*x*` 包含、`*x` 结尾、`x*` 开头，段中 `*`（`a*b`）什么都不匹配。
 - **能力位**：只有服务端**明确**声明 `fuzzyWatch=false` 才拒绝并抛 `NacosServerException(501)`；能力表里没有这个键表示「服务端没表态」（未协商的握手就是这样），照常尝试。能力表随握手到达，所以 `WatchAsync` 先建立连接再检查——否则从未连接过的客户端会拿空表跳过检查，把 watch 请求发给一个已声明不支持的服务器。
 - **状态机**：每个 pattern 一个共享注册（`_fuzzyWatches`），多个订阅者共用一次服务端 watch 与一条 diff 流；创建/增删订阅/取消共用一把 `SemaphoreSlim` 串行化，且这把锁**跨越 WATCH 往返**——否则「最后一个订阅者退出」与「同时新增订阅」交错会留下一个无人能取消的服务端 watch。订阅者各自维护已知集合以抑制重复事件；晚到的订阅者先用当前集合 seed（逐个 `Added`），已初始化则立即补一个 `InitialSyncCompleted`。推送处理放在 `NacosConfigClient` 内部（`OnFuzzyWatchSync` / `OnFuzzyWatchChange`），工厂只做路由与应答，因此脚本化的单元测试能直接驱动推送。
@@ -457,7 +457,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 #### P0-2 · 命名模糊监听（✅ 已完成）
 
 - **缺口**：命名侧与配置侧共用同一个 `fuzzyWatch` 能力位，Java 入口是 `NamingService.fuzzyWatch(...)` / `fuzzyWatchWithGroupKeys(...)` / `cancelFuzzyWatch(...)`。它解决的是「按模式发现不知道名字的服务」：精确订阅必须先知道服务名，模糊监听才知道有哪些服务。
-- **公共面**：`INacosNamingClient.WatchAsync(serviceNamePattern, groupPattern, ct)` 返回 `IAsyncEnumerable<NacosServiceWatchEvent>`；重载 `WatchAsync(groupPattern, ct)` 用 `*` 作为服务名模式，且 `ct` **必填**（与配置重载相同的 RS0026 歧义原因）。`NacosServiceWatchKind` 为 `Added` / `InstancesChanged` / `Removed` / `InitialSyncCompleted`，事件携带 `GroupKeyPattern` 与 `Service`（完成标记的 `Service` 为 null）。`NacosNamingOptions.FuzzyWatchResyncInterval` 默认 3 分钟、校验必须大于 0。
+- **公共面**：`INacosNamingClient.WatchAsync(serviceNamePattern, groupPattern, ct)` 返回 `IAsyncEnumerable<NacosServiceWatchEvent>`；重载 `WatchAsync(groupPattern, ct)` 用 `*` 作为服务名模式，且 `ct` **必填**（与配置重载相同的 RS0026 歧义原因）。`NacosServiceWatchEvent` 同样是联合类型，四个 case 为 `NacosServiceWatchAdded` / `NacosServiceWatchInstancesChanged` / `NacosServiceWatchRemoved` / `NacosServiceWatchCompleted`，各自携带 `GroupKeyPattern` 与 `Service`（完成 case 只有 `GroupKeyPattern`）；`Kind` / `Service` / `GroupKeyPattern` 作为兼容计算属性保留，`Kind` 取 `NacosServiceWatchKind` 的 `Added` / `InstancesChanged` / `Removed` / `InitialSyncCompleted`（完成标记的 `Service` 为 null）。`NacosNamingOptions.FuzzyWatchResyncInterval` 默认 3 分钟、校验必须大于 0。
 - **协议**：`NamingFuzzyWatchRequest{namespace, groupKeyPattern, receivedGroupKeys, watchType, initializing}`、`NamingFuzzyWatchSyncRequest{groupKeyPattern, contexts[{serviceKey, changedType}], syncType, totalBatch, currentBatch}`、`NamingFuzzyWatchChangeNotifyRequest{serviceKey, changedType, syncType}`；两种服务端推送都用 `NamingFuzzyWatchChangeNotifyResponse` 应答（Java 也是如此，命名侧没有单独的 sync response）。模式是 `namespace>>groupPattern>>serviceNamePattern`；服务键是 `namespace@@group@@service`（空命名空间按 `public`），**不做转义**，因为 `@@` 不允许出现在三段中的任何一段。
 - **状态机**：完全复用配置侧的形状——每个 pattern 一个共享注册、多订阅者共用一次服务端 watch、`SemaphoreSlim` 串行化且跨越 WATCH 往返、晚到订阅者用当前集合 seed、最后订阅者退出时仅在连接可用时发 `CANCEL_WATCH`。推送处理在 `NacosNamingClient` 内部（`OnFuzzyWatchSync` / `OnFuzzyWatchChange`），工厂只做路由与应答。
 - **服务端语义**：`syncServiceContext` 对 `INSTANCE_CHANGED` 返回 `false`，所以服务端只在**成员集合**变化时推送 `ADD_SERVICE` / `DELETE_SERVICE`（第一个/最后一个实例出现或消失）；已匹配服务的实例变化不推送，实例列表仍归 `SubscribeAsync`。若真收到 `INSTANCE_CHANGED`：已知服务报 `InstancesChanged`（Java 会把它折成新增，丢失区别），未知服务报 `Added`；`HEART_BEAT` 直接忽略。

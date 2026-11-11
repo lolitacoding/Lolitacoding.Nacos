@@ -3,7 +3,7 @@
 This guide takes you from an empty project to a running application that reads configuration from
 Nacos, watches it for changes, and registers itself for service discovery.
 
-> **Target framework:** .NET 10 (`net10.0`). The packages do not target older frameworks.
+> **Target framework:** .NET 11 (`net11.0`). The packages do not target older frameworks.
 
 ## 1. Install the packages
 

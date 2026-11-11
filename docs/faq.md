@@ -65,8 +65,13 @@ SDK releases; the details, with file references, are in
 
 ## Which .NET versions are supported?
 
-Only **.NET 10** (`net10.0`), with `LangVersion=latest`. There is no `netstandard` build and no
+Only **.NET 11** (`net11.0`), with `LangVersion=latest`. There is no `netstandard` build and no
 multi-targeting. If you need an older runtime, this library is not a fit.
+
+The library uses the two features .NET 11 made stable rather than preview: **union types** for the
+watch events, so a `switch` over the cases is exhaustive, and **runtime async**, so an `async`
+method is resumed by the runtime instead of a compiler-generated state machine. Both are compiled
+into the packages; a consumer needs the .NET 11 runtime, not a preview flag.
 
 ## Which ports does the client use?
 
@@ -220,6 +225,25 @@ The server limits how many patterns a connection may watch (`50310`) and how man
 pattern may match (`50311`); both arrive as `NacosServerException` with that code. A watch is re-sent
 every `Config.FuzzyWatchResyncInterval` / `Naming.FuzzyWatchResyncInterval` (3 minutes by default) so
 a lost push is repaired.
+
+Both event types are **unions**, so the four shapes are a `switch` the compiler checks exhaustively
+instead of a `Kind` enum next to a nullable payload:
+
+```csharp
+await foreach (NacosConfigWatchEvent item in client.Config.WatchAsync("feature.*", "DEFAULT_GROUP"))
+{
+    switch (item)
+    {
+        case NacosConfigWatchAdded added: Console.WriteLine($"+ {added.Key}"); break;
+        case NacosConfigWatchModified modified: Console.WriteLine($"~ {modified.Key}"); break;
+        case NacosConfigWatchRemoved removed: Console.WriteLine($"- {removed.Key}"); break;
+        case NacosConfigWatchCompleted completed: Console.WriteLine($"{completed.GroupKeyPattern} in sync"); break;
+    }
+}
+```
+
+`Kind`, `Key` / `Service` and `GroupKeyPattern` remain on the union as convenience properties for
+logging or for the case where the shape does not matter.
 
 ## How do I list every service in a group?
 

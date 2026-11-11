@@ -83,6 +83,10 @@ IAsyncEnumerable<NacosConfigWatchEvent> WatchAsync(
 ```
 
 with `Added`, `Modified`, `Removed` and a single `InitialSyncCompleted` marker per subscription.
+`NacosConfigWatchEvent` is a union of `NacosConfigWatchAdded`, `NacosConfigWatchModified`,
+`NacosConfigWatchRemoved` and `NacosConfigWatchCompleted`, so a `switch` over an event is
+exhaustive and the marker cannot carry a configuration by construction; `Kind`, `Key` and
+`GroupKeyPattern` remain as convenience properties.
 
 Implemented. Three details are worth recording because they differ from a naive reading of the
 protocol:
@@ -109,9 +113,11 @@ protocol:
 
 The naming protocol is the same shape with service keys (`namespace@@group@@service`) and
 `ADD_SERVICE`, `DELETE_SERVICE`, `INSTANCE_CHANGED`, `HEART_BEAT`. `INacosNamingClient.WatchAsync`
-has the same two overloads as the configuration watch and returns `NacosServiceWatchEvent`, whose
-kind is `Added`, `InstancesChanged`, `Removed` or `InitialSyncCompleted`. The group-only overload
-requires the token, for the same ambiguity reason as configuration.
+has the same two overloads as the configuration watch and returns `NacosServiceWatchEvent`, a union
+whose cases are `NacosServiceWatchAdded`, `NacosServiceWatchInstancesChanged`,
+`NacosServiceWatchRemoved` and `NacosServiceWatchCompleted` (`Kind` still reports `Added`,
+`InstancesChanged`, `Removed` or `InitialSyncCompleted`). The group-only overload requires the token,
+for the same ambiguity reason as configuration.
 
 - The set is the server's, keyed by service key. A late subscriber is seeded from it, and a
   `CANCEL_WATCH` is sent for the last subscriber only while connected.

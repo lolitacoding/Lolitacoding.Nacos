@@ -29,7 +29,7 @@ All gates, then the push:
 | Build and unit tests | Release build with warnings as errors, 900+ unit tests |
 | Native AOT publish | the sample still publishes under `win-x64` with every `IL2xxx`/`IL3xxx` warning an error |
 | Integration tests (three jobs) | the base suite on 3.0.2, 3.2.4 and 3.3.0-RC, the AI registry on 3.2.4, the agent registry and lock service on 3.3.0-RC |
-| Pack and validate | exactly seven `.nupkg` and seven `.snupkg`, each with its `lib/net10.0` assembly, README and nuspec |
+| Pack and validate | exactly seven `.nupkg` and seven `.snupkg`, each with its `lib/net11.0` assembly, README and nuspec |
 | Publish | downloads that artifact and pushes it; it never re-packs |
 
 The publish job needs all of the above. It also requires the repository variable

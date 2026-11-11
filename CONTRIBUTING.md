@@ -5,7 +5,7 @@ organised and the conventions every change must follow.
 
 ## Prerequisites
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download) (the exact version is pinned in `global.json`)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download) (the exact version is pinned in `global.json`)
 - Docker, for the integration tests
 - `git`
 
@@ -36,7 +36,13 @@ They are tagged `[Trait("Category", "Integration")]` and are excluded from the f
 
 These are enforced by `.editorconfig` and the analyzers, not by review comments.
 
-- `TargetFramework=net10.0`, `LangVersion=latest`, `Nullable=enable`, `ImplicitUsings=enable`.
+- `TargetFramework=net11.0`, `LangVersion=latest`, `Nullable=enable`, `ImplicitUsings=enable`.
+- **Runtime async is on** (`runtime-async=on` in `Directory.Build.props`). An `async` method compiles
+  to a resumable call the runtime drives; an `async` iterator still needs `[EnumeratorCancellation]`.
+  Do not add a state-machine workaround that assumes the old lowering.
+- **Union types are the shape for a closed set of cases.** A public type that is "one of these
+  shapes" is declared with `union`, and each case is a named record carrying its own payload, so
+  `switch` is exhaustive and no case can carry a payload another case lacks.
 - **File-scoped namespaces**, `sealed` by default, `record`/`record struct` for immutable DTOs.
 - Every asynchronous method takes a trailing `CancellationToken ct = default`.
 - **Never** call `DateTime.Now`, `DateTime.UtcNow`, or `Task.Delay` in library code. Inject
