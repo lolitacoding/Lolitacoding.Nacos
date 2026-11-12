@@ -43,7 +43,10 @@ the bottom with the reason it is not implemented here.
 | P3-11 | `NamingMaintainService` | `createService`, `updateService`, `deleteService`, `getService`, `updateInstance` | Missing by design | Administrative API under `/v3/admin/ns/*`; needs a bearer token even with auth disabled. It is not part of a runtime client. |
 | P3-12 | AI administration and console models | MCP/agent drafts, labels, versions, import, resource search, pipelines, registry models, overview | Missing by design | Reachable through `maintainer-client` or the console API, not through the runtime `AiService`. |
 | P3-13 | Spring and JVM idioms | `@NacosValue`, `@NacosConfigurationProperties`, JMX, logging adapters, `NacosFactory` property keys | Replaced, not ported | This library integrates through `IConfiguration`, dependency injection, `ILogger` and OpenTelemetry instead. |
-| P3-14 | AI HTTP transport with automatic gRPC fallback | `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy` | Documented non-goal | Automatic transport selection needs a server that advertises the HTTP publication contract; the gRPC path is the one Nacos 3.x actually routes. See `protocol-notes.md`. |
+| P3-14 | AI HTTP transport with automatic gRPC fallback | `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy` | **Re-opened as P1-15** | Recorded as a non-goal when this document assumed no HTTP publication contract existed. Nacos 3.3 implements one, so the gap is real; see the 3.3 re-audit below. |
+
+The 2026-11 re-audit against the 3.3 client found nine further gaps. They are listed in
+[P1-15–P3-23](#2026-11-re-audit-against-nacos-33) after the P2 detail sections, ranked the same way.
 
 ## P0-1: configuration fuzzy watch
 
@@ -388,8 +391,165 @@ implementation is `EndpointServerListProvider`.
 
 ## P2 items
 
-All three P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. What remains is the
-P3 list, which is closed by design rather than by work.
+All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
+re-audit adds two open P2 rows (P2-16, P2-17), and the P3 list is no longer closed by design alone:
+P3-11 to P3-13 remain non-goals, while P3-18 to P3-23 are work items.
+
+## 2026-11 re-audit against Nacos 3.3
+
+The rows above were cut from the 3.2 surface. This pass re-read the same checkout at `1511b5a`
+(2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
+sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
+configuration reads, the RAD agent registry and the lock watchdog. Nine gaps remain, none of them in
+the configuration or naming hot path.
+
+| # | Capability | Java entry point | Status here | Why it matters |
+| --- | --- | --- | --- | --- |
+| P1-15 | AI registry over HTTP, with a per-module transport choice | `AgentTransportMode`, `nacosAiTransportMode` and its five per-module keys, `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy`, endpoint publication heartbeat | **Missing**, except the agent watch (`NacosAgentWatchTransport`, P2-7) | A deployment whose ingress is HTTP-only cannot read or publish AI resources at all, and there is no way to opt into HTTP the way Java 3.3 lets a caller do. |
+| P2-16 | A2A batch endpoint registration | `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` → `BatchAgentEndpointRequest` | **Missing** — `RegisterAgentEndpointAsync` takes one endpoint; `NacosAgentEndpointBatch` is the RAD batch, a different request | Publishing one agent on several transports costs a round trip each, and the set cannot be replaced atomically. |
+| P2-17 | Conditional configuration read | `ConfigService.getConfig(GetConfigRequest)` with `localMd5`, `getConfigWithResult` | **Partial** — `NacosConfigResult` exists, but `GetConfigAsync` always reads unconditionally; the `304` path is used by listeners only | A large configuration is re-sent on every read even when the caller already holds the content. |
+| P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Missing** | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
+| P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Missing** — the request is dropped, so the server's one-second wait expires | The console's client-metrics page reports an error for a .NET client. |
+| P3-20 | `ServiceInfo` bookkeeping fields | `cacheMillis`, `lastRefTime`, `allIPs`, `reachProtectionThreshold` | **Missing** — `NacosServiceInfo` carries the key, the instances, the clusters, the checksum and `FromLocalCache` | No functional loss; a caller cannot tell how old a list is, or which addresses the server considered. |
+| P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Missing** — only username/password login (`NacosOptions.UserName`/`Password`); `INacosAuthProvider` exists but is internal, so there is no public hook either | An MSE or OIDC deployment cannot authenticate, and a token minted elsewhere cannot be handed to the client. |
+| P3-22 | Redo queue for failed registrations and subscriptions | `client/redo` (`RedoService`, `NamingRedoService`, the AI redo hooks) | **Missing** — a failure reaches the caller and only a reconnect replays | A caller must retry a transient failure; Java retries it in the background. |
+| P3-23 | Empty-push protection | `namingPushEmptyProtection` | **Missing** — an empty push replaces the cached list | Opt-in robustness for a failover-cache race; off by default in Java. |
+
+### P1-15: AI registry over HTTP
+
+Nacos 3.3 serves the whole AI client surface over HTTP as well as gRPC. The server side is seven
+controllers: `McpClientController` (`/v3/client/ai/mcp`), `PromptClientController`
+(`/v3/client/ai/prompt`), `SkillClientController` (`/v3/client/ai/skills`),
+`AgentSpecClientController` (`/v3/client/ai/agentspecs`), `AgentClientController`
+(`/v3/client/ai/agents`), `AiCapabilityClientController` (`/v3/client/ai/capabilities`) and
+`AiResourceSearchClientController` (`/v3/client/ai/resources/search`). The Java client reaches them
+through `AiHttpClientProxy`, which is where the paths, the `X-Nacos-Client-Id` header and the retry
+count live.
+
+The transport is chosen per module. `AgentTransportMode` has `GRPC`, `HTTP` and `AUTO`, and
+`AiConstants` exposes one property key for the whole client (`nacosAiTransportMode`) plus one per
+module (`nacosAiMcpTransportMode`, `nacosAiAgentTransportMode`, `nacosAiSkillTransportMode`,
+`nacosAiAgentSpecTransportMode`, `nacosAiPromptTransportMode`). `GRPC` is the default, each
+per-module key defaults to the global one, and `AUTO` means use the gRPC connection when it is
+available and fall back to HTTP when it is not. The routers
+(`McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`) keep that decision out of the
+feature classes, and `AgentTransportRouter` owns the only stateful part — the HTTP watch binding and
+the publication heartbeat.
+
+Publication over HTTP is a lifecycle of its own. An endpoint is posted to
+`/v3/client/ai/mcp/endpoints` or `/v3/client/ai/agents/endpoints`, kept alive with
+`PUT .../endpoints/heartbeat`, and removed with `DELETE`. The first call is answered with
+`ClientLivenessInfo` (`heartbeatIntervalMillis`, `unhealthyTimeoutMillis`, `expireTimeoutMillis`),
+and `McpEndpointPublicationManager` / `AgentEndpointPublicationManager` run a heartbeat at that
+interval.
+
+Here only the agent watch has an HTTP transport (`NacosAgentWatchTransport`, P2-7), because a watch
+is a long poll rather than a second implementation of discovery. Every other AI operation is
+gRPC-only, and endpoint publication is not a publication at all: the endpoint is registered as a
+Naming instance owned by the connection, so its liveness is the naming heartbeat and its lifetime is
+the connection's. That is why there is nothing here to heartbeat — and also why an HTTP-only
+deployment cannot use the AI registry at all.
+
+Closing P1-15 is therefore more than adding a client. It needs a transport option per module, an HTTP
+implementation of each read and release, a publication manager with its own heartbeat and redo
+state, and a decision about whether the Naming-instance path stays the default when gRPC is
+available. The last point matters: the two publication models disagree about who owns an endpoint's
+lifetime, and switching between them silently would leak registrations.
+
+### P2-16: A2A batch endpoint registration
+
+`A2aService` has both `registerAgentEndpoint(String, AgentEndpoint)` and
+`registerAgentEndpoint(String, Collection<AgentEndpoint>)`. The batch form is a different wire
+request from the RAD one: `BatchAgentEndpointRequest` for the A2A card endpoints,
+`AgentEndpointRegisterRpcRequest` with an `AgentEndpointRegistrationBatch` for the RAD publication.
+This library has the RAD batch (`NacosAgentEndpointBatch`, `RegisterEndpointsAsync`) and only the
+single-endpoint A2A call, so an agent published on several transports — `JSONRPC`, `GRPC`,
+`HTTP+JSON` — pays one round trip and one replay entry per endpoint, and cannot replace its set in
+one request.
+
+Java also keeps a redo entry per agent for the batch (`AgentEndpointWrapper`), so a batch that fails
+is retried whole. Adding the batch here means a
+`RegisterAgentEndpointsAsync(string agentName, IReadOnlyList<NacosAgentEndpoint>)` that sends
+`BatchAgentEndpointRequest`, plus replay state keyed by agent rather than by endpoint.
+
+### P2-17: conditional configuration read
+
+`GetConfigRequest.localMd5` (3.3) lets a caller say "I already hold the version with this hash". The
+client resolves a consistent `(content, md5)` pair from its in-memory cache or snapshot, sends the
+hash as the conditional MD5, and on `304` returns the content it already had instead of downloading
+it again. When the caller's hash does not match what is cached locally, the hash is sent without a
+local copy and the server's answer is authoritative — the client does not guess.
+
+Here the `304` path exists and is used by listeners (`NacosConfigClient.QueryAsync` takes
+`localMd5`), but `GetConfigAsync` always passes `null`, so an explicit read always transfers the
+content. Exposing it is small: an optional `localMd5` on `GetConfigAsync`, with the same rule — only
+send the hash when the local copy that can be restored matches it. `NacosConfigResult` already has
+the shape Java's `ConfigQueryResult` has (content, MD5, content type, encrypted data key).
+
+### P3-18: getSubscribeServices
+
+Java returns the `ServiceInfo` list the client currently subscribes to, which the console and
+diagnostics use to show what a process is watching. Here a subscription exists only as the
+`IAsyncEnumerable` the caller holds and the internal registration the client keeps, and nothing
+enumerates it. A read-only `SubscribedServices` property would close it; it needs the client to
+expose its registration table without letting a caller mutate it.
+
+### P3-19: client configuration metrics
+
+`MetricsControllerV3.getClientMetrics` (`GET /v3/admin/cs/metrics/ip`) sends a
+`ClientConfigMetricRequest` to **every** connection of an IP and waits one second. The Java client
+answers from `ClientWorker.getMetrics` with the cache and snapshot entries for the requested group
+keys. This client drops a server request it does not recognise
+(`NacosGrpcConnection.DispatchServerRequestAsync` logs it), so the server times out and the console
+page reports an error for that IP.
+
+The fix is one handler: parse the request and answer with a `ClientConfigMetricResponse` carrying
+the cached MD5 and timestamp per key. It is diagnostic only, which is why it ranks below P3-18.
+
+Two related differences are worth recording even though they change nothing today. The setup request
+here advertises the SDK ability table (`fuzzyWatch`, `lock`, `mcp`, `radWatchV1`); Java advertises one
+key more (`agent`) and also sends `ClientAbilities` (`supportRemoteConnection`,
+`supportRemoteMetrics`, `supportDeltaPush`, `supportRemoteMetric`). No 3.3 server code reads either
+the `agent` key or those booleans, so neither is a gap yet — they are the first thing to re-check
+against a 3.4 server.
+
+### P3-20: ServiceInfo bookkeeping
+
+Java's `ServiceInfo` also carries `cacheMillis`, `lastRefTime`, `allIPs` and
+`reachProtectionThreshold`. `NacosServiceInfo` carries the key, the instances, the clusters, the
+checksum and `FromLocalCache`. The first two are what a caller needs to say "this list is forty
+seconds old"; `allIPs` and `reachProtectionThreshold` describe the server's own protection mode and
+are only meaningful together with the client-side failover cache Java keeps, which this library
+implements differently (per-instance snapshots rather than one service cache). Adding `CacheMillis`
+and `LastRefTime` is cheap; the other two should wait for a consumer.
+
+### P3-21: authentication variants
+
+Java ships three ways to authenticate that this library does not: a pre-issued `accessToken`
+(`PropertyKeyConst.ACCESS_TOKEN`), OIDC (`nacos.client.auth.oidc.issuer-uri`, `client-id`,
+`client-secret`, `scope`, `token-endpoint`), and RAM role signing (`accessKey`, `secretKey`,
+`ramRoleName`, `signatureRegionId`). Here `NacosOptions.UserName`/`Password` drive the login endpoint
+and that is the whole surface: `INacosAuthProvider` exists, but it is internal, so a caller cannot
+substitute a provider either.
+
+The two that matter in practice are the token and OIDC. A process that was handed a token by a
+sidecar has no way to pass it on, and an OIDC or MSE deployment cannot authenticate at all without a
+username and password.
+
+### P3-22: redo
+
+Java's `client/redo` package keeps a `RedoService` that retries a failed registration, subscription
+or AI publication in the background with a backoff, so a transient server error does not reach the
+caller. Here a failure reaches the caller, and the client replays only on reconnect. That is a
+defensible .NET choice — a task that throws is easier to reason about than one that silently retries
+— but it is a difference, and it is why the AI publication state has no redo entry to restore.
+
+### P3-23: empty-push protection
+
+`namingPushEmptyProtection` (default `false`) makes the Java client keep the list it has when a push
+carries no instances, so an empty failover cache or a server that is still starting cannot wipe a
+working view. Here an empty push replaces the list. The option is off by default upstream, so this is
+a compatibility knob rather than a capability gap.
 
 ## Standing non-goals
 
@@ -400,7 +560,6 @@ These are not gaps to close; they are surfaces this library deliberately does no
 | `NamingMaintainService` and `/v3/admin/ns/*` | Administrative API, not a runtime client; needs a bearer token. |
 | AI drafts, labels, versions, import, resource search, pipelines, MCP registry models | `maintainer-client` and console surface. The runtime `AiService` is already covered. |
 | Spring annotations, JMX, logging adapters | Replaced by `IConfiguration`, DI, `ILogger` and OpenTelemetry. |
-| Automatic gRPC to HTTP AI transport fallback for discovery, MCP and prompts | Requires the HTTP publication contract; the agent watch is the one surface with an HTTP transport, and it is covered by P2-7. See `protocol-notes.md`. |
 | Nacos 2.x protocol compatibility | The project targets Nacos 3.x only. |
 
 ## Already at parity
@@ -409,15 +568,19 @@ The comparison also confirmed what is already covered, so it is not re-opened by
 
 - **Configuration**: read, publish, compare-and-swap publish, remove, exact listeners with
   reconnect replay, server-push handling, local snapshot failover, MD5 verification and the
-  `304` fast path.
+  `304` fast path (on the listener path; see P2-17 for the explicit-read path).
 - **Naming**: register, deregister, batch registration and deregistration, ephemeral and persistent
   instances, subscribe and unsubscribe, instance queries with cluster and health filters, paged
   service listing, reconnect replay of registrations and subscriptions, local snapshot failover,
-  load balancing.
-- **Lock**: acquire with wait semantics, reentrancy, watchdog renewal, release and notifications.
-- **AI registry**: prompt, skill, agent-spec, MCP server, agent-card and RAD agent reads and
-  subscriptions; MCP release with `createDraft`; endpoint registration with reconnect replay;
-  agent publish/search/discover; RAD watch over gRPC; local snapshot failover.
+  load balancing (including the weighted-random selection behind `selectOneHealthyInstance`).
+- **Lock**: acquire with wait semantics, reentrancy, watchdog renewal (`renew`, 3.3), release and
+  notifications.
+- **AI registry**: prompt, skill (including the archive `NacosSkill.Archive`, which is Java's
+  `downloadSkillZip`), agent-spec, MCP server, agent-card and RAD agent reads and subscriptions;
+  prompt resolution by version and label; MCP release with `createDraft`; agent card release with
+  `registrationType` and `setAsLatest`; endpoint registration with reconnect replay; RAD endpoint
+  publication batch (`AgentEndpointRegisterRpcRequest`); agent publish/search/discover; RAD watch
+  over gRPC; local snapshot failover.
 - **Client basics**: multi-server failover, ability negotiation, TLS, authentication and token
   refresh, metrics and tracing through `NacosDiagnostics`.
 

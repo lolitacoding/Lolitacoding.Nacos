@@ -949,22 +949,27 @@ routes the request to the AI module.
 
 ### Transport selection and HTTP fallback
 
-The official client can serve an MCP, prompt or agent call over either the AI gRPC connection or the
-AI HTTP OpenAPI, and routes each call by the capabilities a binding advertises — `McpTransportRouter`,
+The official client can serve an MCP, prompt, skill, agent-spec or agent call over either the AI gRPC
+connection or the AI HTTP client API (`/v3/client/ai/*`), and routes each call by the transport mode
+configured for that module: `AgentTransportMode` (`GRPC`, `HTTP`, `AUTO`) read from
+`nacosAiTransportMode` and its five per-module keys, behind `McpTransportRouter`,
 `PromptTransportRouter` and `AgentTransportRouter`, backed by `AiCapabilityCache` and
-`AiHttpClientProxy`. This client does not do that for discovery, MCP servers, prompts or agent cards:
-those travel over the AI connection, and only the resources the server exposes as HTTP alone — a
-skill and an agent specification — are read over HTTP.
+`AiHttpClientProxy`. Nacos 3.3 implements the HTTP side in seven controllers — `McpClientController`,
+`PromptClientController`, `SkillClientController`, `AgentSpecClientController`,
+`AgentClientController`, `AiCapabilityClientController` and `AiResourceSearchClientController` —
+including the MCP and agent endpoint publication paths and their heartbeat.
+
+This client does not route: discovery, MCP servers, prompts and agent cards travel over the AI
+connection, and only the resources the server exposes as HTTP alone — a skill and an agent
+specification — are read over HTTP. A server whose gRPC surface is unreachable is answered by the
+request's own failure — `RequestHandler Not Found`, or an explicit `501` where the ability is
+advertised as `false` — rather than by a fallback. The gap is tracked as P1-15 in
+[java-parity.md](java-parity.md).
 
 The watch is the one exception, because it has a second contract on the server:
 `NacosAIOptions.AgentWatchTransport` selects gRPC, the HTTP batch long poll, periodic polling, or
 `Auto`, which tries them in that order. The batch and the polling fallback are described in
-[RAD agent watch](#rad-agent-watch). Automatic transport selection for the other AI surfaces remains
-unimplemented: a server whose gRPC abilities are absent while its HTTP AI surface is present is
-answered by the request's own failure — `RequestHandler Not Found`, or an explicit `501` where the
-ability is advertised as `false` — rather than by a fallback. No published release has been found
-that exposes one surface without the other, so that fallback is left unshipped rather than shipped
-unverified.
+[RAD agent watch](#rad-agent-watch).
 
 ## Authentication
 
