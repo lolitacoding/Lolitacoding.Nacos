@@ -344,4 +344,13 @@ internal static partial class NacosConfigLog
         Level = LogLevel.Error,
         Message = "Processing a change notification for {Key} failed: {Reason}")]
     public static partial void ChangeProcessingFailed(ILogger logger, string key, string reason);
+
+    /// <summary>Logs that a conditional read was answered "not modified".</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="key">The configuration coordinates.</param>
+    [LoggerMessage(
+        EventId = 4031,
+        Level = LogLevel.Debug,
+        Message = "Configuration {Key} was not modified; the local copy is current.")]
+    public static partial void ServedNotModified(ILogger logger, string key);
 }

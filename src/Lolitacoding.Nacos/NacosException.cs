@@ -1,3 +1,5 @@
+using Lolitacoding.Nacos.Protocol.Messages;
+
 namespace Lolitacoding.Nacos;
 
 /// <summary>
@@ -178,6 +180,27 @@ public sealed class NacosServerException : NacosException
         : base(errorCode, message)
     {
     }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NacosServerException"/> class with the
+    /// response that reported the failure.
+    /// </summary>
+    /// <param name="errorCode">The numeric error code reported by the Nacos server.</param>
+    /// <param name="message">The message that describes the error.</param>
+    /// <param name="response">The decoded response the server sent.</param>
+    internal NacosServerException(int errorCode, string message, NacosResponse response)
+        : base(errorCode, message) => Response = response;
+
+    /// <summary>
+    /// Gets the decoded response that reported the failure, when the server sent one.
+    /// </summary>
+    /// <remarks>
+    /// Most failures carry only a code and a message, but some are an answer the caller can act on:
+    /// a "not modified" configuration reply, for instance, carries the hash, content type and
+    /// modification time of the version the client already holds. Discarding the response would
+    /// leave the caller to guess at metadata the server just sent.
+    /// </remarks>
+    internal NacosResponse? Response { get; }
 }
 
 /// <summary>

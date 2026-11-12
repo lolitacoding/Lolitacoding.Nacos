@@ -1,5 +1,6 @@
 using Lolitacoding.Nacos.Client;
 using Lolitacoding.Nacos.Config;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Lolitacoding.Nacos.IntegrationTests;
@@ -48,6 +49,84 @@ public sealed class ConfigIntegrationTests
             TestContext.Current.CancellationToken);
 
         removed.Exists.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task ConditionalRead_ServesTheHeldVersionAndFallsBackWhenTheServerMovedOn()
+    {
+        // The conditional read is the one path a scripted server cannot fully prove: the 304 has to
+        // come from a real server comparing the hash the client sent. The unit tests pin the request
+        // and the reply handling; this exercises the round trip against Nacos itself.
+        string cacheDirectory = CreateCacheDirectory();
+        var log = new CapturingLoggerFactory();
+
+        try
+        {
+            await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+            await using NacosClientFactory client = CreateClient(
+                container,
+                options => options.LocalCacheDirectory = cacheDirectory,
+                log);
+            await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+            string dataId = NacosHttp.UniqueId("config-conditional-it");
+            var key = new NacosConfigKey(dataId, "DEFAULT_GROUP");
+            string firstContent = NacosHttp.ConfigContent("conditional-v1");
+            string secondContent = NacosHttp.ConfigContent("conditional-v2");
+
+            await client.Config.PublishConfigAsync(
+                key, firstContent, "text", ct: TestContext.Current.CancellationToken);
+
+            // The first read writes the snapshot the conditional read restores.
+            NacosConfigResult first = await NacosEventually.BecomesAsync(
+                () => client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+                result => result.Content == firstContent,
+                TestContext.Current.CancellationToken);
+
+            NacosConfigResult unchanged = await client.Config.GetConfigConditionalAsync(
+                key, first.Md5!, TestContext.Current.CancellationToken);
+
+            unchanged.Content.ShouldBe(firstContent);
+            unchanged.Md5.ShouldBe(first.Md5);
+            unchanged.ContentType.ShouldBe("text");
+            // The server answered, so this is not the outage failover the flag describes.
+            unchanged.FromLocalCache.ShouldBeFalse();
+
+            // A 304 looks like a successful read from here, so the client's own record of it is the
+            // only observable proof that the server skipped the content. Nacos answers 304 from 3.3
+            // on; the older images ignore the hash and send the content instead.
+            if (NacosIntegrationImages.V3Image.Contains("3.3", StringComparison.Ordinal))
+            {
+                log.Events.ShouldContain(4031);
+            }
+
+            await client.Config.PublishConfigAsync(
+                key, secondContent, "text", ct: TestContext.Current.CancellationToken);
+
+            // The hash the caller holds is now stale. The server must send the new content rather
+            // than answer 304 for a version the client no longer has a copy of.
+            NacosConfigResult moved = await NacosEventually.BecomesAsync(
+                () => client.Config.GetConfigConditionalAsync(
+                    key, first.Md5!, TestContext.Current.CancellationToken),
+                result => result.Content == secondContent,
+                TestContext.Current.CancellationToken);
+
+            moved.Content.ShouldBe(secondContent);
+            moved.FromLocalCache.ShouldBeFalse();
+
+            // The hash now matches again, so this is the 304 path; a handler that did not understand
+            // the reply would surface it as an exception instead of the held content.
+            NacosConfigResult confirmed = await client.Config.GetConfigConditionalAsync(
+                key, moved.Md5!, TestContext.Current.CancellationToken);
+
+            confirmed.Content.ShouldBe(secondContent);
+            confirmed.Md5.ShouldBe(moved.Md5);
+            confirmed.FromLocalCache.ShouldBeFalse();
+        }
+        finally
+        {
+            TryDelete(cacheDirectory);
+        }
     }
 
     [Fact]
@@ -359,9 +438,42 @@ public sealed class ConfigIntegrationTests
     private static NacosClientFactory CreateClient(NacosContainer container) =>
         CreateClient(container, configure: null);
 
+    /// <summary>
+    /// Creates the empty directory a test's local snapshots are written to.
+    /// </summary>
+    /// <returns>The directory.</returns>
+    private static string CreateCacheDirectory()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(), "lolitacoding-nacos-config-cache", Guid.NewGuid().ToString("N"));
+
+        Directory.CreateDirectory(directory);
+
+        return directory;
+    }
+
+    /// <summary>
+    /// Deletes a test directory, ignoring a file that is still held open.
+    /// </summary>
+    /// <param name="directory">The directory to delete.</param>
+    private static void TryDelete(string directory)
+    {
+        try
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
     private static NacosClientFactory CreateClient(
         NacosContainer container,
-        Action<NacosOptions>? configure)
+        Action<NacosOptions>? configure,
+        ILoggerFactory? loggerFactory = null)
     {
         var options = new NacosOptions
         {
@@ -382,7 +494,7 @@ public sealed class ConfigIntegrationTests
             httpClient: null,
             channelFactory: null,
             timeProvider: TimeProvider.System,
-            loggerFactory: NullLoggerFactory.Instance);
+            loggerFactory: loggerFactory ?? NullLoggerFactory.Instance);
     }
 
     /// <summary>
@@ -456,5 +568,68 @@ public sealed class ConfigIntegrationTests
             value.StartsWith(prefix, StringComparison.Ordinal) && value.EndsWith(')')
                 ? value[prefix.Length..^1]
                 : value;
+    }
+
+    /// <summary>
+    /// An <see cref="ILoggerFactory"/> that records the event ids a test cares about.
+    /// </summary>
+    /// <remarks>
+    /// The conditional read is deliberately invisible in its result — a 304 and a fresh download
+    /// both return the held content — so the library's own log entry is the only way a test can tell
+    /// the two paths apart.
+    /// </remarks>
+    private sealed class CapturingLoggerFactory : ILoggerFactory
+    {
+        private readonly List<int> _events = [];
+        private readonly Lock _gate = new();
+
+        /// <summary>Gets a snapshot of the recorded event ids.</summary>
+        public IReadOnlyList<int> Events
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _events];
+                }
+            }
+        }
+
+        /// <inheritdoc />
+        public ILogger CreateLogger(string categoryName) => new CapturingLogger(this);
+
+        /// <inheritdoc />
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        /// <inheritdoc />
+        public void Dispose()
+        {
+        }
+
+        private void Record(int eventId)
+        {
+            lock (_gate)
+            {
+                _events.Add(eventId);
+            }
+        }
+
+        private sealed class CapturingLogger(CapturingLoggerFactory owner) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter) =>
+                owner.Record(eventId.Id);
+        }
     }
 }

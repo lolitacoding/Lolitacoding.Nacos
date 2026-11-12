@@ -159,6 +159,110 @@ public sealed class NacosConfigClientTests
     }
 
     [Fact]
+    public async Task GetConfigConditional_ReusesTheLocalCopyWhenTheServerReportsNoChange()
+    {
+        // The whole point of the conditional read: a matching hash is answered without the content,
+        // and the copy the hash belongs to is returned instead of a second download.
+        using Harness harness = CreateHarness(_ => QueryResponse("hello", "json"), snapshots: true);
+
+        NacosConfigResult first = await harness.GetAsync(Key, TestContext.Current.CancellationToken);
+        string md5 = first.Md5!;
+
+        harness.Handler = request =>
+        {
+            PayloadMetadataAssertions.AssertType(request, "ConfigQueryRequest");
+            return NotModifiedResponse(md5, "yaml");
+        };
+
+        NacosConfigResult result = await harness.GetConditionalAsync(
+            Key, md5, TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("hello");
+        result.Md5.ShouldBe(md5);
+        // The metadata the 304 carries describes the version the server confirmed, so it wins over
+        // the copy stored beside the content.
+        result.ContentType.ShouldBe("yaml");
+        result.LastModified.ShouldBe(DateTimeOffset.FromUnixTimeMilliseconds(1_700_000_100_000));
+        // The server answered, so this is not the outage failover the flag exists for.
+        result.FromLocalCache.ShouldBeFalse();
+
+        using JsonDocument body = harness.LastRequestBody();
+        body.RootElement.GetProperty("localMd5").GetString().ShouldBe(md5);
+    }
+
+    [Fact]
+    public async Task GetConfigConditional_ReadsTheContentWhenTheHashIsNotTheSnapshot()
+    {
+        // A hash the client cannot restore content for must not be sent: a 304 would leave the
+        // caller with nothing. The server's content is authoritative in that case.
+        using Harness harness = CreateHarness(_ => QueryResponse("v1", "text"), snapshots: true);
+
+        await harness.GetAsync(Key, TestContext.Current.CancellationToken);
+
+        harness.Handler = request =>
+        {
+            using JsonDocument body = JsonDocument.Parse(PayloadCodec.ReadBodyBytes(request));
+            body.RootElement.TryGetProperty("localMd5", out _).ShouldBeFalse();
+            return QueryResponse("v2", "text");
+        };
+
+        NacosConfigResult result = await harness.GetConditionalAsync(
+            Key, NacosMd5.Compute("some-other-version"), TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("v2");
+        result.FromLocalCache.ShouldBeFalse();
+    }
+
+    [Fact]
+    public async Task GetConfigConditional_ReadsUnconditionallyWithoutASnapshot()
+    {
+        // Conditional reads depend on a local copy. Without one — no cache directory, or nothing
+        // read yet — the hash is not sent and the read behaves like an ordinary one.
+        using Harness harness = CreateHarness(
+            request =>
+            {
+                using JsonDocument body = JsonDocument.Parse(PayloadCodec.ReadBodyBytes(request));
+                body.RootElement.TryGetProperty("localMd5", out _).ShouldBeFalse();
+                return QueryResponse("hello", "text");
+            },
+            snapshots: true);
+
+        NacosConfigResult result = await harness.GetConditionalAsync(
+            Key, NacosMd5.Compute("hello"), TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("hello");
+    }
+
+    [Fact]
+    public async Task GetConfigConditional_AppliesFiltersToTheRestoredCopy()
+    {
+        // A restored value takes the same path as a downloaded one, so a filter cannot be skipped
+        // just because the content came from the snapshot.
+        using Harness harness = CreateHarness(_ => QueryResponse("hello", "text"), snapshots: true);
+
+        harness.Client.AddConfigFilter(new DelegateFilter("upper", 0, (context, _) =>
+        {
+            if (context.Stage == NacosConfigFilterStage.Read)
+            {
+                context.Content = context.Content?.ToUpperInvariant();
+            }
+
+            return ValueTask.CompletedTask;
+        }));
+
+        NacosConfigResult first = await harness.GetAsync(Key, TestContext.Current.CancellationToken);
+        first.Content.ShouldBe("HELLO");
+
+        string md5 = first.Md5!;
+        harness.Handler = _ => NotModifiedResponse(md5);
+
+        NacosConfigResult result = await harness.GetConditionalAsync(
+            Key, md5, TestContext.Current.CancellationToken);
+
+        result.Content.ShouldBe("HELLO");
+    }
+
+    [Fact]
     public async Task GetConfig_ServesASnapshotWhenTheServerIsUnreachable()
     {
         // This is the failover path: a process that restarts during a control-plane outage must
@@ -266,6 +370,54 @@ public sealed class NacosConfigClientTests
 
         changes[1].Content.ShouldBe("v2");
         changes[1].PreviousMd5.ShouldBe(NacosMd5.Compute("v1"));
+    }
+
+    [Fact]
+    public async Task Listener_DropsANotificationTheServerReportsAsNotModified()
+    {
+        // A repeated notification fetches with the hash the listener already delivered, and the
+        // server answers 304. That is an unchanged value, not a failed fetch: it must not reach the
+        // callback, and it must be logged as ignored rather than as a content-fetch failure.
+        var log = new RecordingLoggerFactory();
+        using Harness harness = CreateHarness(
+            ListenThenQuery("v1"),
+            logger: log.CreateLogger<NacosConfigClient>());
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var changes = new List<NacosConfigChange>();
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            Key,
+            (change, _) =>
+            {
+                lock (changes)
+                {
+                    changes.Add(change);
+                }
+
+                return Task.CompletedTask;
+            },
+            TestContext.Current.CancellationToken);
+
+        changes.Count.ShouldBe(1);
+
+        string md5 = NacosMd5.Compute("v1");
+        harness.Handler = request =>
+            PayloadCodec.ReadTypeName(request) == "ConfigBatchListenRequest"
+                ? PayloadCodec.Encode(new ConfigChangeBatchListenResponse())
+                : NotModifiedResponse(md5);
+
+        await harness.PushChangeAsync(Key);
+
+        await WaitForLogAsync(log, 4008, TestContext.Current.CancellationToken);
+
+        // A 304 is not a failed fetch, so the warning must not have been written either.
+        log.ForEvent(4029).ShouldBeEmpty();
+
+        lock (changes)
+        {
+            changes.Count.ShouldBe(1);
+        }
     }
 
     [Fact]
@@ -912,6 +1064,23 @@ public sealed class NacosConfigClientTests
             LastModified = 1_700_000_000_000,
         });
 
+    /// <summary>
+    /// Builds the <c>304</c> reply the server sends when a conditional read's hash still matches.
+    /// </summary>
+    /// <param name="md5">The hash of the content the client already holds.</param>
+    /// <param name="contentType">The content type the server reports for that version.</param>
+    /// <returns>The encoded response, carrying metadata but no content.</returns>
+    private static Payload NotModifiedResponse(string md5, string? contentType = "text") =>
+        PayloadCodec.Encode(new ConfigQueryResponse
+        {
+            ResultCode = NacosResponse.FailureCode,
+            ErrorCode = ConfigQueryResponse.ConfigNotModified,
+            Message = "config not modified, use local cache",
+            Md5 = md5,
+            ContentType = contentType,
+            LastModified = 1_700_000_100_000,
+        });
+
     /// <summary>Answers a listener registration and the read that follows it.</summary>
     /// <param name="content">The content the server holds.</param>
     /// <returns>The scripted handler.</returns>
@@ -1144,6 +1313,20 @@ public sealed class NacosConfigClientTests
         {
             await ConnectAsync(ct);
             return await Client.GetConfigAsync(key, ct);
+        }
+
+        /// <summary>Reads a configuration conditionally, connecting the transport first.</summary>
+        /// <param name="key">The configuration to read.</param>
+        /// <param name="localMd5">The hash the caller already holds.</param>
+        /// <param name="ct">A token that cancels the operation.</param>
+        /// <returns>The result.</returns>
+        public async Task<NacosConfigResult> GetConditionalAsync(
+            NacosConfigKey key,
+            string localMd5,
+            CancellationToken ct)
+        {
+            await ConnectAsync(ct);
+            return await Client.GetConfigConditionalAsync(key, localMd5, ct);
         }
 
         /// <summary>

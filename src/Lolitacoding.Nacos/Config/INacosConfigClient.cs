@@ -49,6 +49,51 @@ public interface INacosConfigClient : IAsyncDisposable
     Task<NacosConfigResult> GetConfigAsync(NacosConfigKey key, CancellationToken ct = default);
 
     /// <summary>
+    /// Reads a configuration as a conditional read: the server skips the content when the caller
+    /// already holds it.
+    /// </summary>
+    /// <param name="key">The configuration to read.</param>
+    /// <param name="localMd5">
+    /// The hash of the content the caller already holds, as reported by
+    /// <see cref="NacosConfigResult.Md5"/>.
+    /// </param>
+    /// <param name="ct">A token that cancels the operation.</param>
+    /// <returns>
+    /// The result. When the server confirms that its content still hashes to
+    /// <paramref name="localMd5"/>, <see cref="NacosConfigResult.Content"/> is the copy the caller
+    /// already holds, restored from the local snapshot.
+    /// </returns>
+    /// <exception cref="ArgumentNullException"><paramref name="localMd5"/> is <see langword="null"/>.</exception>
+    /// <exception cref="NacosConnectionException">
+    /// The server could not be reached and no local snapshot was available.
+    /// </exception>
+    /// <exception cref="NacosServerException">The server refused the request.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is the conditional read of the official Java client's
+    /// <c>ConfigService.getConfig(GetConfigRequest)</c>, whose <c>localMd5</c> says "I already hold
+    /// this version". The server answers <c>304 Not Modified</c> without the content when the hash
+    /// still matches, and the content is then returned from the local snapshot instead of being
+    /// downloaded again.
+    /// </para>
+    /// <para>
+    /// The conditional request is sent only when this client can restore the content the hash
+    /// belongs to: the local snapshot must exist and hash to <paramref name="localMd5"/>. Otherwise
+    /// the read is unconditional, because a "not modified" answer with nothing to return would be
+    /// worse than transferring the content. A snapshot requires
+    /// <see cref="NacosOptions.LocalCacheDirectory"/> to be set.
+    /// </para>
+    /// <para>
+    /// A caller that does not track hashes should use <see cref="GetConfigAsync(NacosConfigKey, CancellationToken)"/>;
+    /// it never sends a conditional request.
+    /// </para>
+    /// </remarks>
+    Task<NacosConfigResult> GetConfigConditionalAsync(
+        NacosConfigKey key,
+        string localMd5,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Creates or replaces a configuration.
     /// </summary>
     /// <param name="key">The configuration to publish.</param>

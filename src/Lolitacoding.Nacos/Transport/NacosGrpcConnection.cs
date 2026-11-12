@@ -431,7 +431,8 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
             {
                 throw new NacosServerException(
                     response.ErrorCode,
-                    response.Message ?? "The Nacos server reported a failure without a message.");
+                    response.Message ?? "The Nacos server reported a failure without a message.",
+                    response);
             }
 
             RecordRequest(requestType, NacosDiagnostics.OutcomeSuccess, startTimestamp);

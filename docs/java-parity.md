@@ -392,22 +392,23 @@ implementation is `EndpointServerListProvider`.
 ## P2 items
 
 All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
-re-audit adds two open P2 rows (P2-16, P2-17), and the P3 list is no longer closed by design alone:
-P3-11 to P3-13 remain non-goals, while P3-18 to P3-23 are work items.
+re-audit added two P2 rows, of which P2-17 is now closed and P2-16 remains open, and the P3 list is
+no longer closed by design alone: P3-11 to P3-13 remain non-goals, while P3-18 to P3-23 are work
+items.
 
 ## 2026-11 re-audit against Nacos 3.3
 
 The rows above were cut from the 3.2 surface. This pass re-read the same checkout at `1511b5a`
 (2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
 sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
-configuration reads, the RAD agent registry and the lock watchdog. Nine gaps remain, none of them in
+configuration reads, the RAD agent registry and the lock watchdog. Eight gaps remain, none of them in
 the configuration or naming hot path.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
 | P1-15 | AI registry over HTTP, with a per-module transport choice | `AgentTransportMode`, `nacosAiTransportMode` and its five per-module keys, `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy`, endpoint publication heartbeat | **Missing**, except the agent watch (`NacosAgentWatchTransport`, P2-7) | A deployment whose ingress is HTTP-only cannot read or publish AI resources at all, and there is no way to opt into HTTP the way Java 3.3 lets a caller do. |
 | P2-16 | A2A batch endpoint registration | `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` → `BatchAgentEndpointRequest` | **Missing** — `RegisterAgentEndpointAsync` takes one endpoint; `NacosAgentEndpointBatch` is the RAD batch, a different request | Publishing one agent on several transports costs a round trip each, and the set cannot be replaced atomically. |
-| P2-17 | Conditional configuration read | `ConfigService.getConfig(GetConfigRequest)` with `localMd5`, `getConfigWithResult` | **Partial** — `NacosConfigResult` exists, but `GetConfigAsync` always reads unconditionally; the `304` path is used by listeners only | A large configuration is re-sent on every read even when the caller already holds the content. |
+| P2-17 | Conditional configuration read | `ConfigService.getConfig(GetConfigRequest)` with `localMd5`, `getConfigWithResult` | **Done** — `INacosConfigClient.GetConfigConditionalAsync`, `NacosConfigResult`, log event 4031 | A large configuration was re-sent on every read even when the caller already held the content. |
 | P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Missing** | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
 | P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Missing** — the request is dropped, so the server's one-second wait expires | The console's client-metrics page reports an error for a .NET client. |
 | P3-20 | `ServiceInfo` bookkeeping fields | `cacheMillis`, `lastRefTime`, `allIPs`, `reachProtectionThreshold` | **Missing** — `NacosServiceInfo` carries the key, the instances, the clusters, the checksum and `FromLocalCache` | No functional loss; a caller cannot tell how old a list is, or which addresses the server considered. |
@@ -472,19 +473,28 @@ is retried whole. Adding the batch here means a
 `RegisterAgentEndpointsAsync(string agentName, IReadOnlyList<NacosAgentEndpoint>)` that sends
 `BatchAgentEndpointRequest`, plus replay state keyed by agent rather than by endpoint.
 
-### P2-17: conditional configuration read
+### P2-17: conditional configuration read (closed)
 
 `GetConfigRequest.localMd5` (3.3) lets a caller say "I already hold the version with this hash". The
-client resolves a consistent `(content, md5)` pair from its in-memory cache or snapshot, sends the
-hash as the conditional MD5, and on `304` returns the content it already had instead of downloading
-it again. When the caller's hash does not match what is cached locally, the hash is sent without a
-local copy and the server's answer is authoritative — the client does not guess.
+server answers `304` with the hash, content type and modification time, but no content.
 
-Here the `304` path exists and is used by listeners (`NacosConfigClient.QueryAsync` takes
-`localMd5`), but `GetConfigAsync` always passes `null`, so an explicit read always transfers the
-content. Exposing it is small: an optional `localMd5` on `GetConfigAsync`, with the same rule — only
-send the hash when the local copy that can be restored matches it. `NacosConfigResult` already has
-the shape Java's `ConfigQueryResult` has (content, MD5, content type, encrypted data key).
+Closed by `INacosConfigClient.GetConfigConditionalAsync(key, localMd5)`. The name is not an overload
+of `GetConfigAsync`: an analyzer forbids a second overload whose extra parameter is followed by an
+optional one, and `GetConfigAsync(key, default)` would be ambiguous between the two. The rule Java
+applies is kept exactly — the hash is sent only when the client can restore the content it belongs
+to. That means the local snapshot must exist *and* hash to `localMd5`; otherwise the read is
+unconditional, because a `304` with nothing to return would be worse than transferring the content.
+A snapshot requires `NacosOptions.LocalCacheDirectory`.
+
+The `304` reply is surfaced as a `NacosServerException` whose internal `Response` keeps the decoded
+`ConfigQueryResponse`, so the restored result takes the server's md5, content type and last-modified
+time and the local encrypted data key, the same split Java makes. `FromLocalCache` stays `false`: it
+means "the server was unreachable", and here the server answered. The restored value then runs the
+filter chain like a downloaded one, and the event `4031` records that the fast path was taken.
+
+The listener path was corrected at the same time. It already sent the held hash, but a `304` arrived
+as a `NacosServerException` and was logged as `ContentFetchFailed` (4029). It is now treated as what
+it is — an unchanged value — and logged as `ChangeIgnored` (4008) instead.
 
 ### P3-18: getSubscribeServices
 
@@ -566,9 +576,9 @@ These are not gaps to close; they are surfaces this library deliberately does no
 
 The comparison also confirmed what is already covered, so it is not re-opened by later slices:
 
-- **Configuration**: read, publish, compare-and-swap publish, remove, exact listeners with
-  reconnect replay, server-push handling, local snapshot failover, MD5 verification and the
-  `304` fast path (on the listener path; see P2-17 for the explicit-read path).
+- **Configuration**: read, conditional read (P2-17), publish, compare-and-swap publish, remove, exact
+  listeners with reconnect replay, server-push handling, local snapshot failover, MD5 verification
+  and the `304` fast path on both the listener and the explicit-read paths.
 - **Naming**: register, deregister, batch registration and deregistration, ephemeral and persistent
   instances, subscribe and unsubscribe, instance queries with cluster and health filters, paged
   service listing, reconnect replay of registrations and subscriptions, local snapshot failover,

@@ -566,4 +566,16 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增 40 个：`Internal/NacosServerListTests.cs` 8 个（替换、同集合不同顺序不算变更、按 HTTP 端点匹配、等待填充/超时/无来源消息）、`Internal/NacosEndpointServerListProviderTests.cs` 12 个（URL 形状与命名空间/查询参数、播种、重试、五次失败、https 行、30 秒闸门、坏应答与空应答保留旧列表、后台启动）、`NacosEndpointOptionsTests.cs` 14 个（15 个用例，端口越界为参数化；校验、Endpoint 覆盖时跳过地址校验、命名空间记忆）、`Transport/NacosGrpcConnectionTests.cs` 4 个（当前服务端被撤下则重连、新增节点保持连接、空列表等待、超时后 `Disconnected`）、`Client/NacosClientFactoryTests.cs` 1 个（Endpoint 优先于地址列表）。
 - 验收：Release 构建零警告零错误；单元测试 **896 个全绿**（新增 40 个）；集成测试新增 `AddressServerIntegrationTests.Client_ConnectsToTheServerTheAddressServerPublishes`（真实容器 `v3.0.2` + 进程内 `TcpListener` 地址服务器：请求打到 `/nacos/serverlist` → 两个客户端 `ServerStatus` 均为 `Up` → 配置发布/读取往返证明拨号的是列表里的服务端），整套 **64 个全绿**。
 
+#### P2-17 · 配置条件读（304 快速路径）（✅ 已完成）
+
+- **缺口**：Java 3.3 的 `ConfigService.getConfig(GetConfigRequest)` 用 `localMd5` 告诉服务端「我已有这个哈希的版本」，服务端比对通过就回 `304` 且不带内容。本客户端只在监听路径上传过哈希，显式读取 `GetConfigAsync` 永远传 `null`，大配置每次都要重传。
+- **公共面**：`INacosConfigClient.GetConfigConditionalAsync(NacosConfigKey key, string localMd5, CancellationToken ct = default)`。没有做成 `GetConfigAsync` 的重载：分析器 `RS0026` 禁止「新增可选参数的同名重载」，且 `GetConfigAsync(key, default)` 会在 `CancellationToken` 与 `string` 之间产生二义性。
+- **发送规则（与 Java 一致）**：只有本地快照存在、且其 MD5 与 `localMd5` 相同时才发条件读。否则无条件读——一个「304 但没有内容可回」比多传一次内容更糟。快照需要配置 `NacosOptions.LocalCacheDirectory`。
+- **304 处理**：内容取本地快照（哈希属于它），`md5`/`contentType`/`lastModified` 优先取 304 响应携带的元数据，`encryptedDataKey` 取本地——与 Java 的拆分一致。`FromLocalCache` 保持 `false`：该标志的语义是「服务端不可达」，而这里服务端应答了。恢复出的值照常走过滤器链，并记事件 4031 `ServedNotModified`。
+- **支撑改动**：`NacosServerException` 新增 internal `NacosResponse? Response`，`NacosGrpcConnection.SendAsync` 在失败时把解码后的响应带进异常，否则 304 的元数据会在抛出时丢掉。
+- **顺带修正**：监听路径本来就会发送持有的哈希，但 304 以 `NacosServerException` 的形式出现，被记成 `ContentFetchFailed`（4029）。现在按「未变化」处理并记 `ChangeIgnored`（4008）。
+- **文档**：`docs/java-parity.md` 的 P2-17 标记完成并记录命名与语义取舍；`docs/protocol-notes.md` 新增「Conditional reads and the `304` answer」（请求字段、304 应答形状、3.3 之前的服务端行为、本地还原规则）。
+- 单元测试新增 5 个：`NacosConfigClientTests` 的四个条件读（复用本地副本并采信 304 元数据、哈希不属于快照时无条件读、无快照时无条件读、过滤器照常作用于恢复值）与一个监听 304（记 4008、不记 4029、不重复回调）。
+- 验收：Release 构建零警告零错误；单元测试 **931 个全绿**（新增 5 个）；集成测试新增 `ConfigIntegrationTests.ConditionalRead_ServesTheHeldVersionAndFallsBackWhenTheServerMovedOn`，并在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个镜像上各跑 `ConfigIntegrationTests` 8 个全绿。3.3 镜像上额外断言事件 4031，证明服务端确实返回了 304；旧镜像忽略 `localMd5` 直接回内容，测试同样通过。
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

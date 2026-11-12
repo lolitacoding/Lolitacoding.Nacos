@@ -193,6 +193,24 @@ or the other features sharing the connection. See `NacosGrpcConnection.DispatchS
   MD5 matches the last one delivered is suppressed. The response's `changedConfigs` list is what the
   reconnect replay acts on — see *Reconnection and state replay*.
 
+### Conditional reads and the `304` answer
+
+`ConfigQueryRequest.localMd5` (3.3) says "I already hold the version with this hash". The server
+compares it against the stored value's hash before reading the content and answers
+`ConfigQueryResponse` with `resultCode = 500`, `errorCode = 304` and no content when they match; the
+reply still carries `md5`, `contentType` and `lastModified` for that version. Servers before 3.3
+ignore the field and send the content, which is why the reply — not the server version — decides what
+happens.
+
+The client only sends the hash when it can restore the content the hash belongs to: the local
+snapshot must exist and hash to the value sent. Otherwise the read is unconditional, because a `304`
+with nothing to return would be worse than a download. On `304` the restored result takes the
+server's md5, content type and modification time and the local `encryptedDataKey`, matching the
+split the Java client makes. It is not marked as served from the local cache: that flag means the
+server was unreachable, and here the server answered. The listener path sends the held hash as well,
+so a repeated notification can also be answered with `304`; that is treated as "unchanged" and
+dropped rather than reported as a failed fetch.
+
 ### Configuration fuzzy watch
 
 A fuzzy watch (`WatchAsync(dataIdPattern, groupPattern)`) follows a pattern rather than one

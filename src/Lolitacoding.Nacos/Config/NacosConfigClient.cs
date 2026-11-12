@@ -175,28 +175,87 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     }
 
     /// <inheritdoc />
-    public async Task<NacosConfigResult> GetConfigAsync(
+    public Task<NacosConfigResult> GetConfigAsync(
         NacosConfigKey key,
+        CancellationToken ct = default) =>
+        GetConfigAsyncCoreAsync(key, localMd5: null, ct);
+
+    /// <inheritdoc />
+    public Task<NacosConfigResult> GetConfigConditionalAsync(
+        NacosConfigKey key,
+        string localMd5,
         CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(localMd5);
+
+        return GetConfigAsyncCoreAsync(key, localMd5, ct);
+    }
+
+    /// <summary>
+    /// Reads a configuration, optionally as a conditional read.
+    /// </summary>
+    /// <param name="key">The configuration to read.</param>
+    /// <param name="localMd5">
+    /// The hash the caller already holds, or <see langword="null"/> for an unconditional read.
+    /// </param>
+    /// <param name="ct">A token that cancels the operation.</param>
+    /// <returns>The result.</returns>
+    /// <remarks>
+    /// The local snapshot is read once and reused: it decides whether a conditional request may be
+    /// sent, supplies the content when the server answers "not modified", and is the failover copy
+    /// if the connection then fails. Reading it once keeps the content and the hash it was checked
+    /// against from belonging to different versions.
+    /// </remarks>
+    private async Task<NacosConfigResult> GetConfigAsyncCoreAsync(
+        NacosConfigKey key,
+        string? localMd5,
+        CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(key);
         ObjectDisposedException.ThrowIf(_disposed, this);
 
         NacosConfigKey resolved = key.WithDefaultNamespace(_options.Namespace);
 
+        NacosConfigResult? local = null;
+
+        if (!string.IsNullOrEmpty(localMd5))
+        {
+            local = await ReadSnapshotAsync(resolved, ct).ConfigureAwait(false);
+
+            if (local is not null && !NacosMd5.AreEqual(localMd5, local.Md5))
+            {
+                // The caller's hash does not belong to the copy this client can restore, so a
+                // "not modified" answer would have nothing to return. The read stays unconditional
+                // and the server's content is authoritative.
+                local = null;
+            }
+        }
+
         NacosConfigResult result;
 
         try
         {
-            result = await QueryAsync(resolved, localMd5: null, ct).ConfigureAwait(false);
+            result = await QueryAsync(resolved, local is null ? null : localMd5, ct)
+                .ConfigureAwait(false);
 
             await UpdateSnapshotAsync(resolved, result, ct).ConfigureAwait(false);
+        }
+        catch (NacosServerException ex) when (
+            ex.ErrorCode == ConfigQueryResponse.ConfigNotModified && local is not null)
+        {
+            // The server confirmed the local copy is current and sent no content, so the copy is
+            // returned. The metadata the 304 carries describes that same version and is preferred
+            // over the local one where the server supplied it.
+            result = RestoreNotModified(resolved, local, ex.Response as ConfigQueryResponse);
+
+            NacosConfigLog.ServedNotModified(_logger, resolved.ToString());
         }
         catch (NacosException ex) when (ex is NacosConnectionException or NacosTimeoutException)
         {
             // The control plane is unreachable. A snapshot is the difference between a process
             // that survives the outage and one that cannot start, so it is used here.
-            NacosConfigResult? cached = await ReadSnapshotAsync(resolved, ct).ConfigureAwait(false);
+            NacosConfigResult? cached = local
+                ?? await ReadSnapshotAsync(resolved, ct).ConfigureAwait(false);
 
             if (cached is null)
             {
@@ -210,6 +269,38 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
         // Filtering happens after the snapshot is written: the snapshot must keep the value as the
         // server stores it, key included, so a later failover can run the same filters over it.
         return await FilterReadAsync(result, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds the result for a conditional read the server answered as "not modified".
+    /// </summary>
+    /// <param name="key">The resolved configuration coordinates.</param>
+    /// <param name="local">The copy the caller's hash was checked against.</param>
+    /// <param name="response">
+    /// The decoded <c>304</c> reply, or <see langword="null"/> when only its error code survived.
+    /// </param>
+    /// <returns>The result describing the version the caller already holds.</returns>
+    /// <remarks>
+    /// The content is the local copy, because that is what the caller's hash belongs to; everything
+    /// else comes from the server's reply when it carries it. The result is not marked
+    /// <see cref="NacosConfigResult.FromLocalCache"/>: that flag means the server was unreachable,
+    /// and here the server answered.
+    /// </remarks>
+    private static NacosConfigResult RestoreNotModified(
+        NacosConfigKey key,
+        NacosConfigResult local,
+        ConfigQueryResponse? response)
+    {
+        return new NacosConfigResult(
+            key,
+            local.Content,
+            string.IsNullOrEmpty(response?.Md5) ? local.Md5 : response.Md5,
+            string.IsNullOrEmpty(response?.ContentType) ? local.ContentType : response.ContentType,
+            response is null || response.LastModified <= 0
+                ? local.LastModified
+                : ToTimestamp(response.LastModified),
+            fromLocalCache: false,
+            local.EncryptedDataKey);
     }
 
     /// <inheritdoc />
@@ -764,6 +855,15 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             // The push carries no content, so the value must be fetched. Passing the known hash
             // lets the server answer "not modified" when the notification is spurious.
             result = await QueryAsync(key, registration.LastMd5, ct).ConfigureAwait(false);
+        }
+        catch (NacosServerException ex) when (
+            ex.ErrorCode == ConfigQueryResponse.ConfigNotModified)
+        {
+            // A "not modified" answer is the same outcome as fetching an unchanged value: the
+            // notification was spurious or repeated. It is dropped here rather than logged as a
+            // failed fetch, which is what the exception would otherwise become.
+            NacosConfigLog.ChangeIgnored(_logger, key.ToString(), registration.LastMd5);
+            return;
         }
         catch (NacosException ex)
         {
