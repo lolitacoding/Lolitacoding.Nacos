@@ -578,4 +578,16 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增 5 个：`NacosConfigClientTests` 的四个条件读（复用本地副本并采信 304 元数据、哈希不属于快照时无条件读、无快照时无条件读、过滤器照常作用于恢复值）与一个监听 304（记 4008、不记 4029、不重复回调）。
 - 验收：Release 构建零警告零错误；单元测试 **931 个全绿**（新增 5 个）；集成测试新增 `ConfigIntegrationTests.ConditionalRead_ServesTheHeldVersionAndFallsBackWhenTheServerMovedOn`，并在 `v3.0.2` / `v3.2.4` / `v3.3.0-RC` 三个镜像上各跑 `ConfigIntegrationTests` 8 个全绿。3.3 镜像上额外断言事件 4031，证明服务端确实返回了 304；旧镜像忽略 `localMd5` 直接回内容，测试同样通过。
 
+#### P2-16 · A2A 端点批量注册（✅ 已完成）
+
+- **缺口**：Java 3.1.1 的 `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` 用 `BatchAgentEndpointRequest` 一次提交整组端点；本客户端只有单端点注册，多传输的 agent（`JSONRPC` / `GRPC` / `HTTP+JSON`）每个端点各一次往返，且无法原子地替换集合。
+- **公共面**：`INacosAgentCardRegistry.RegisterAgentEndpointsAsync(string agentName, IReadOnlyList<NacosAgentEndpoint> endpoints, CancellationToken ct = default)`，发送 `BatchAgentEndpointRequest`（`AgentRequest` + `endpoints` + `type = batchRegisterEndpoint`，与 Java 的 getter-only `type` 一致）。与 RAD 的 `NacosAgentEndpointBatch`（`AgentEndpointRegisterRpcRequest`）是两回事。
+- **语义（服务端的，不是循环调用）**：请求按 `batchRegisterInstance` 处理，替换该 publisher 在**该 agent 版本**上的整个实例集合——批次里没出现的端点会被撤下；未提及的版本不受影响；批次替换同版本先前的单端点注册。
+- **校验（发送前，与 Java 一致）**：批次不能为空（撤下端点用注销接口）、每个端点必须有效、所有端点必须同一版本（版本决定实例所属的服务）。Java 抛 `NacosApiException`，这里抛 `ArgumentException`。
+- **重放**：批次按「agent + 版本」记一条，重连时整批重发，期间被注销的端点会从记录里剔除；批次先于单端点重放（批次替换集合，之后登记的单端点是增量）。Java 的 redo 只按 agent 记录（`AgentEndpointWrapper`），同 agent 的不同版本会互相顶掉，这里的键含版本。
+- **日志**：新增事件 8051 `AgentEndpointBatchRegistered`（agent、版本、端点数量）。
+- **文档**：`docs/java-parity.md` 的 P2-16 标记完成并记录语义与重放差异；`docs/protocol-notes.md` 的 A2A 表新增批量请求、补充「批次替换集合」条目并改写重放差异第 3 条；`docs/quickstart.md` 的 A2A 小节新增批量注册示例。
+- 单元测试新增 6 个：整组一次请求（不产生单端点请求）、空批次拒绝、混合版本拒绝、重连整批重放、批次撤下被替换的单端点、注销端点后重放批次不再包含它。
+- 验收：Release 构建零警告零错误；单元测试 **937 个全绿**（新增 6 个）；集成测试新增 `AgentCardIntegrationTests.RegisterAgentEndpointsAsync_PublishesTheWholeSetAndReplacesIt`（真实容器 `v3.2.4`：一次批次后卡片报出两个传输的接口，再发只含 GRPC 的批次后卡片只剩它，证明是替换而非追加），`AgentCardIntegrationTests` 6 个全绿。
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

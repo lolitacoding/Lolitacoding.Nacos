@@ -182,6 +182,73 @@ public sealed class AgentCardIntegrationTests
     }
 
     [Fact]
+    public async Task RegisterAgentEndpointsAsync_PublishesTheWholeSetAndReplacesIt()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string agentName = NacosHttp.UniqueId("agent-batch");
+
+        await client.AI.AgentCard.ReleaseAgentCardAsync(
+            new NacosAgentCard
+            {
+                Name = agentName,
+                Version = "1.0.0",
+                Description = "An agent reachable on two transports.",
+                SupportedInterfaces = [PlaceholderInterface()],
+            },
+            NacosA2a.EndpointTypeService,
+            setAsLatest: true,
+            ct: ct);
+
+        var jsonRpc = new NacosAgentEndpoint
+        {
+            Address = "10.0.0.9",
+            Port = 9100,
+            Path = "/a2a",
+            Version = "1.0.0",
+            ProtocolVersion = "0.2.5",
+        };
+
+        var grpc = new NacosAgentEndpoint
+        {
+            Address = "10.0.0.9",
+            Port = 9101,
+            Path = "/a2a",
+            Transport = "GRPC",
+            Version = "1.0.0",
+            ProtocolVersion = "0.2.5",
+        };
+
+        await client.AI.AgentCard.RegisterAgentEndpointsAsync(agentName, [jsonRpc, grpc], ct);
+
+        // One request published both transports, so the card has to report both of them.
+        NacosAgentCardDetail both = await NacosEventually.BecomesAsync(
+            () => client.AI.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            value => value.SupportedInterfaces is { Count: 2 },
+            ct);
+
+        both.SupportedInterfaces.ShouldNotBeNull()
+            .Select(@interface => @interface.Url)
+            .ShouldBe(["http://10.0.0.9:9100/a2a", "http://10.0.0.9:9101/a2a"], ignoreOrder: true);
+
+        // A batch is a replacement, not an addition: the endpoint it leaves out has to disappear
+        // from the card, which is what makes it usable for moving an agent off a transport.
+        await client.AI.AgentCard.RegisterAgentEndpointsAsync(agentName, [grpc], ct);
+
+        NacosAgentCardDetail replaced = await NacosEventually.BecomesAsync(
+            () => client.AI.AgentCard.GetAgentCardAsync(agentName, ct: ct),
+            value => value.SupportedInterfaces is { Count: 1 },
+            ct);
+
+        NacosAgentInterface only = replaced.SupportedInterfaces.ShouldNotBeNull()[0];
+        only.Url.ShouldBe("http://10.0.0.9:9101/a2a");
+        only.Transport.ShouldBe("GRPC");
+    }
+
+    [Fact]
     public async Task SubscribeAgentCardAsync_ReportsANewVersion()
     {
         await using NacosContainer container =

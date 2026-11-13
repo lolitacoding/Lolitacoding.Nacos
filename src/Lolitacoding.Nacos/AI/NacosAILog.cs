@@ -741,4 +741,23 @@ internal static partial class NacosAILog
         string resource,
         string name,
         string reason);
+
+    /// <summary>Logs that a batch of agent endpoints replaced the set published for a version.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="version">The card version the endpoints serve.</param>
+    /// <param name="count">How many endpoints the batch carried.</param>
+    /// <remarks>
+    /// A batch is one request that replaces the whole set, so the count is what tells a reader how
+    /// many transports the agent is now reachable on.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8051,
+        Level = LogLevel.Information,
+        Message = "Published {Count} endpoint(s) for agent {AgentName} version {Version}.")]
+    public static partial void AgentEndpointBatchRegistered(
+        ILogger logger,
+        string agentName,
+        string? version,
+        int count);
 }

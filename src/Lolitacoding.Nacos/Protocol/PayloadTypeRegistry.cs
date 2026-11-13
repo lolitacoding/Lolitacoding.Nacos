@@ -85,6 +85,7 @@ internal static class PayloadTypeRegistry
         ["ReleaseAgentCardResponse"] = NacosJsonContext.Default.ReleaseAgentCardResponse,
         ["AgentEndpointRequest"] = NacosJsonContext.Default.AgentEndpointRequest,
         ["AgentEndpointResponse"] = NacosJsonContext.Default.AgentEndpointResponse,
+        ["BatchAgentEndpointRequest"] = NacosJsonContext.Default.BatchAgentEndpointRequest,
 
         // AI registry (RAD agents).
         ["AgentPublishRpcRequest"] = NacosJsonContext.Default.AgentPublishRpcRequest,

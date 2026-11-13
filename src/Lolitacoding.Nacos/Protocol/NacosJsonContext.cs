@@ -81,6 +81,7 @@ namespace Lolitacoding.Nacos.Protocol;
 [JsonSerializable(typeof(ReleaseAgentCardResponse))]
 [JsonSerializable(typeof(AgentEndpointRequest))]
 [JsonSerializable(typeof(AgentEndpointResponse))]
+[JsonSerializable(typeof(BatchAgentEndpointRequest))]
 [JsonSerializable(typeof(AgentPublishRpcRequest))]
 [JsonSerializable(typeof(AgentPublishRpcResponse))]
 [JsonSerializable(typeof(AgentSearchRpcRequest))]

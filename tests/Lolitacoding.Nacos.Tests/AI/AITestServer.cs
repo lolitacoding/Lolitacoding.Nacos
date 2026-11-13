@@ -34,6 +34,7 @@ internal sealed class AITestServer
     private readonly List<QueryAgentCardRequest> _cards = [];
     private readonly List<ReleaseAgentCardRequest> _cardReleases = [];
     private readonly List<AgentEndpointRequest> _agentEndpoints = [];
+    private readonly List<BatchAgentEndpointRequest> _agentEndpointBatches = [];
     private readonly List<AgentPublishRpcRequest> _agentPublishes = [];
     private readonly List<AgentSearchRpcRequest> _agentSearches = [];
     private readonly List<AgentDiscoveryRpcRequest> _agentDiscoveries = [];
@@ -201,6 +202,22 @@ internal sealed class AITestServer
 
     /// <summary>Gets or sets how the server answers an agent endpoint operation.</summary>
     public Func<AgentEndpointRequest, AgentEndpointResponse> OnAgentEndpoint { get; set; } =
+        request => AITest.AgentEndpoint(request.Type!);
+
+    /// <summary>Gets the agent endpoint batches the client sent, in order.</summary>
+    public IReadOnlyList<BatchAgentEndpointRequest> AgentEndpointBatches
+    {
+        get
+        {
+            lock (_agentEndpointBatches)
+            {
+                return [.. _agentEndpointBatches];
+            }
+        }
+    }
+
+    /// <summary>Gets or sets how the server answers an agent endpoint batch.</summary>
+    public Func<BatchAgentEndpointRequest, AgentEndpointResponse> OnAgentEndpointBatch { get; set; } =
         request => AITest.AgentEndpoint(request.Type!);
 
     /// <summary>Gets the RAD agent publishes the client sent, in order.</summary>
@@ -507,6 +524,19 @@ internal sealed class AITestServer
                 }
 
                 return PayloadCodec.Encode(OnAgentEndpoint(request));
+            }
+
+            case "BatchAgentEndpointRequest":
+            {
+                BatchAgentEndpointRequest request =
+                    PayloadCodec.Decode<BatchAgentEndpointRequest>(payload)!;
+
+                lock (_agentEndpointBatches)
+                {
+                    _agentEndpointBatches.Add(request);
+                }
+
+                return PayloadCodec.Encode(OnAgentEndpointBatch(request));
             }
 
             case "AgentPublishRpcRequest":

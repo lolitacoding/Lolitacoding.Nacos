@@ -392,22 +392,21 @@ implementation is `EndpointServerListProvider`.
 ## P2 items
 
 All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
-re-audit added two P2 rows, of which P2-17 is now closed and P2-16 remains open, and the P3 list is
-no longer closed by design alone: P3-11 to P3-13 remain non-goals, while P3-18 to P3-23 are work
-items.
+re-audit added two P2 rows, P2-16 and P2-17, and both are now closed. The P3 list is no longer closed
+by design alone: P3-11 to P3-13 remain non-goals, while P3-18 to P3-23 are work items.
 
 ## 2026-11 re-audit against Nacos 3.3
 
 The rows above were cut from the 3.2 surface. This pass re-read the same checkout at `1511b5a`
 (2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
 sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
-configuration reads, the RAD agent registry and the lock watchdog. Eight gaps remain, none of them in
+configuration reads, the RAD agent registry and the lock watchdog. Seven gaps remain, none of them in
 the configuration or naming hot path.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
 | P1-15 | AI registry over HTTP, with a per-module transport choice | `AgentTransportMode`, `nacosAiTransportMode` and its five per-module keys, `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy`, endpoint publication heartbeat | **Missing**, except the agent watch (`NacosAgentWatchTransport`, P2-7) | A deployment whose ingress is HTTP-only cannot read or publish AI resources at all, and there is no way to opt into HTTP the way Java 3.3 lets a caller do. |
-| P2-16 | A2A batch endpoint registration | `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` → `BatchAgentEndpointRequest` | **Missing** — `RegisterAgentEndpointAsync` takes one endpoint; `NacosAgentEndpointBatch` is the RAD batch, a different request | Publishing one agent on several transports costs a round trip each, and the set cannot be replaced atomically. |
+| P2-16 | A2A batch endpoint registration | `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` → `BatchAgentEndpointRequest` | **Done** — `INacosAgentCardRegistry.RegisterAgentEndpointsAsync`, log event 8051 | Publishing one agent on several transports cost a round trip each, and the set could not be replaced atomically. |
 | P2-17 | Conditional configuration read | `ConfigService.getConfig(GetConfigRequest)` with `localMd5`, `getConfigWithResult` | **Done** — `INacosConfigClient.GetConfigConditionalAsync`, `NacosConfigResult`, log event 4031 | A large configuration was re-sent on every read even when the caller already held the content. |
 | P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Missing** | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
 | P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Missing** — the request is dropped, so the server's one-second wait expires | The console's client-metrics page reports an error for a .NET client. |
@@ -457,21 +456,31 @@ state, and a decision about whether the Naming-instance path stays the default w
 available. The last point matters: the two publication models disagree about who owns an endpoint's
 lifetime, and switching between them silently would leak registrations.
 
-### P2-16: A2A batch endpoint registration
+### P2-16: A2A batch endpoint registration (closed)
 
 `A2aService` has both `registerAgentEndpoint(String, AgentEndpoint)` and
 `registerAgentEndpoint(String, Collection<AgentEndpoint>)`. The batch form is a different wire
 request from the RAD one: `BatchAgentEndpointRequest` for the A2A card endpoints,
 `AgentEndpointRegisterRpcRequest` with an `AgentEndpointRegistrationBatch` for the RAD publication.
-This library has the RAD batch (`NacosAgentEndpointBatch`, `RegisterEndpointsAsync`) and only the
-single-endpoint A2A call, so an agent published on several transports — `JSONRPC`, `GRPC`,
-`HTTP+JSON` — pays one round trip and one replay entry per endpoint, and cannot replace its set in
-one request.
 
-Java also keeps a redo entry per agent for the batch (`AgentEndpointWrapper`), so a batch that fails
-is retried whole. Adding the batch here means a
-`RegisterAgentEndpointsAsync(string agentName, IReadOnlyList<NacosAgentEndpoint>)` that sends
-`BatchAgentEndpointRequest`, plus replay state keyed by agent rather than by endpoint.
+Closed by `INacosAgentCardRegistry.RegisterAgentEndpointsAsync(agentName, endpoints)`, which sends
+`BatchAgentEndpointRequest`. The semantics are the server's, not a loop of single calls: the request
+replaces this publisher's whole instance set for the agent version, so a batch is how a caller says
+"these are the transports this agent is reachable on" and has the rest withdrawn. A version the batch
+does not mention keeps its endpoints, and a batch replaces what earlier single registrations
+published for the same version.
+
+The client applies the same checks the server does, before sending: the batch must not be empty
+(removing endpoints is the deregistration call), every endpoint must be valid, and all of them must
+serve one version, because the version is what names the service the instances belong to. The
+official client refuses these too, with a `NacosApiException`; here they are `ArgumentException`s.
+
+Replay follows the batch model rather than the old per-endpoint one. A batch is recorded as one
+publication per agent version and replayed as one request, with endpoints removed since then left
+out; single registrations made after a batch are replayed after it, because the batch replaces the
+set and a later single registration is an addition to it. The official client keeps one redo entry
+per agent (`AgentEndpointWrapper`); the difference is that its entry is keyed by agent alone, so a
+failed batch for one version can displace another, which this record does not.
 
 ### P2-17: conditional configuration read (closed)
 

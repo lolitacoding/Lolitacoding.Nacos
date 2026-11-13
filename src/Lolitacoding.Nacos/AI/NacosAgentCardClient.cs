@@ -171,6 +171,23 @@ internal sealed class NacosAgentCardClient : INacosAgentCardRegistry, IAsyncDisp
     }
 
     /// <inheritdoc />
+    public async Task RegisterAgentEndpointsAsync(
+        string agentName,
+        IReadOnlyList<NacosAgentEndpoint> endpoints,
+        CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
+        ArgumentNullException.ThrowIfNull(endpoints);
+        ValidateEndpoints(endpoints);
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        NacosGrpcConnection connection = await _owner.GetConnectionAsync(ct).ConfigureAwait(false);
+        EnsureSupported(connection, agentName);
+
+        await _endpoints.RegisterBatchAsync(agentName, endpoints, ct).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
     public async Task DeregisterAgentEndpointAsync(
         string agentName,
         NacosAgentEndpoint endpoint,
@@ -321,6 +338,58 @@ internal sealed class NacosAgentCardClient : INacosAgentCardRegistry, IAsyncDisp
             throw new ArgumentException(
                 "An agent endpoint must name a port between 1 and 65535.",
                 nameof(endpoint));
+        }
+    }
+
+    /// <summary>
+    /// Fails a batch whose endpoints the server would refuse.
+    /// </summary>
+    /// <param name="endpoints">The endpoints to check.</param>
+    /// <exception cref="ArgumentException">
+    /// The batch is empty, holds a null endpoint, holds an endpoint that is invalid, or mixes
+    /// versions.
+    /// </exception>
+    /// <remarks>
+    /// The server checks the same three things — a non-empty batch, valid endpoints, and one shared
+    /// version — and reports them as missing or invalid parameters. Checking here names the endpoint
+    /// and the version that disagree without a round trip.
+    /// </remarks>
+    private static void ValidateEndpoints(IReadOnlyList<NacosAgentEndpoint> endpoints)
+    {
+        if (endpoints.Count == 0)
+        {
+            // "Register nothing" is a removal, and the server says so; it has its own call here.
+            throw new ArgumentException(
+                "An agent endpoint batch must carry at least one endpoint; remove endpoints one at a time instead.",
+                nameof(endpoints));
+        }
+
+        string? version = null;
+
+        foreach (NacosAgentEndpoint endpoint in endpoints)
+        {
+            if (endpoint is null)
+            {
+                throw new ArgumentException(
+                    "An agent endpoint batch cannot contain a null endpoint.",
+                    nameof(endpoints));
+            }
+
+            ValidateEndpoint(endpoint);
+
+            if (version is null)
+            {
+                version = endpoint.Version;
+            }
+            else if (!string.Equals(version, endpoint.Version, StringComparison.Ordinal))
+            {
+                // The endpoints become instances of one service, named after the agent and the
+                // version, so a batch that mixed versions would have no single service to register
+                // into.
+                throw new ArgumentException(
+                    "Every endpoint in a batch must serve the same agent card version.",
+                    nameof(endpoints));
+            }
         }
     }
 

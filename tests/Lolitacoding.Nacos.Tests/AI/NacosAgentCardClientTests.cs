@@ -389,4 +389,162 @@ public sealed class NacosAgentCardClientTests
         server.AgentEndpoints.Count.ShouldBe(2);
         server.AgentEndpoints[1].Type.ShouldBe(NacosAIRemote.DeregisterEndpoint);
     }
+
+    [Fact]
+    public async Task RegisterAgentEndpointsAsync_SendsOneRequestCarryingTheWholeSet()
+    {
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient(new NacosOptions
+        {
+            ServerAddresses = ["127.0.0.1:8848"],
+            AppName = "ai-tests",
+            Namespace = "staging",
+        });
+
+        await client.AgentCard.RegisterAgentEndpointsAsync(
+            "planner",
+            [
+                new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9000, Version = "1.0.0" },
+                new NacosAgentEndpoint
+                {
+                    Address = "10.0.0.7",
+                    Port = 9001,
+                    Path = "/grpc",
+                    Transport = "GRPC",
+                    Version = "1.0.0",
+                },
+            ],
+            TestContext.Current.CancellationToken);
+
+        // One request, not two: the point of the batch is that the set is published atomically.
+        server.AgentEndpoints.ShouldBeEmpty();
+
+        BatchAgentEndpointRequest request = server.AgentEndpointBatches.ShouldHaveSingleItem();
+        request.AgentName.ShouldBe("planner");
+        request.NamespaceId.ShouldBe("staging");
+        request.Type.ShouldBe(NacosAIRemote.BatchRegisterEndpoint);
+
+        IReadOnlyList<NacosAgentEndpoint> sent = request.Endpoints.ShouldNotBeNull();
+        sent.Count.ShouldBe(2);
+        sent[0].Port.ShouldBe(9000);
+        sent[1].Transport.ShouldBe("GRPC");
+
+        PayloadCodec.ReadTypeName(server.Channel.UnaryRequests[^1])
+            .ShouldBe("BatchAgentEndpointRequest");
+    }
+
+    [Fact]
+    public async Task RegisterAgentEndpointsAsync_RejectsAnEmptyBatch()
+    {
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient();
+
+        // "Register nothing" is a removal, and it has its own call; failing here says so before a
+        // round trip.
+        await Should.ThrowAsync<ArgumentException>(
+            () => client.AgentCard.RegisterAgentEndpointsAsync(
+                "planner", [], TestContext.Current.CancellationToken));
+
+        server.AgentEndpointBatches.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RegisterAgentEndpointsAsync_RejectsEndpointsOfDifferentVersions()
+    {
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient();
+
+        // The endpoints become instances of one service, named after the agent and the version, so a
+        // mixed batch has no single service to register into. The server refuses it too.
+        await Should.ThrowAsync<ArgumentException>(
+            () => client.AgentCard.RegisterAgentEndpointsAsync(
+                "planner",
+                [
+                    new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9000, Version = "1.0.0" },
+                    new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9001, Version = "2.0.0" },
+                ],
+                TestContext.Current.CancellationToken));
+
+        server.AgentEndpointBatches.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task RegisterAgentEndpointsAsync_ReplaysTheBatchAsOneRequest()
+    {
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient();
+
+        await client.AgentCard.RegisterAgentEndpointsAsync(
+            "planner",
+            [
+                new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9000, Version = "1.0.0" },
+                new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9001, Version = "1.0.0" },
+            ],
+            TestContext.Current.CancellationToken);
+
+        await server.DropAndReconnectAsync();
+        await AITestServer.WaitForAsync(() => server.AgentEndpointBatches.Count == 2);
+
+        // Replaying the set as one request is what makes the batch cheaper than a loop of single
+        // registrations, and it keeps the set atomic across the reconnect.
+        server.AgentEndpoints.ShouldBeEmpty();
+        server.AgentEndpointBatches[1].Endpoints.ShouldNotBeNull().Count.ShouldBe(2);
+        server.AgentEndpointBatches[1].Type.ShouldBe(NacosAIRemote.BatchRegisterEndpoint);
+    }
+
+    [Fact]
+    public async Task RegisterAgentEndpointsAsync_WithdrawsTheSingleRegistrationsItReplaces()
+    {
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient();
+
+        var replaced = new NacosAgentEndpoint
+        {
+            Address = "10.0.0.8",
+            Port = 9002,
+            Version = "1.0.0",
+        };
+
+        await client.AgentCard.RegisterAgentEndpointAsync(
+            "planner", replaced, TestContext.Current.CancellationToken);
+
+        await client.AgentCard.RegisterAgentEndpointsAsync(
+            "planner",
+            [new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9000, Version = "1.0.0" }],
+            TestContext.Current.CancellationToken);
+
+        await server.DropAndReconnectAsync();
+        await AITestServer.WaitForAsync(() => server.AgentEndpointBatches.Count == 2);
+
+        // The server replaced this publisher's whole set, so replaying the withdrawn endpoint would
+        // resurrect a registration the caller replaced.
+        server.AgentEndpoints.Count.ShouldBe(1);
+        server.AgentEndpoints[0].Type.ShouldBe(NacosAIRemote.RegisterEndpoint);
+    }
+
+    [Fact]
+    public async Task DeregisterAgentEndpointAsync_DropsTheEndpointFromTheReplayedBatch()
+    {
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient();
+
+        var kept = new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9000, Version = "1.0.0" };
+        var removed = new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9001, Version = "1.0.0" };
+
+        await client.AgentCard.RegisterAgentEndpointsAsync(
+            "planner", [kept, removed], TestContext.Current.CancellationToken);
+
+        await client.AgentCard.DeregisterAgentEndpointAsync(
+            "planner", removed, TestContext.Current.CancellationToken);
+
+        await server.DropAndReconnectAsync();
+        await AITestServer.WaitForAsync(() => server.AgentEndpointBatches.Count == 2);
+
+        // The batch is replayed as one request, so the removed endpoint has to leave the recorded
+        // set or the replay would put it back.
+        IReadOnlyList<NacosAgentEndpoint> replayed =
+            server.AgentEndpointBatches[1].Endpoints.ShouldNotBeNull();
+        replayed.Count.ShouldBe(1);
+        replayed[0].Port.ShouldBe(9000);
+    }
 }

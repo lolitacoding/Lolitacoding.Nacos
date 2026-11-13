@@ -651,7 +651,30 @@ await client.AI.AgentCard.RegisterAgentEndpointAsync(
 
 An endpoint must name the card version it serves, because the registration becomes an instance of a
 service named after the pair. It also lives and dies with the connection that registered it, so it is
-republished after a reconnect and a refused registration is not. Following a card is the same poll as
+republished after a reconnect and a refused registration is not.
+
+An agent reachable on several transports is published as one batch. The batch replaces the set this
+client published for that version — a transport left out of it is withdrawn — so every endpoint in it
+must serve the same version:
+
+```csharp
+await client.AI.AgentCard.RegisterAgentEndpointsAsync(
+    "support-agent",
+    [
+        new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9000, Path = "/a2a", Version = "1.0.0" },
+        new NacosAgentEndpoint
+        {
+            Address = "10.0.0.7",
+            Port = 9001,
+            Path = "/a2a",
+            Transport = "GRPC",
+            Version = "1.0.0",
+        },
+    ],
+    cancellationToken);
+```
+
+Following a card is the same poll as
 following a prompt, with the same `null` element for one that stopped being served:
 
 ```csharp

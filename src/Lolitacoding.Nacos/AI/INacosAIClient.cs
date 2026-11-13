@@ -608,6 +608,45 @@ public interface INacosAgentCardRegistry
         CancellationToken ct = default);
 
     /// <summary>
+    /// Replaces the endpoints this client published for one version of an agent.
+    /// </summary>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="endpoints">
+    /// The complete set of endpoints the agent is reachable at, all serving the same card version.
+    /// </param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server accepted the batch.</returns>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="agentName"/> is null or whitespace, <paramref name="endpoints"/> is empty or
+    /// holds an endpoint that is invalid, or the endpoints do not all serve the same version.
+    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="endpoints"/> is null.</exception>
+    /// <exception cref="NacosServerException">The server refused the registration.</exception>
+    /// <remarks>
+    /// <para>
+    /// This is the batch form of <see cref="RegisterAgentEndpointAsync"/>, and it is not a loop of it:
+    /// the server replaces this client's whole endpoint set for the agent version, so a batch is how
+    /// a caller says "these are the transports this agent is reachable on" and has the rest
+    /// withdrawn. A batch therefore replaces what earlier single registrations published for the same
+    /// version, and a version that is left out of the batch keeps its endpoints untouched.
+    /// </para>
+    /// <para>
+    /// Every endpoint must name the same version, because the version is what names the service the
+    /// registrations become instances of; the server refuses a mixed batch and so does this method,
+    /// before it sends anything. An empty batch is refused for the same reason: removing endpoints is
+    /// what <see cref="DeregisterAgentEndpointAsync"/> is for.
+    /// </para>
+    /// <para>
+    /// The batch is replayed as one request after a reconnect, with the endpoints that have since
+    /// been removed left out. A batch the server refused is not replayed: the caller saw the failure.
+    /// </para>
+    /// </remarks>
+    Task RegisterAgentEndpointsAsync(
+        string agentName,
+        IReadOnlyList<NacosAgentEndpoint> endpoints,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Removes one runtime endpoint of an agent.
     /// </summary>
     /// <param name="agentName">The agent name.</param>

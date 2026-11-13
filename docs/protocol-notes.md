@@ -701,6 +701,7 @@ states that it does not have it — a server that says nothing may still serve t
 | Read a card | `QueryAgentCardRequest` (`namespaceId`, `agentName`, `version`, `registrationType`) | `QueryAgentCardResponse` (`agentCardDetailInfo`) |
 | Publish a card | `ReleaseAgentCardRequest` (`agentCard`, `registrationType`, `setAsLatest`) | `ReleaseAgentCardResponse` |
 | Register or remove an endpoint | `AgentEndpointRequest` (`endpoint`, `type`) | `AgentEndpointResponse` (`type`) |
+| Replace an agent version's endpoints | `BatchAgentEndpointRequest` (`endpoints`) | `AgentEndpointResponse` (`type`) |
 
 - **A card is validated before it is stored, and the validation decides its shape.** A card must name
   a name and a version, and it must be describable in one of two ways: either `supportedInterfaces`,
@@ -725,6 +726,12 @@ states that it does not have it — a server that says nothing may still serve t
   the server removes it when the connection that registered it closes, and the client replays the
   registrations it still owns after a reconnect. A registration the server refused is not replayed:
   the caller saw the failure.
+- **A batch replaces the publisher's set for a version.** `BatchAgentEndpointRequest` is handled as
+  `batchRegisterInstance`, not as a loop of `registerInstance`: every endpoint the caller published
+  for that agent version and did not repeat is withdrawn. The request carries no version of its own,
+  so the endpoints must all name the same one — the server refuses a mixed batch, and an empty one,
+  because removing endpoints is the deregistration call. A single registration after a batch adds to
+  the set rather than replacing it.
 - **The reserved metadata keys are not the endpoint's.** An endpoint's `protocolVersion` and `tenant`
   are stored in the metadata under `__nacos.agent.endpoint.protocolVersion__` and
   `__nacos.agent.endpoint.tenant__`, which the server strips from the user metadata and reads as
@@ -740,11 +747,12 @@ states that it does not have it — a server that says nothing may still serve t
 2. The refresh interval is the single `NacosAIOptions.CacheRefreshInterval`. A card carries no content
    hash, so every refresh is an unconditional read — there is no conditional form of the request to
    use instead.
-3. The replay record is one entry per endpoint — keyed by agent name, address, port and path — and
-   each is republished on its own. The official client records one batch per agent and republishes
-   the batch, which is the same guarantee with a coarser unit: an agent that publishes several
-   endpoints keeps all of them either way. Registering one endpoint at a time is what this client's
-   surface offers; the batch request exists in the protocol and is not exposed.
+3. The replay record has two kinds of entry: one per single registration — keyed by agent name,
+   address, port and path — and one per agent version for a batch. A batch is replayed as one
+   request, before the single registrations, because it replaces the publisher's set and a single
+   registration made after it is an addition. The official client records one batch per agent,
+   keyed by the agent alone, so a batch for one version can displace another; here the version is
+   part of the key, so versions do not interfere.
 
 ### RAD agents
 

@@ -324,6 +324,30 @@ internal sealed class AgentEndpointResponse : NacosResponse
 }
 
 /// <summary>
+/// A request that replaces every endpoint this client published for one version of an A2A agent.
+/// </summary>
+/// <remarks>
+/// The batch is not a loop of single registrations: the server replaces the publisher's whole
+/// instance set for the agent version, so a batch is how a caller says "these are the transports
+/// this agent is reachable on" and has the previous set withdrawn. Every endpoint must name the same
+/// version, because that version is what names the service the instances belong to.
+/// </remarks>
+internal sealed class BatchAgentEndpointRequest : AgentRequest
+{
+    /// <summary>Gets or sets the endpoints, which must all serve one version.</summary>
+    public IReadOnlyList<NacosAgentEndpoint>? Endpoints { get; set; }
+
+    /// <summary>
+    /// Gets or sets the operation, always <see cref="NacosAIRemote.BatchRegisterEndpoint"/>.
+    /// </summary>
+    /// <remarks>
+    /// The official client's request class reports this value through a getter, so it travels in the
+    /// payload even though the server does not read it back.
+    /// </remarks>
+    public string? Type { get; set; }
+}
+
+/// <summary>
 /// The reply to a request for an A2A agent card.
 /// </summary>
 internal sealed class QueryAgentCardResponse : NacosResponse
