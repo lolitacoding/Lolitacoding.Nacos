@@ -478,9 +478,11 @@ official client refuses these too, with a `NacosApiException`; here they are `Ar
 Replay follows the batch model rather than the old per-endpoint one. A batch is recorded as one
 publication per agent version and replayed as one request, with endpoints removed since then left
 out; single registrations made after a batch are replayed after it, because the batch replaces the
-set and a later single registration is an addition to it. The official client keeps one redo entry
-per agent (`AgentEndpointWrapper`); the difference is that its entry is keyed by agent alone, so a
-failed batch for one version can displace another, which this record does not.
+set and a later single registration is an addition to it. A batch the server refused is dropped from
+the record and the set it was replacing is kept, because the server never withdrew that set. The
+official client keeps one redo entry per agent (`AgentEndpointWrapper`); the difference is that its
+entry is keyed by agent alone, so a failed batch for one version can displace another, which this
+record does not.
 
 ### P2-17: conditional configuration read (closed)
 
@@ -598,7 +600,8 @@ The comparison also confirmed what is already covered, so it is not re-opened by
 - **AI registry**: prompt, skill (including the archive `NacosSkill.Archive`, which is Java's
   `downloadSkillZip`), agent-spec, MCP server, agent-card and RAD agent reads and subscriptions;
   prompt resolution by version and label; MCP release with `createDraft`; agent card release with
-  `registrationType` and `setAsLatest`; endpoint registration with reconnect replay; RAD endpoint
+  `registrationType` and `setAsLatest`; endpoint registration, single or as one batch that replaces the
+  set (`BatchAgentEndpointRequest`), with reconnect replay; RAD endpoint
   publication batch (`AgentEndpointRegisterRpcRequest`); agent publish/search/discover; RAD watch
   over gRPC; local snapshot failover.
 - **Client basics**: multi-server failover, ability negotiation, TLS, authentication and token

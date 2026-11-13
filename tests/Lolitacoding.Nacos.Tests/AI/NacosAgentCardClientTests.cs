@@ -493,6 +493,35 @@ public sealed class NacosAgentCardClientTests
     }
 
     [Fact]
+    public async Task RegisterAgentEndpointsAsync_KeepsTheReplacedSetWhenTheServerRefusesTheBatch()
+    {
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient();
+
+        await client.AgentCard.RegisterAgentEndpointsAsync(
+            "planner",
+            [new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9000, Version = "1.0.0" }],
+            TestContext.Current.CancellationToken);
+
+        server.OnAgentEndpointBatch = _ => AITest.AgentEndpointFailure(500, "refused");
+
+        await Should.ThrowAsync<NacosServerException>(
+            () => client.AgentCard.RegisterAgentEndpointsAsync(
+                "planner",
+                [new NacosAgentEndpoint { Address = "10.0.0.7", Port = 9001, Version = "1.0.0" }],
+                TestContext.Current.CancellationToken));
+
+        await server.DropAndReconnectAsync();
+        await AITestServer.WaitForAsync(() => server.AgentEndpointBatches.Count == 3);
+
+        // The refused batch was never applied, so it must not be replayed; the set it was meant to
+        // replace is still the server's state and is what a reconnect has to publish.
+        IReadOnlyList<NacosAgentEndpoint> replayed =
+            server.AgentEndpointBatches[2].Endpoints.ShouldNotBeNull();
+        replayed.ShouldHaveSingleItem().Port.ShouldBe(9000);
+    }
+
+    [Fact]
     public async Task RegisterAgentEndpointsAsync_WithdrawsTheSingleRegistrationsItReplaces()
     {
         var server = new AITestServer();

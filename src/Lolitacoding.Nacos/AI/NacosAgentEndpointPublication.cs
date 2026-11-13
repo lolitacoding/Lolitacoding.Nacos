@@ -167,17 +167,18 @@ internal sealed class NacosAgentEndpointPublication
         catch
         {
             // The caller saw the failure, so the batch is not replayed later; what it replaced is
-            // put back, because the server never withdrew it.
-            _batches.TryRemove(new KeyValuePair<string, BatchPublication>(key, batch));
-
-            if (previous is not null)
+            // put back, because the server never withdrew it. Both restores add rather than assign:
+            // a concurrent registration that already replaced the record is the newer truth, and
+            // overwriting it would resurrect state the caller has since changed.
+            if (_batches.TryRemove(new KeyValuePair<string, BatchPublication>(key, batch))
+                && previous is not null)
             {
-                _batches[key] = previous;
+                _batches.TryAdd(key, previous);
             }
 
             foreach (KeyValuePair<string, Publication> entry in replaced)
             {
-                _publications[entry.Key] = entry.Value;
+                _publications.TryAdd(entry.Key, entry.Value);
             }
 
             throw;

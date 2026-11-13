@@ -587,7 +587,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **重放**：批次按「agent + 版本」记一条，重连时整批重发，期间被注销的端点会从记录里剔除；批次先于单端点重放（批次替换集合，之后登记的单端点是增量）。Java 的 redo 只按 agent 记录（`AgentEndpointWrapper`），同 agent 的不同版本会互相顶掉，这里的键含版本。
 - **日志**：新增事件 8051 `AgentEndpointBatchRegistered`（agent、版本、端点数量）。
 - **文档**：`docs/java-parity.md` 的 P2-16 标记完成并记录语义与重放差异；`docs/protocol-notes.md` 的 A2A 表新增批量请求、补充「批次替换集合」条目并改写重放差异第 3 条；`docs/quickstart.md` 的 A2A 小节新增批量注册示例。
-- 单元测试新增 6 个：整组一次请求（不产生单端点请求）、空批次拒绝、混合版本拒绝、重连整批重放、批次撤下被替换的单端点、注销端点后重放批次不再包含它。
-- 验收：Release 构建零警告零错误；单元测试 **937 个全绿**（新增 6 个）；集成测试新增 `AgentCardIntegrationTests.RegisterAgentEndpointsAsync_PublishesTheWholeSetAndReplacesIt`（真实容器 `v3.2.4`：一次批次后卡片报出两个传输的接口，再发只含 GRPC 的批次后卡片只剩它，证明是替换而非追加），`AgentCardIntegrationTests` 6 个全绿。
+- 单元测试新增 7 个：整组一次请求（不产生单端点请求）、空批次拒绝、混合版本拒绝、重连整批重放、批次撤下被替换的单端点、注销端点后重放批次不再包含它、服务端拒绝批次后重放的是被它替换的旧集合。恢复记录用 `TryAdd` 而不是直接赋值：并发下更新的登记才是事实，覆盖会把调用方已经改掉的状态复活。
+- 验收：Release 构建零警告零错误；单元测试 **938 个全绿**（新增 7 个）；集成测试新增 `AgentCardIntegrationTests.RegisterAgentEndpointsAsync_PublishesTheWholeSetAndReplacesIt`（真实容器 `v3.2.4`：一次批次后卡片报出两个传输的接口，再发只含 GRPC 的批次后卡片只剩它，证明是替换而非追加），`AgentCardIntegrationTests` 6 个全绿。
 
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

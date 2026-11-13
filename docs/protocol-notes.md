@@ -731,7 +731,8 @@ states that it does not have it — a server that says nothing may still serve t
   for that agent version and did not repeat is withdrawn. The request carries no version of its own,
   so the endpoints must all name the same one — the server refuses a mixed batch, and an empty one,
   because removing endpoints is the deregistration call. A single registration after a batch adds to
-  the set rather than replacing it.
+  the set rather than replacing it. A batch the server refuses changes nothing on its side, so the
+  client drops it from the replay record and keeps the set it was replacing.
 - **The reserved metadata keys are not the endpoint's.** An endpoint's `protocolVersion` and `tenant`
   are stored in the metadata under `__nacos.agent.endpoint.protocolVersion__` and
   `__nacos.agent.endpoint.tenant__`, which the server strips from the user metadata and reads as
