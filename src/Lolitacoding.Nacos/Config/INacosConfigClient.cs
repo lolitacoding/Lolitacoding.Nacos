@@ -80,8 +80,9 @@ public interface INacosConfigClient : IAsyncDisposable
     /// The conditional request is sent only when this client can restore the content the hash
     /// belongs to: the local snapshot must exist and hash to <paramref name="localMd5"/>. Otherwise
     /// the read is unconditional, because a "not modified" answer with nothing to return would be
-    /// worse than transferring the content. A snapshot requires
-    /// <see cref="NacosOptions.LocalCacheDirectory"/> to be set.
+    /// worse than transferring the content. Snapshots are kept while
+    /// <see cref="NacosConfigOptions.EnableLocalCache"/> is enabled, which is the default; turning it
+    /// off makes every read unconditional.
     /// </para>
     /// <para>
     /// A caller that does not track hashes should use <see cref="GetConfigAsync(NacosConfigKey, CancellationToken)"/>;

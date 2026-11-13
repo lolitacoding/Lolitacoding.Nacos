@@ -484,7 +484,8 @@ optional one, and `GetConfigAsync(key, default)` would be ambiguous between the 
 applies is kept exactly — the hash is sent only when the client can restore the content it belongs
 to. That means the local snapshot must exist *and* hash to `localMd5`; otherwise the read is
 unconditional, because a `304` with nothing to return would be worse than transferring the content.
-A snapshot requires `NacosOptions.LocalCacheDirectory`.
+A snapshot requires `NacosConfigOptions.EnableLocalCache`, which is on by default; turning it off
+makes every read unconditional.
 
 The `304` reply is surfaced as a `NacosServerException` whose internal `Response` keeps the decoded
 `ConfigQueryResponse`, so the restored result takes the server's md5, content type and last-modified

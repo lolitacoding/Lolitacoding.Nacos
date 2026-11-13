@@ -58,6 +58,12 @@ await client.Config.PublishConfigAsync(key, """{"App":{"Greeting":"hello"}}""", 
 `GetConfigAsync` returns a `NacosConfigResult`; inspect `Content` (may be `null`), `Exists`, `Md5`
 and `FromLocalCache`. A missing configuration is not an error.
 
+When you already hold a version and want to skip re-downloading it, pass its hash:
+`GetConfigConditionalAsync(key, current.Md5!)`. The server answers `304` and the client returns the
+copy from its local snapshot. The hash is only sent when that snapshot exists and matches it, so a
+stale hash costs an ordinary read rather than an empty answer. Snapshots are kept by default
+(`NacosConfigOptions.EnableLocalCache`).
+
 Set `Optional = true` to tolerate an unreachable server at startup. The client connects in the
 background and serves configuration and service lists from its local cache until the server returns.
 

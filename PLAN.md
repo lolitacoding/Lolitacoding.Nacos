@@ -570,7 +570,7 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 
 - **缺口**：Java 3.3 的 `ConfigService.getConfig(GetConfigRequest)` 用 `localMd5` 告诉服务端「我已有这个哈希的版本」，服务端比对通过就回 `304` 且不带内容。本客户端只在监听路径上传过哈希，显式读取 `GetConfigAsync` 永远传 `null`，大配置每次都要重传。
 - **公共面**：`INacosConfigClient.GetConfigConditionalAsync(NacosConfigKey key, string localMd5, CancellationToken ct = default)`。没有做成 `GetConfigAsync` 的重载：分析器 `RS0026` 禁止「新增可选参数的同名重载」，且 `GetConfigAsync(key, default)` 会在 `CancellationToken` 与 `string` 之间产生二义性。
-- **发送规则（与 Java 一致）**：只有本地快照存在、且其 MD5 与 `localMd5` 相同时才发条件读。否则无条件读——一个「304 但没有内容可回」比多传一次内容更糟。快照需要配置 `NacosOptions.LocalCacheDirectory`。
+- **发送规则（与 Java 一致）**：只有本地快照存在、且其 MD5 与 `localMd5` 相同时才发条件读。否则无条件读——一个「304 但没有内容可回」比多传一次内容更糟。快照由 `NacosConfigOptions.EnableLocalCache`（默认开启）维护，关掉它之后每次读取都是无条件读。
 - **304 处理**：内容取本地快照（哈希属于它），`md5`/`contentType`/`lastModified` 优先取 304 响应携带的元数据，`encryptedDataKey` 取本地——与 Java 的拆分一致。`FromLocalCache` 保持 `false`：该标志的语义是「服务端不可达」，而这里服务端应答了。恢复出的值照常走过滤器链，并记事件 4031 `ServedNotModified`。
 - **支撑改动**：`NacosServerException` 新增 internal `NacosResponse? Response`，`NacosGrpcConnection.SendAsync` 在失败时把解码后的响应带进异常，否则 304 的元数据会在抛出时丢掉。
 - **顺带修正**：监听路径本来就会发送持有的哈希，但 304 以 `NacosServerException` 的形式出现，被记成 `ContentFetchFailed`（4029）。现在按「未变化」处理并记 `ChangeIgnored`（4008）。
