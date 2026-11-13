@@ -590,4 +590,15 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - 单元测试新增 7 个：整组一次请求（不产生单端点请求）、空批次拒绝、混合版本拒绝、重连整批重放、批次撤下被替换的单端点、注销端点后重放批次不再包含它、服务端拒绝批次后重放的是被它替换的旧集合。恢复记录用 `TryAdd` 而不是直接赋值：并发下更新的登记才是事实，覆盖会把调用方已经改掉的状态复活。
 - 验收：Release 构建零警告零错误；单元测试 **938 个全绿**（新增 7 个）；集成测试新增 `AgentCardIntegrationTests.RegisterAgentEndpointsAsync_PublishesTheWholeSetAndReplacesIt`（真实容器 `v3.2.4`：一次批次后卡片报出两个传输的接口，再发只含 GRPC 的批次后卡片只剩它，证明是替换而非追加），`AgentCardIntegrationTests` 6 个全绿。
 
+#### P1-15 · AI 注册表 HTTP 传输 + 每模块传输选择（设计已定，待开工）
+
+- **现状**：`Internal/NacosAIHttpClient` 已经存在（skill、agent-spec 与 agent 卡 HTTP watch 在用），缺的是 MCP、prompt、RAD agent 的 HTTP 读写与发布，以及选择传输的公共面。A2A agent card 在 Java 3.3 仍然只有 gRPC 读写（`AiGrpcClient`），所以这里不提供 HTTP 卡读写，只保留已有的 HTTP watch（P2-7）。
+- **公共面（S1）**：`NacosAIOptions.TransportMode`（`Auto` / `Grpc` / `Http`，默认 `Grpc` 以保持现有行为）+ 三个模块覆盖 `McpTransportMode` / `PromptTransportMode` / `AgentTransportMode`（可空，继承总开关）。解析与 Java 一致：大小写不敏感，带空白或未知值在构建时拒绝。
+- **路由语义**：`Grpc` 只用 gRPC，连不上就失败；`Http` 不建立 AI gRPC 连接；`Auto` 优先可用的 gRPC，不可用时退到 HTTP 并记一次退化原因。能力以服务端 `/v3/client/ai/capabilities` 为准。
+- **S2 prompt HTTP**：`/v3/client/ai/prompt` 的读（`version` / `label` 解析、`md5` 条件读）与 `/search`。
+- **S3 MCP HTTP**：`/v3/client/ai/mcp` 的读、发布（`createDraft`）、`/search` 与 `/endpoints`（POST / DELETE / PUT heartbeat）。
+- **S4 RAD agent HTTP**：`/v3/client/ai/agents` 的 publish / search / discover、`/watch`、批量端点注册与注销、`/endpoints/heartbeat`。
+- **S5 发布生命周期**：HTTP 端点没有「连接即所有权」，靠 `PUT /endpoints/heartbeat` 续期、服务端按 TTL 回收（Java 的 `AiHttpPublicationCoordinator`）；与 gRPC 的「断线即撤下、重连即重放」是两套语义，文档必须分开写，不能共用一套重放记录。
+- 每片验收沿用现有切片：Release 0/0、单元测试、真实容器集成测试（`v3.2.4`、`v3.3.0-RC`）、文档与 `PublicAPI.Unshipped.txt`、独立 worktree 复核。
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。
