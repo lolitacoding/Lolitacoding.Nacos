@@ -875,6 +875,8 @@ Lolitacoding.Nacos.Locking.NacosLockResult.WaitPosition.get -> int
 Lolitacoding.Nacos.Locking.NacosLockResult.Waiting.get -> bool
 Lolitacoding.Nacos.Locking.NacosLockTypes
 Lolitacoding.Nacos.NacosAIOptions
+Lolitacoding.Nacos.NacosAIOptions.AgentTransportMode.get -> Lolitacoding.Nacos.NacosAITransportMode?
+Lolitacoding.Nacos.NacosAIOptions.AgentTransportMode.set -> void
 Lolitacoding.Nacos.NacosAIOptions.AgentWatchTransport.get -> Lolitacoding.Nacos.NacosAgentWatchTransport
 Lolitacoding.Nacos.NacosAIOptions.AgentWatchTransport.set -> void
 Lolitacoding.Nacos.NacosAIOptions.CacheRefreshInterval.get -> System.TimeSpan

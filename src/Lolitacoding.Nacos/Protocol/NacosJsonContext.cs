@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Lolitacoding.Nacos.Protocol.Messages;
 
@@ -120,6 +121,18 @@ namespace Lolitacoding.Nacos.Protocol;
 [JsonSerializable(typeof(AI.NacosMcpEndpointSpec))]
 [JsonSerializable(typeof(AI.NacosMcpServerResult))]
 [JsonSerializable(typeof(AI.NacosMcpReleaseResult))]
+// The RAD agent registry's HTTP transport: the publish form serializes these as JSON fields, and
+// the three envelopes are what the OpenAPI wraps the answers in.
+[JsonSerializable(typeof(AI.NacosAgentRegistryProvider))]
+[JsonSerializable(typeof(List<string>))]
+[JsonSerializable(typeof(Dictionary<string, string>))]
+[JsonSerializable(typeof(Dictionary<string, JsonElement>))]
+[JsonSerializable(typeof(List<AI.NacosAgentCallInterface>))]
+[JsonSerializable(typeof(AI.NacosAgentVersionDetail))]
+[JsonSerializable(typeof(AI.NacosAgentPage<AI.NacosAgentSummary>))]
+[JsonSerializable(typeof(AI.NacosAgentPublishResult))]
+[JsonSerializable(typeof(AI.NacosAgentSearchResult))]
+[JsonSerializable(typeof(AI.NacosAgentDiscoveryEnvelope))]
 [JsonSerializable(typeof(ServerCheckRequest))]
 [JsonSerializable(typeof(ServerCheckResponse))]
 [JsonSerializable(typeof(ConnectionSetupRequest))]

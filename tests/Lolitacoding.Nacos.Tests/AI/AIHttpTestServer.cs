@@ -249,6 +249,37 @@ internal sealed class AIHttpTestServer : HttpMessageHandler
     public static HttpResponseMessage McpRelease(string? mcpId)
         => Result(HttpStatusCode.OK, 0, "success", mcpId);
 
+    /// <summary>Builds an answer that carries a RAD agent version detail.</summary>
+    /// <param name="detail">The detail as JSON, without the envelope.</param>
+    /// <returns>The response.</returns>
+    public static HttpResponseMessage AgentVersion(string detail) => Envelope(detail);
+
+    /// <summary>Builds an answer that carries a page of RAD agents.</summary>
+    /// <param name="page">The page as JSON, without the envelope.</param>
+    /// <returns>The response.</returns>
+    public static HttpResponseMessage AgentPage(string page) => Envelope(page);
+
+    /// <summary>Builds an answer that carries a RAD agent discovery result.</summary>
+    /// <param name="result">The result as JSON, without the envelope.</param>
+    /// <returns>The response.</returns>
+    public static HttpResponseMessage AgentDiscovery(string result) => Envelope(result);
+
+    /// <summary>Wraps a JSON value in the API's success result envelope.</summary>
+    /// <param name="data">The value as JSON, without the envelope.</param>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// The value is composed around rather than serialized from a string, which would quote it: the
+    /// envelope carries an object in <c>data</c>, not a string.
+    /// </remarks>
+    private static HttpResponseMessage Envelope(string data) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                string.Concat("{\"code\":0,\"message\":\"success\",\"data\":", data, "}"),
+                Encoding.UTF8,
+                "application/json"),
+        };
+
     /// <summary>Builds the not-modified answer a conditional agent-specification read gets.</summary>
     /// <param name="md5">The published hash the server echoes.</param>
     /// <returns>The response.</returns>

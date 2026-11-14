@@ -1019,19 +1019,30 @@ configured for that module: `AgentTransportMode` (`GRPC`, `HTTP`, `AUTO`) read f
 `AgentClientController`, `AiCapabilityClientController` and `AiResourceSearchClientController` —
 including the MCP and agent endpoint publication paths and their heartbeat.
 
-This client routes prompts and the MCP registry. `NacosAIOptions.TransportMode` is the default, and
-`PromptTransportMode` / `McpTransportMode` override it per module. `Grpc` uses the AI connection and
+This client routes prompts, the MCP registry and the RAD agent registry. `NacosAIOptions.TransportMode`
+is the default, and `PromptTransportMode` / `McpTransportMode` / `AgentTransportMode` override it per
+module. `Grpc` uses the AI connection and
 fails when it is unavailable; `Http` uses the client OpenAPI and does not open the gRPC connection
 for a read or a release; `Auto` tries gRPC first and falls back to HTTP after a
 `NacosConnectionException` or `NacosTimeoutException`, then stays on HTTP for 30 seconds before
 trying gRPC again. A server error code is not a transport failure and does not trigger the fallback,
 and the window is per resource, so an MCP outage does not move prompts onto HTTP.
 
+The RAD agent registry's HTTP shape is three endpoints under `/v3/client/ai/agents`:
+`POST` publishes one version as a form whose `provider`, `tags`, `extensions` and `callInterfaces`
+members are JSON documents in fields of their own, `GET /search` searches the catalog, and `GET`
+discovers one version. A publish is not retried on the other transport, because the attempt that
+failed may already have created the version; a search and a discovery are reads and may fall back,
+but only from `Auto` and only on a connection or timeout failure. `Http` and `Auto` skip the local
+`radV1` ability check — the HTTP endpoints are themselves the 3.3 contract, and the transport that
+answers reports a server that does not serve them. Endpoint registration and removal stay on gRPC in
+every mode: the HTTP endpoint contract gives a publication a heartbeat and a TTL instead of the
+connection's lifetime, which is a separate piece of work.
+
 The resources without an HTTP implementation stay on gRPC: skills and agent specifications were
-always HTTP, the A2A card registry has no HTTP read in Java 3.3 either, and RAD agent
-publish/search/discover is the remaining slice of P1-15. A server whose gRPC surface is unreachable
-for those is answered by the request's own failure — `RequestHandler Not Found`, or an explicit `501`
-where the ability is advertised as `false` — rather than by a fallback.
+always HTTP, and the A2A card registry has no HTTP read in Java 3.3 either. A server whose gRPC
+surface is unreachable for those is answered by the request's own failure — `RequestHandler Not
+Found`, or an explicit `501` where the ability is advertised as `false` — rather than by a fallback.
 
 The watch is the one other exception, because it has a second contract on the server:
 `NacosAIOptions.AgentWatchTransport` selects gRPC, the HTTP batch long poll, periodic polling, or

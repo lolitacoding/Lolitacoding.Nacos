@@ -145,6 +145,7 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
             options,
             timeProvider,
             loggerFactory,
+            http,
             random,
             new NacosAgentHttpWatchClient(http, _clientUuid));
     }

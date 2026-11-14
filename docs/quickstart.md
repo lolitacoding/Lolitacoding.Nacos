@@ -534,14 +534,14 @@ builder.Services.AddNacos(options =>
 
 `Auto` is the middle ground: gRPC is tried first, and a read that cannot reach it is retried over
 HTTP and served from there for 30 seconds before gRPC is tried again. `Grpc`, the default, never
-falls back — a read fails when the connection does. `PromptTransportMode` and `McpTransportMode`
-override the choice for one module, so it can move without moving the rest. The subscription cache
-is the same either way, including the disk snapshot.
+falls back — a read fails when the connection does. `PromptTransportMode`, `McpTransportMode` and
+`AgentTransportMode` override the choice for one module, so it can move without moving the rest. The
+subscription cache is the same either way, including the disk snapshot.
 
-An MCP release is the exception to the fallback. A failed release is not retried over the other
-transport, because the attempt may have reached the server and created the version; the caller sees
-the failure and can decide. Under `Auto`, a release is sent over HTTP only while gRPC is known to be
-unreachable. Endpoint registration stays on gRPC in every mode.
+An MCP release and a RAD agent publish are the exceptions to the fallback. A failed write is not
+retried over the other transport, because the attempt may have reached the server and created the
+version; the caller sees the failure and can decide. Under `Auto`, such a write is sent over HTTP
+only while gRPC is known to be unreachable. Endpoint registration stays on gRPC in every mode.
 
 ### Skills
 
@@ -829,6 +829,22 @@ The RAD registry is served from Nacos **3.3** on, and it is the one AI surface t
 a server has to state the RAD ability before anything is sent, and the watch is negotiated on its own
 `radWatchV1` ability. A server that only has the A2A card contract is refused with the
 not-implemented code rather than sent a payload it may not route.
+
+A publish, a search and a discovery can also be served by the client OpenAPI, which is what an
+ingress that does not expose the gRPC port needs:
+
+```csharp
+builder.Services.AddNacos(options =>
+{
+    options.ServerAddresses = ["http://127.0.0.1:8848"];
+    options.AI.AgentTransportMode = NacosAITransportMode.Http;
+});
+```
+
+`AgentTransportMode` overrides `TransportMode` for this registry alone. A search and a discovery are
+reads and may fall back between transports under `Auto`, but a publish is not re-sent over the other
+transport: the attempt that failed may already have created the version. Endpoint registration and
+removal stay on gRPC in every mode, whose lifetime is the connection's rather than a heartbeat's.
 
 Five things are worth knowing before relying on this:
 

@@ -700,6 +700,28 @@ public sealed class NacosAIOptions
     public NacosAITransportMode? McpTransportMode { get; set; }
 
     /// <summary>
+    /// Gets or sets the RAD agent registry's transport, overriding <see cref="TransportMode"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see langword="null"/> inherits <see cref="TransportMode"/>.
+    /// </para>
+    /// <para>
+    /// A publish may not fall back to the other transport: a publish that failed on gRPC is never
+    /// re-sent over HTTP, because the first attempt may already have created the version. In
+    /// <see cref="NacosAITransportMode.Auto"/> a publish therefore uses HTTP only while gRPC is known
+    /// to be unreachable. Search and discovery are reads and may fall back.
+    /// </para>
+    /// <para>
+    /// Endpoint registration stays on gRPC whatever this value says: the HTTP endpoint contract gives
+    /// a publication a heartbeat and a TTL instead of the connection's lifetime, which is a separate
+    /// piece of work. The watch is also separate and is governed by
+    /// <see cref="AgentWatchTransport"/>.
+    /// </para>
+    /// </remarks>
+    public NacosAITransportMode? AgentTransportMode { get; set; }
+
+    /// <summary>
     /// Resolves the transport one AI resource is read over.
     /// </summary>
     /// <param name="module">The module's override, or <see langword="null"/> to inherit.</param>
@@ -741,6 +763,12 @@ public sealed class NacosAIOptions
         {
             throw new NacosConfigurationException(
                 "NacosAIOptions.McpTransportMode is not a defined value.");
+        }
+
+        if (AgentTransportMode is { } agentTransport && !Enum.IsDefined(agentTransport))
+        {
+            throw new NacosConfigurationException(
+                "NacosAIOptions.AgentTransportMode is not a defined value.");
         }
     }
 }

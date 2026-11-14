@@ -4,11 +4,12 @@ namespace Lolitacoding.Nacos.IntegrationTests;
 /// Shared constants describing the Nacos containers the integration tests run against.
 /// </summary>
 /// <remarks>
-/// Five images are exercised, because the modules did not all arrive at once: the lock service the
+/// Six images are exercised, because the modules did not all arrive at once: the lock service the
 /// client speaks to belongs to the 3.3 line, the lock module a 3.2 server ships is an earlier
 /// contract that can neither renew a lease nor queue a waiter, the AI registry is younger than the
-/// oldest server the rest of the suite runs against, and the MCP registry's HTTP endpoints are
-/// younger still. Which image a test runs against is therefore part of what it is testing.
+/// oldest server the rest of the suite runs against, and the MCP registry's and the RAD agent
+/// registry's HTTP endpoints are younger still. Which image a test runs against is therefore part of
+/// what it is testing.
 /// </remarks>
 internal static class NacosIntegrationImages
 {
@@ -89,6 +90,22 @@ internal static class NacosIntegrationImages
             : PinnedMcpHttpImage;
 
     /// <summary>
+    /// The image the RAD agent registry's HTTP transport tests run against:
+    /// <c>NACOS_AGENT_HTTP_TEST_IMAGE</c> when it is set, and the pinned release below otherwise.
+    /// </summary>
+    /// <remarks>
+    /// It is a separate image because the client OpenAPI for the RAD agent registry is younger than
+    /// the gRPC one: <c>AgentClientController</c> marks its publish, search and discovery endpoints
+    /// <c>@Since("3.3.0")</c>, while the gRPC handlers exist from the same release but are not gated
+    /// by the A2A migration mode. The pin is a release candidate because that is what the 3.3 line
+    /// has published so far.
+    /// </remarks>
+    public static readonly string AgentHttpImage =
+        Environment.GetEnvironmentVariable("NACOS_AGENT_HTTP_TEST_IMAGE") is { Length: > 0 } image
+            ? image
+            : PinnedAgentHttpImage;
+
+    /// <summary>
     /// The pinned release the rest of the suite is checked against.
     /// </summary>
     /// <remarks>
@@ -134,6 +151,15 @@ internal static class NacosIntegrationImages
     /// release once there is one.
     /// </remarks>
     private const string PinnedMcpHttpImage = "nacos/nacos-server:v3.3.0-RC";
+
+    /// <summary>
+    /// The pinned release the RAD agent registry's HTTP transport tests are checked against.
+    /// </summary>
+    /// <remarks>
+    /// The 3.3 line, of which a release candidate is what is published so far. Move this to the final
+    /// release once there is one.
+    /// </remarks>
+    private const string PinnedAgentHttpImage = "nacos/nacos-server:v3.3.0-RC";
 
     /// <summary>The main HTTP port inside the container.</summary>
     public const int HttpPort = 8848;

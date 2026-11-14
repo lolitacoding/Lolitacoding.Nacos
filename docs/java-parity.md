@@ -405,7 +405,7 @@ the configuration or naming hot path.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
-| P1-15 | AI registry over HTTP, with a per-module transport choice | `AgentTransportMode`, `nacosAiTransportMode` and its five per-module keys, `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy`, endpoint publication heartbeat | **Partly done** — `NacosAITransportMode`, `NacosAIOptions.TransportMode`/`PromptTransportMode`/`McpTransportMode`, prompts and MCP reads and releases over HTTP (S1–S3); RAD agents and the HTTP publication heartbeat remain | A deployment whose ingress is HTTP-only cannot read or publish most AI resources, and there is no way to opt into HTTP the way Java 3.3 lets a caller do. |
+| P1-15 | AI registry over HTTP, with a per-module transport choice | `AgentTransportMode`, `nacosAiTransportMode` and its five per-module keys, `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy`, endpoint publication heartbeat | **Partly done** — `NacosAITransportMode`, `NacosAIOptions.TransportMode`/`PromptTransportMode`/`McpTransportMode`/`AgentTransportMode`, prompts, MCP reads and releases, and RAD agent publish/search/discover over HTTP (S1–S4); the HTTP publication heartbeat remains | A deployment whose ingress is HTTP-only cannot read or publish most AI resources, and there is no way to opt into HTTP the way Java 3.3 lets a caller do. |
 | P2-16 | A2A batch endpoint registration | `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` → `BatchAgentEndpointRequest` | **Done** — `INacosAgentCardRegistry.RegisterAgentEndpointsAsync`, log event 8051 | Publishing one agent on several transports cost a round trip each, and the set could not be replaced atomically. |
 | P2-17 | Conditional configuration read | `ConfigService.getConfig(GetConfigRequest)` with `localMd5`, `getConfigWithResult` | **Done** — `INacosConfigClient.GetConfigConditionalAsync`, `NacosConfigResult`, log event 4031 | A large configuration was re-sent on every read even when the caller already held the content. |
 | P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Missing** | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
@@ -450,10 +450,12 @@ Naming instance owned by the connection, so its liveness is the naming heartbeat
 the connection's. That is why there is nothing here to heartbeat — and also why an HTTP-only
 deployment cannot use the AI registry at all.
 
-**Closed so far: the transport choice, prompt reads, and the MCP registry.** `NacosAIOptions.TransportMode` selects
+**Closed so far: the transport choice, prompt reads, the MCP registry, and the RAD agent registry.**
+`NacosAIOptions.TransportMode` selects
 `Auto`, `Grpc` or `Http` for the resources that have an HTTP implementation, and
-`PromptTransportMode` / `McpTransportMode` override it per module. `Grpc` is the default, so an
-existing deployment sees no change. The prompt registry reads `/v3/client/ai/prompt` over HTTP — the
+`PromptTransportMode` / `McpTransportMode` / `AgentTransportMode` override it per module. `Grpc` is
+the default, so an existing deployment sees no change. The prompt registry reads
+`/v3/client/ai/prompt` over HTTP — the
 selectors, the conditional `md5` read, and the `304`/`404` status codes mapped to the same error codes
 the gRPC transport reports, so the subscription cache is shared by both. The MCP registry reads
 `GET /v3/client/ai/mcp` and releases with `POST /v3/client/ai/mcp`, whose complex members are JSON in
@@ -465,19 +467,30 @@ reached, then stays on HTTP for 30 seconds before trying gRPC again, so a failed
 on every read. `Http` serves a read or a release without opening the AI gRPC connection, which is
 the point: the registry works behind an HTTP-only ingress.
 
+The RAD agent registry follows the same rules. `POST /v3/client/ai/agents` publishes one version,
+`GET /v3/client/ai/agents/search` searches the catalog and `GET /v3/client/ai/agents` discovers one
+version. The publish is a form whose `provider`, `tags`, `extensions` and `callInterfaces` members
+travel as JSON documents in fields of their own, exactly as the MCP release does, and its `autoSubmit`
+flag is the literal the server parses rather than a JSON boolean in a string. A publish is not
+retried on the other transport for the same reason an MCP release is not; a search and a discovery
+are reads and may fall back, but only from `Auto` and only when the connection cannot be reached.
+Endpoint registration stays on gRPC in every mode, because the HTTP endpoint contract gives a
+publication a heartbeat and a TTL instead of the connection's lifetime. `Http` and `Auto` also skip
+the local `radV1` ability check: the transport that answers is the one that can say whether the
+server serves the registry, and the HTTP endpoints themselves are the 3.3 contract.
+
 There is no MCP search over HTTP here: `AiHttpClientProxy` in Java 3.3 has no search method for the
 MCP registry, and adding one would be a client contract the official client does not have. Endpoint
 registration also stays on gRPC, because the HTTP endpoint contract gives a publication a different
 owner and lifetime (a heartbeat and a TTL instead of the connection).
 
-Still open: RAD agent publish/search/discover and endpoint publication, and the HTTP endpoint
-heartbeat. The A2A card registry has no HTTP read in Java 3.3 either, so it stays gRPC.
+Still open: the HTTP endpoint publication heartbeat and its lifecycle. The A2A card registry has no
+HTTP read in Java 3.3 either, so it stays gRPC.
 
-Closing the rest of P1-15 is therefore more than adding a client. It needs an HTTP implementation of
-each read and release, a publication manager with its own heartbeat and redo state, and a decision
-about whether the Naming-instance path stays the default when gRPC is available. The last point
-matters: the two publication models disagree about who owns an endpoint's lifetime, and switching
-between them silently would leak registrations.
+Closing the rest of P1-15 is therefore more than adding a client. It needs a publication manager with
+its own heartbeat and redo state, and a decision about whether the Naming-instance path stays the
+default when gRPC is available. The last point matters: the two publication models disagree about who
+owns an endpoint's lifetime, and switching between them silently would leak registrations.
 
 ### P2-16: A2A batch endpoint registration (closed)
 
@@ -624,10 +637,11 @@ The comparison also confirmed what is already covered, so it is not re-opened by
   `downloadSkillZip`), agent-spec, MCP server, agent-card and RAD agent reads and subscriptions;
   prompt resolution by version and label, read over gRPC or HTTP by
   `NacosAIOptions.TransportMode` (S1+S2 of P1-15); MCP reads and releases over gRPC or HTTP with a
-  per-module `McpTransportMode` (S3 of P1-15); MCP release with `createDraft`; agent card release
-  with `registrationType` and `setAsLatest`; endpoint registration, single or as one batch that
-  replaces the set (`BatchAgentEndpointRequest`), with reconnect replay; RAD endpoint
-  publication batch (`AgentEndpointRegisterRpcRequest`); agent publish/search/discover; RAD watch
+  per-module `McpTransportMode` (S3 of P1-15); RAD agent publish/search/discover over gRPC or HTTP
+  with a per-module `AgentTransportMode` (S4 of P1-15); MCP release with `createDraft`; agent card
+  release with `registrationType` and `setAsLatest`; endpoint registration, single or as one batch
+  that replaces the set (`BatchAgentEndpointRequest`), with reconnect replay; RAD endpoint
+  publication batch (`AgentEndpointRegisterRpcRequest`); RAD watch
   over gRPC; local snapshot failover.
 - **Client basics**: multi-server failover, ability negotiation, TLS, authentication and token
   refresh, metrics and tracing through `NacosDiagnostics`.

@@ -530,3 +530,62 @@ public sealed class NacosAgentEndpointBatch
     /// </remarks>
     public string? VersionRange { get; set; }
 }
+
+/// <summary>
+/// The result envelope a RAD agent publish is answered with over HTTP.
+/// </summary>
+/// <remarks>
+/// The client OpenAPI wraps every answer in a result object, so the version detail sits in
+/// <c>data</c> where the gRPC reply carries it in a field of its own. A null detail on success is
+/// possible and means the server accepted the publish without reporting one.
+/// </remarks>
+internal sealed class NacosAgentPublishResult
+{
+    /// <summary>Gets or sets the result code, zero for success.</summary>
+    public int Code { get; set; }
+
+    /// <summary>Gets or sets the message, which names the code rather than the reason.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>Gets or sets the version detail the registry created.</summary>
+    public NacosAgentVersionDetail? Data { get; set; }
+}
+
+/// <summary>
+/// The result envelope a RAD agent search is answered with over HTTP.
+/// </summary>
+/// <remarks>
+/// The page keeps the same shape the gRPC reply uses, because both are the server's
+/// <c>Page&lt;AgentSummary&gt;</c>; only the envelope around it is different.
+/// </remarks>
+internal sealed class NacosAgentSearchResult
+{
+    /// <summary>Gets or sets the result code, zero for success.</summary>
+    public int Code { get; set; }
+
+    /// <summary>Gets or sets the message, which names the code rather than the reason.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>Gets or sets the page of matching agents.</summary>
+    public NacosAgentPage<NacosAgentSummary>? Data { get; set; }
+}
+
+/// <summary>
+/// The result envelope a RAD agent discovery is answered with over HTTP.
+/// </summary>
+/// <remarks>
+/// It is named an envelope rather than a result because <see cref="NacosAgentDiscoveryResult"/> is
+/// already the model inside it, and the two would otherwise be told apart only by the namespace they
+/// happen to be read in.
+/// </remarks>
+internal sealed class NacosAgentDiscoveryEnvelope
+{
+    /// <summary>Gets or sets the result code, zero for success.</summary>
+    public int Code { get; set; }
+
+    /// <summary>Gets or sets the message, which names the code rather than the reason.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>Gets or sets the discovery answer.</summary>
+    public NacosAgentDiscoveryResult? Data { get; set; }
+}

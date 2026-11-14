@@ -219,14 +219,15 @@ jobs:
         run: dotnet build Lolitacoding.Nacos.slnx -c Release --no-restore
 
       - name: Warm the image cache
-        # The RAD agent handlers, the MCP registry's HTTP endpoints and the renewing lock service are
-        # all @Since("3.3.0"), so this job runs on the 3.3 line only, where a release candidate is what
-        # is published so far.
+        # The RAD agent handlers, the RAD agent registry's HTTP endpoints, the MCP registry's HTTP
+        # endpoints and the renewing lock service are all @Since("3.3.0"), so this job runs on the 3.3
+        # line only, where a release candidate is what is published so far.
         run: docker pull nacos/nacos-server:v3.3.0-RC
 
       - name: Integration tests
         env:
           NACOS_AGENT_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
+          NACOS_AGENT_HTTP_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
           NACOS_LOCK_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
           NACOS_MCP_HTTP_TEST_IMAGE: nacos/nacos-server:v3.3.0-RC
           NO_PROXY: localhost,127.0.0.1
@@ -236,6 +237,7 @@ jobs:
           --report-xunit-trx --report-xunit-trx-filename integration-agent.trx
           --results-directory ./TestResults
           --filter-class Lolitacoding.Nacos.IntegrationTests.AgentRegistryIntegrationTests
+          --filter-class Lolitacoding.Nacos.IntegrationTests.AgentHttpIntegrationTests
           --filter-class Lolitacoding.Nacos.IntegrationTests.AgentWatchIntegrationTests
           --filter-class Lolitacoding.Nacos.IntegrationTests.LockingIntegrationTests
           --filter-class Lolitacoding.Nacos.IntegrationTests.McpHttpIntegrationTests
