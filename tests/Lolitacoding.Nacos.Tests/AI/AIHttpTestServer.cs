@@ -222,6 +222,33 @@ internal sealed class AIHttpTestServer : HttpMessageHandler
         };
     }
 
+    /// <summary>Builds an answer that carries an MCP server detail.</summary>
+    /// <param name="detail">The detail as JSON, without the envelope.</param>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// The MCP read is answered like an agent specification: the detail is an object inside the
+    /// result envelope rather than a raw body, which is the shape the gRPC transport does not have.
+    /// </remarks>
+    public static HttpResponseMessage McpServer(string detail)
+    {
+        string body = string.Concat("{\"code\":0,\"message\":\"success\",\"data\":", detail, "}");
+
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+    }
+
+    /// <summary>Builds the answer an MCP release gets.</summary>
+    /// <param name="mcpId">The internal identifier Nacos assigned, or <see langword="null"/> for none.</param>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// The identifier is a bare string in <c>data</c>, where the gRPC reply carries it in a field of
+    /// its own.
+    /// </remarks>
+    public static HttpResponseMessage McpRelease(string? mcpId)
+        => Result(HttpStatusCode.OK, 0, "success", mcpId);
+
     /// <summary>Builds the not-modified answer a conditional agent-specification read gets.</summary>
     /// <param name="md5">The published hash the server echoes.</param>
     /// <returns>The response.</returns>

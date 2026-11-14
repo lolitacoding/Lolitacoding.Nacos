@@ -281,3 +281,44 @@ public sealed class NacosMcpServerDetail : NacosMcpServer
     /// <summary>Gets or sets every version of the server that exists.</summary>
     public IList<NacosMcpVersionDetail>? AllVersions { get; set; }
 }
+
+/// <summary>
+/// The result envelope one MCP server read is answered with over HTTP.
+/// </summary>
+/// <remarks>
+/// The client OpenAPI wraps every answer in a result rather than returning the resource as the body,
+/// which is a shape the gRPC transport does not have: there the detail is a field of the response
+/// message. The status code carries the transport-level outcome and this envelope the registry-level
+/// one, so both are checked.
+/// </remarks>
+internal sealed class NacosMcpServerResult
+{
+    /// <summary>Gets or sets the result code, zero for success.</summary>
+    public int Code { get; set; }
+
+    /// <summary>Gets or sets the message, which names the code rather than the reason.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>Gets or sets the server detail.</summary>
+    public NacosMcpServerDetail? Data { get; set; }
+}
+
+/// <summary>
+/// The result envelope one MCP server release is answered with over HTTP.
+/// </summary>
+/// <remarks>
+/// The release answers with the internal identifier as a bare string in <c>data</c>, where the gRPC
+/// reply carries it in a field of its own. A null identifier on success is possible and means the
+/// server accepted the release without reporting one, exactly as on the gRPC path.
+/// </remarks>
+internal sealed class NacosMcpReleaseResult
+{
+    /// <summary>Gets or sets the result code, zero for success.</summary>
+    public int Code { get; set; }
+
+    /// <summary>Gets or sets the message, which names the code rather than the reason.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>Gets or sets the internal identifier Nacos assigned to the released server.</summary>
+    public string? Data { get; set; }
+}

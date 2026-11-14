@@ -112,6 +112,14 @@ namespace Lolitacoding.Nacos.Protocol;
 [JsonSerializable(typeof(AI.NacosSkill))]
 [JsonSerializable(typeof(AI.NacosAgentSpec))]
 [JsonSerializable(typeof(AI.NacosMcpServerDetail))]
+// Registered as roots because the HTTP transport serializes them into form fields of their own,
+// where the gRPC transport would put them inside a request message.
+[JsonSerializable(typeof(AI.NacosMcpServer))]
+[JsonSerializable(typeof(AI.NacosMcpToolSpecification))]
+[JsonSerializable(typeof(AI.NacosMcpResourceSpecification))]
+[JsonSerializable(typeof(AI.NacosMcpEndpointSpec))]
+[JsonSerializable(typeof(AI.NacosMcpServerResult))]
+[JsonSerializable(typeof(AI.NacosMcpReleaseResult))]
 [JsonSerializable(typeof(ServerCheckRequest))]
 [JsonSerializable(typeof(ServerCheckResponse))]
 [JsonSerializable(typeof(ConnectionSetupRequest))]

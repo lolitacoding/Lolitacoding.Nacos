@@ -471,6 +471,23 @@ it, so it becomes discoverable and health checked like any other instance:
 await client.AI.Mcp.RegisterServerEndpointAsync("weather", "10.0.0.7", 8080, "1.2.0", cancellationToken);
 ```
 
+A read or a release can also be served by the client OpenAPI, which is what an ingress that does not
+expose the gRPC port needs:
+
+```csharp
+builder.Services.AddNacos(options =>
+{
+    options.ServerAddresses = ["http://127.0.0.1:8848"];
+    options.AI.McpTransportMode = NacosAITransportMode.Http;
+});
+```
+
+`McpTransportMode` overrides `TransportMode` for this registry alone, and `Http` never opens the AI
+gRPC connection. A read may fall back between transports under `Auto`, but a release does not: a
+release that failed is reported rather than re-sent, because the first attempt may already have
+created the version. Endpoint registration stays on gRPC, whose lifetime is the connection's rather
+than a heartbeat's.
+
 ### Prompts
 
 A prompt is a template plus the placeholders it uses. A read names a key and, optionally, a selector: a
@@ -504,8 +521,8 @@ cannot refuse an older server up front: such a server answers a query with `Requ
 
 #### Choosing the transport
 
-Prompt reads exist on both transports. A deployment whose ingress only exposes the OpenAPI can keep
-the AI gRPC connection closed:
+Prompt reads and MCP reads and releases exist on both transports. A deployment whose ingress only
+exposes the OpenAPI can keep the AI gRPC connection closed:
 
 ```csharp
 builder.Services.AddNacos(options =>
@@ -517,9 +534,14 @@ builder.Services.AddNacos(options =>
 
 `Auto` is the middle ground: gRPC is tried first, and a read that cannot reach it is retried over
 HTTP and served from there for 30 seconds before gRPC is tried again. `Grpc`, the default, never
-falls back — a read fails when the connection does. `PromptTransportMode` overrides the choice for
-prompts alone, so one module can move without moving the rest. The subscription cache is the same
-either way, including the disk snapshot.
+falls back — a read fails when the connection does. `PromptTransportMode` and `McpTransportMode`
+override the choice for one module, so it can move without moving the rest. The subscription cache
+is the same either way, including the disk snapshot.
+
+An MCP release is the exception to the fallback. A failed release is not retried over the other
+transport, because the attempt may have reached the server and created the version; the caller sees
+the failure and can decide. Under `Auto`, a release is sent over HTTP only while gRPC is known to be
+unreachable. Endpoint registration stays on gRPC in every mode.
 
 ### Skills
 

@@ -664,10 +664,10 @@ public sealed class NacosAIOptions
     /// when the connection cannot be reached, retrying gRPC after a short interval.
     /// </para>
     /// <para>
-    /// Only resources with an HTTP implementation are affected. A resource that has none — the MCP
-    /// registry, agent cards and the RAD agent registry at the time of writing — keeps using gRPC
-    /// whatever this value says, and its own per-module option is added with its HTTP transport. The
-    /// agent watch is separate: it is a long poll rather than a read and is governed by
+    /// Only resources with an HTTP implementation are affected. A resource that has none — agent
+    /// cards and the RAD agent registry at the time of writing — keeps using gRPC whatever this value
+    /// says, and its own per-module option is added with its HTTP transport. The agent watch is
+    /// separate: it is a long poll rather than a read and is governed by
     /// <see cref="AgentWatchTransport"/>.
     /// </para>
     /// </remarks>
@@ -681,6 +681,23 @@ public sealed class NacosAIOptions
     /// a deployment may want it over HTTP while other resources stay on gRPC — or the reverse.
     /// </remarks>
     public NacosAITransportMode? PromptTransportMode { get; set; }
+
+    /// <summary>
+    /// Gets or sets the MCP registry's transport, overriding <see cref="TransportMode"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see langword="null"/> inherits <see cref="TransportMode"/>.
+    /// </para>
+    /// <para>
+    /// A read may fall back to the other transport, but a release does not: a release that failed on
+    /// gRPC is never re-sent over HTTP, because the first attempt may already have created the
+    /// version and a second one would either conflict or publish twice. In
+    /// <see cref="NacosAITransportMode.Auto"/> the release is sent over HTTP only while gRPC is known
+    /// to be unreachable, which is what <see cref="NacosAITransportMode.Http"/> pins.
+    /// </para>
+    /// </remarks>
+    public NacosAITransportMode? McpTransportMode { get; set; }
 
     /// <summary>
     /// Resolves the transport one AI resource is read over.
@@ -718,6 +735,12 @@ public sealed class NacosAIOptions
         {
             throw new NacosConfigurationException(
                 "NacosAIOptions.PromptTransportMode is not a defined value.");
+        }
+
+        if (McpTransportMode is { } mcpTransport && !Enum.IsDefined(mcpTransport))
+        {
+            throw new NacosConfigurationException(
+                "NacosAIOptions.McpTransportMode is not a defined value.");
         }
     }
 }

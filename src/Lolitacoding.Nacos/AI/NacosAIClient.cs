@@ -118,7 +118,12 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
             authProvider);
 
         _mcp = new NacosMcpClient(
-            this, options, timeProvider, loggerFactory.CreateLogger<NacosMcpClient>(), snapshots);
+            this,
+            options,
+            timeProvider,
+            loggerFactory.CreateLogger<NacosMcpClient>(),
+            http,
+            snapshots);
         _prompt = new NacosPromptClient(
             this,
             options,

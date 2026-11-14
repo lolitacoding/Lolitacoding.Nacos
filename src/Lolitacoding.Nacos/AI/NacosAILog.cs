@@ -778,4 +778,25 @@ internal static partial class NacosAILog
         ILogger logger,
         string resource,
         string reason);
+
+    /// <summary>
+    /// Logs that a release failed on gRPC and was deliberately not retried over HTTP.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="resource">The resource kind being released.</param>
+    /// <param name="reason">The transport failure.</param>
+    /// <remarks>
+    /// A release is not a read: the attempt that failed may already have created the version, so
+    /// sending it again over the other transport could conflict with it or publish twice. Warning
+    /// rather than Information, because the caller's operation failed and refusing to retry is a
+    /// decision the client made rather than the fallback the options asked for.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8053,
+        Level = LogLevel.Warning,
+        Message = "Releasing {Resource} over the AI gRPC connection failed; it was not retried over HTTP because the first attempt may have been applied: {Reason}")]
+    public static partial void AiReleaseTransportUnavailable(
+        ILogger logger,
+        string resource,
+        string reason);
 }

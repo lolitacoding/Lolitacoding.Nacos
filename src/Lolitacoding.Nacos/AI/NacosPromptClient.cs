@@ -38,25 +38,12 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
     /// <summary>The status an HTTP read gets when the prompt or version is not served.</summary>
     private const int NotFoundErrorCode = 404;
 
-    /// <summary>
-    /// How long the client stays on HTTP after a gRPC connection failure before trying gRPC again.
-    /// </summary>
-    /// <remarks>
-    /// A failed gRPC attempt costs the connection timeout, so retrying it on every read would make
-    /// <see cref="NacosAITransportMode.Auto"/> slower than pinning HTTP. The window is short enough
-    /// that a recovered connection is picked up again without a restart.
-    /// </remarks>
-    private static readonly TimeSpan GrpcRetryInterval = TimeSpan.FromSeconds(30);
-
     private readonly NacosAIClient _owner;
     private readonly NacosOptions _options;
-    private readonly TimeProvider _timeProvider;
     private readonly NacosAIHttpClient _http;
     private readonly ILogger<NacosPromptClient> _logger;
     private readonly NacosAIResourceCache<NacosPrompt> _cache;
-
-    /// <summary>The time at which gRPC becomes worth trying again, as UTC ticks; zero for now.</summary>
-    private long _grpcRetryAtTicks;
+    private readonly NacosAITransportFallback _fallback;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NacosPromptClient"/> class.
@@ -79,9 +66,9 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
     {
         _owner = owner;
         _options = options;
-        _timeProvider = timeProvider;
         _http = http;
         _logger = logger;
+        _fallback = new NacosAITransportFallback(timeProvider);
 
         _cache = new NacosAIResourceCache<NacosPrompt>(new NacosAIResourceCacheOptions<NacosPrompt>
         {
@@ -195,7 +182,7 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
             return await QueryOverHttpAsync(promptKey, version, label, md5, ct).ConfigureAwait(false);
         }
 
-        if (mode == NacosAITransportMode.Auto && !GrpcIsWorthTrying())
+        if (mode == NacosAITransportMode.Auto && !_fallback.GrpcIsWorthTrying())
         {
             return await QueryOverHttpAsync(promptKey, version, label, md5, ct).ConfigureAwait(false);
         }
@@ -211,9 +198,7 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
             // The transport is what failed, not the registry, so the same read is retried over HTTP.
             // The window keeps a caller from paying a failed gRPC attempt on every read while the
             // connection is down; once it has passed, gRPC is tried again.
-            Volatile.Write(
-                ref _grpcRetryAtTicks,
-                _timeProvider.GetUtcNow().Add(GrpcRetryInterval).UtcTicks);
+            _fallback.RecordGrpcFailure();
 
             NacosAILog.AiTransportFallback(_logger, "prompt", ex.Message);
 
@@ -226,18 +211,6 @@ internal sealed class NacosPromptClient : INacosPromptRegistry, IAsyncDisposable
     /// </summary>
     private NacosAITransportMode EffectiveTransport =>
         _options.AI.ResolveTransport(_options.AI.PromptTransportMode);
-
-    /// <summary>
-    /// Decides whether gRPC is worth trying while the client is in
-    /// <see cref="NacosAITransportMode.Auto"/>.
-    /// </summary>
-    /// <returns><see langword="true"/> when gRPC may be tried.</returns>
-    private bool GrpcIsWorthTrying()
-    {
-        long retryAt = Volatile.Read(ref _grpcRetryAtTicks);
-
-        return retryAt == 0 || _timeProvider.GetUtcNow().UtcTicks >= retryAt;
-    }
 
     /// <summary>
     /// Reads one prompt selector over the AI gRPC connection.

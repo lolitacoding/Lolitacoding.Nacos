@@ -431,6 +431,26 @@ and its own request names:
   checked and load balanced like any other instance, it disappears when the connection that published
   it closes, and the client replays it after a reconnect. The `version` field is what the server
   resolves the target service by.
+- **The HTTP transport is a different wire shape.** `GET /v3/client/ai/mcp` takes `namespaceId`,
+  `mcpName` and an optional `version`, and answers with the OpenAPI's result envelope whose `data` is
+  the same detail the gRPC reply carries. `POST /v3/client/ai/mcp` is a form rather than one JSON
+  body: `serverSpecification`, `toolSpecification`, `resourceSpecification` and
+  `endpointSpecification` are each serialized JSON in a field of their own, `createDraft` is the
+  literal `true` or `false`, and `mcpName` must match `serverSpecification.name`. A missing server is
+  `404` on both transports, which is what keeps the subscription cache transport-agnostic.
+- **A release is not retried over the other transport.** A read is safe to repeat; a release is not,
+  because the attempt that failed may already have created the version, so a second attempt could
+  conflict with it or publish twice. Under `Auto`, a release is sent over HTTP only while gRPC is in
+  its 30-second failure window, and a release that fails on gRPC is reported rather than retried.
+  Endpoint registration stays on gRPC in every mode: the HTTP publication contract gives an endpoint a
+  heartbeat and a TTL instead of the connection's lifetime, which is a separate piece of work.
+- **No MCP search over HTTP.** `AiHttpClientProxy` in Java 3.3 has no search method for the MCP
+  registry — the search controller exists, but the client does not call it — so adding one here would
+  be a contract the official client does not have. `SearchMcpServersAsync` therefore remains absent.
+- **A draft needs the server's lifecycle cutover.** A stock 3.3 server refuses `createDraft` with a
+  conflict until its MCP lifecycle migration has run, and the gRPC ability key `mcpDraftRelease`
+  reports the same state. Over gRPC the client refuses locally when the key is `false`; over HTTP there
+  is no handshake to gate on, so the server's refusal is the answer the caller sees.
 
 ### Where this client deviates from the official client (MCP servers)
 
@@ -999,14 +1019,21 @@ configured for that module: `AgentTransportMode` (`GRPC`, `HTTP`, `AUTO`) read f
 `AgentClientController`, `AiCapabilityClientController` and `AiResourceSearchClientController` —
 including the MCP and agent endpoint publication paths and their heartbeat.
 
-This client does not route: discovery, MCP servers, prompts and agent cards travel over the AI
-connection, and only the resources the server exposes as HTTP alone — a skill and an agent
-specification — are read over HTTP. A server whose gRPC surface is unreachable is answered by the
-request's own failure — `RequestHandler Not Found`, or an explicit `501` where the ability is
-advertised as `false` — rather than by a fallback. The gap is tracked as P1-15 in
-[java-parity.md](java-parity.md).
+This client routes prompts and the MCP registry. `NacosAIOptions.TransportMode` is the default, and
+`PromptTransportMode` / `McpTransportMode` override it per module. `Grpc` uses the AI connection and
+fails when it is unavailable; `Http` uses the client OpenAPI and never opens the gRPC connection;
+`Auto` tries gRPC first and falls back to HTTP after a `NacosConnectionException` or
+`NacosTimeoutException`, then stays on HTTP for 30 seconds before trying gRPC again. A server error
+code is not a transport failure and does not trigger the fallback, and the window is per resource, so
+an MCP outage does not move prompts onto HTTP.
 
-The watch is the one exception, because it has a second contract on the server:
+The resources without an HTTP implementation stay on gRPC: skills and agent specifications were
+always HTTP, the A2A card registry has no HTTP read in Java 3.3 either, and RAD agent
+publish/search/discover is the remaining slice of P1-15. A server whose gRPC surface is unreachable
+for those is answered by the request's own failure — `RequestHandler Not Found`, or an explicit `501`
+where the ability is advertised as `false` — rather than by a fallback.
+
+The watch is the one other exception, because it has a second contract on the server:
 `NacosAIOptions.AgentWatchTransport` selects gRPC, the HTTP batch long poll, periodic polling, or
 `Auto`, which tries them in that order. The batch and the polling fallback are described in
 [RAD agent watch](#rad-agent-watch).
