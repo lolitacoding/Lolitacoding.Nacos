@@ -108,6 +108,7 @@ namespace Lolitacoding.Nacos.Protocol;
 // Registered as roots because the local failover cache serializes them on their own, outside any
 // message envelope.
 [JsonSerializable(typeof(AI.NacosPrompt))]
+[JsonSerializable(typeof(AI.NacosPromptResult))]
 [JsonSerializable(typeof(AI.NacosSkill))]
 [JsonSerializable(typeof(AI.NacosAgentSpec))]
 [JsonSerializable(typeof(AI.NacosMcpServerDetail))]

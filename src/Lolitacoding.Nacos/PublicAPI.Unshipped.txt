@@ -882,6 +882,14 @@ Lolitacoding.Nacos.NacosAIOptions.CacheRefreshInterval.set -> void
 Lolitacoding.Nacos.NacosAIOptions.EnableLocalCache.get -> bool
 Lolitacoding.Nacos.NacosAIOptions.EnableLocalCache.set -> void
 Lolitacoding.Nacos.NacosAIOptions.NacosAIOptions() -> void
+Lolitacoding.Nacos.NacosAIOptions.PromptTransportMode.get -> Lolitacoding.Nacos.NacosAITransportMode?
+Lolitacoding.Nacos.NacosAIOptions.PromptTransportMode.set -> void
+Lolitacoding.Nacos.NacosAIOptions.TransportMode.get -> Lolitacoding.Nacos.NacosAITransportMode
+Lolitacoding.Nacos.NacosAIOptions.TransportMode.set -> void
+Lolitacoding.Nacos.NacosAITransportMode
+Lolitacoding.Nacos.NacosAITransportMode.Auto = 0 -> Lolitacoding.Nacos.NacosAITransportMode
+Lolitacoding.Nacos.NacosAITransportMode.Grpc = 1 -> Lolitacoding.Nacos.NacosAITransportMode
+Lolitacoding.Nacos.NacosAITransportMode.Http = 2 -> Lolitacoding.Nacos.NacosAITransportMode
 Lolitacoding.Nacos.NacosAgentWatchTransport
 Lolitacoding.Nacos.NacosAgentWatchTransport.Auto = 0 -> Lolitacoding.Nacos.NacosAgentWatchTransport
 Lolitacoding.Nacos.NacosAgentWatchTransport.Grpc = 1 -> Lolitacoding.Nacos.NacosAgentWatchTransport

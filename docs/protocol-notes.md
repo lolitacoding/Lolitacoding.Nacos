@@ -494,6 +494,19 @@ follows the official client.
 - A failed refresh is neither a state change nor an outage: the last known prompt stays cached, the
   failure is logged, and the loop reads again on the next interval, so a watcher outlives a
   control-plane outage instead of failing with it.
+- **The same read has an HTTP shape.** `GET /v3/client/ai/prompt` takes the same five parameters as
+  the query string (`namespaceId`, `promptKey`, `version`, `label`, `md5`) and answers with the
+  client OpenAPI's result envelope, the prompt in `data`. A missing prompt and an unchanged hash are
+  HTTP `404` and `304`, and both are mapped to the same error codes the gRPC result codes carry, so
+  the subscription cache and a caller treat the two transports identically. A `304` carries no body,
+  which is why the status is what decides, not the body.
+- **The transport is chosen per module.** `NacosAIOptions.TransportMode` selects `Auto`, `Grpc` or
+  `Http`, and `PromptTransportMode` overrides it for prompts; the default is `Grpc`, which is the
+  behaviour from before the option existed. `Http` never opens the AI gRPC connection. `Auto` tries
+  gRPC first and, when the attempt fails with a connection or timeout error, retries the same read
+  over HTTP and stays there for 30 seconds before trying gRPC again — a failed connect costs the
+  connection timeout, so retrying it on every read would make `Auto` slower than pinning HTTP. A
+  server error is not a transport failure and does not trigger the fallback.
 
 ### Where this client deviates from the official client (prompts)
 

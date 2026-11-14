@@ -649,6 +649,48 @@ public sealed class NacosAIOptions
     public NacosAgentWatchTransport AgentWatchTransport { get; set; } = NacosAgentWatchTransport.Auto;
 
     /// <summary>
+    /// Gets or sets the transport the AI resources that have an HTTP implementation are read over.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The official client serves part of the AI registry over the module's gRPC connection and part
+    /// over the client OpenAPI. This library has always used gRPC for everything that was not
+    /// HTTP-only, and that stays the default so an existing deployment sees no change.
+    /// </para>
+    /// <para>
+    /// <see cref="NacosAITransportMode.Http"/> never opens the AI gRPC connection for those resources,
+    /// which is what makes the registry usable behind an ingress that only exposes HTTP.
+    /// <see cref="NacosAITransportMode.Auto"/> keeps using gRPC while it works and falls back to HTTP
+    /// when the connection cannot be reached, retrying gRPC after a short interval.
+    /// </para>
+    /// <para>
+    /// Only resources with an HTTP implementation are affected. A resource that has none — the MCP
+    /// registry, agent cards and the RAD agent registry at the time of writing — keeps using gRPC
+    /// whatever this value says, and its own per-module option is added with its HTTP transport. The
+    /// agent watch is separate: it is a long poll rather than a read and is governed by
+    /// <see cref="AgentWatchTransport"/>.
+    /// </para>
+    /// </remarks>
+    public NacosAITransportMode TransportMode { get; set; } = NacosAITransportMode.Grpc;
+
+    /// <summary>
+    /// Gets or sets the prompt registry's transport, overriding <see cref="TransportMode"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see langword="null"/> inherits <see cref="TransportMode"/>. A prompt is a small document, so
+    /// a deployment may want it over HTTP while other resources stay on gRPC — or the reverse.
+    /// </remarks>
+    public NacosAITransportMode? PromptTransportMode { get; set; }
+
+    /// <summary>
+    /// Resolves the transport one AI resource is read over.
+    /// </summary>
+    /// <param name="module">The module's override, or <see langword="null"/> to inherit.</param>
+    /// <returns>The transport to use.</returns>
+    internal NacosAITransportMode ResolveTransport(NacosAITransportMode? module)
+        => module ?? TransportMode;
+
+    /// <summary>
     /// Validates the AI options.
     /// </summary>
     /// <exception cref="NacosConfigurationException">A value is invalid.</exception>
@@ -665,7 +707,44 @@ public sealed class NacosAIOptions
             throw new NacosConfigurationException(
                 "NacosAIOptions.AgentWatchTransport is not a defined value.");
         }
+
+        if (!Enum.IsDefined(TransportMode))
+        {
+            throw new NacosConfigurationException(
+                "NacosAIOptions.TransportMode is not a defined value.");
+        }
+
+        if (PromptTransportMode is { } promptTransport && !Enum.IsDefined(promptTransport))
+        {
+            throw new NacosConfigurationException(
+                "NacosAIOptions.PromptTransportMode is not a defined value.");
+        }
     }
+}
+
+/// <summary>
+/// Selects the transport an AI resource is read over.
+/// </summary>
+/// <remarks>
+/// The values mirror the official client's <c>AgentTransportMode</c>. They apply only to resources
+/// that have an HTTP implementation; everything else stays on the AI gRPC connection.
+/// </remarks>
+public enum NacosAITransportMode
+{
+    /// <summary>
+    /// Uses the gRPC connection while it works and falls back to HTTP when it cannot be reached.
+    /// </summary>
+    Auto,
+
+    /// <summary>
+    /// Uses the AI gRPC connection and fails the call when it is unavailable.
+    /// </summary>
+    Grpc,
+
+    /// <summary>
+    /// Uses the HTTP client endpoint without opening the AI gRPC connection.
+    /// </summary>
+    Http,
 }
 
 /// <summary>

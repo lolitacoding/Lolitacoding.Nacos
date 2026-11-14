@@ -315,6 +315,29 @@ public sealed class NacosPromptSubscriptionTests
     }
 
     [Fact]
+    public async Task SubscribePromptAsync_InHttpMode_SeedsFromTheEndpointWithoutOpeningTheGrpcConnection()
+    {
+        var http = new AIHttpTestServer((_, _) =>
+            AIHttpTestServer.Prompt("greeting", "1.0.0", "Hello"));
+        AITestServer server = new(httpHandler: http);
+        await using NacosAIClient client = server.CreateClient(FastOptions(NacosAITransportMode.Http));
+
+        await using var subscription = new PromptSubscription(Subscribe(client.Prompt, "greeting"));
+
+        NacosPrompt? first = await subscription.NextAsync(Timeout);
+
+        first.ShouldNotBeNull();
+        first.Version.ShouldBe("1.0.0");
+        first.Template.ShouldBe("Hello");
+
+        // The subscription is served by the same cache whichever transport fills it, so an HTTP
+        // client gets the same seeded state without ever opening the AI connection.
+        http.Requests[0].AbsolutePath.ShouldEndWith("/v3/client/ai/prompt");
+        server.Factory.RequestedAddresses.ShouldBeEmpty();
+        server.Prompts.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task SubscribePromptAsync_RejectsABlankKey()
     {
         var server = new AITestServer();
@@ -332,11 +355,16 @@ public sealed class NacosPromptSubscriptionTests
         server.Factory.RequestedAddresses.ShouldBeEmpty();
     }
 
-    private static NacosOptions FastOptions() => new()
+    private static NacosOptions FastOptions(
+        NacosAITransportMode transport = NacosAITransportMode.Grpc) => new()
     {
         ServerAddresses = ["127.0.0.1:8848"],
         AppName = "ai-tests",
-        AI = new NacosAIOptions { CacheRefreshInterval = Interval },
+        AI = new NacosAIOptions
+        {
+            CacheRefreshInterval = Interval,
+            TransportMode = transport,
+        },
     };
 
     /// <summary>

@@ -502,6 +502,25 @@ await foreach (NacosPrompt? change in
 The prompt registry is served from Nacos **3.2.0** on. There is no ability key for it, so the client
 cannot refuse an older server up front: such a server answers a query with `RequestHandler Not Found`.
 
+#### Choosing the transport
+
+Prompt reads exist on both transports. A deployment whose ingress only exposes the OpenAPI can keep
+the AI gRPC connection closed:
+
+```csharp
+builder.Services.AddNacos(options =>
+{
+    options.ServerAddresses = ["http://127.0.0.1:8848"];
+    options.AI.TransportMode = NacosAITransportMode.Http;
+});
+```
+
+`Auto` is the middle ground: gRPC is tried first, and a read that cannot reach it is retried over
+HTTP and served from there for 30 seconds before gRPC is tried again. `Grpc`, the default, never
+falls back — a read fails when the connection does. `PromptTransportMode` overrides the choice for
+prompts alone, so one module can move without moving the rest. The subscription cache is the same
+either way, including the disk snapshot.
+
 ### Skills
 
 A skill is a directory — `SKILL.md` plus the files it refers to — and Nacos serves it as a ZIP archive

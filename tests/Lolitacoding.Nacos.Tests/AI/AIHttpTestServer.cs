@@ -186,6 +186,42 @@ internal sealed class AIHttpTestServer : HttpMessageHandler
         return response;
     }
 
+    /// <summary>Builds an answer that carries a prompt.</summary>
+    /// <param name="promptKey">The prompt key.</param>
+    /// <param name="version">The resolved version.</param>
+    /// <param name="template">The template.</param>
+    /// <param name="md5">The published hash, or <see langword="null"/> to omit it.</param>
+    /// <param name="variables">The variable metadata as a JSON array, or <see langword="null"/> for none.</param>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// Like an agent specification, a prompt travels inside the API's result envelope rather than as
+    /// a raw body, which is what the gRPC transport does not do: there the prompt is a field of the
+    /// response message.
+    /// </remarks>
+    public static HttpResponseMessage Prompt(
+        string promptKey,
+        string version,
+        string template,
+        string? md5 = null,
+        string? variables = null)
+    {
+        string body = string.Concat(
+            "{\"code\":0,\"message\":\"success\",\"data\":{\"promptKey\":",
+            JsonSerializer.Serialize(promptKey),
+            ",\"version\":",
+            JsonSerializer.Serialize(version),
+            ",\"template\":",
+            JsonSerializer.Serialize(template),
+            md5 is null ? string.Empty : string.Concat(",\"md5\":", JsonSerializer.Serialize(md5)),
+            variables is null ? string.Empty : string.Concat(",\"variables\":", variables),
+            "}}");
+
+        return new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+    }
+
     /// <summary>Builds the not-modified answer a conditional agent-specification read gets.</summary>
     /// <param name="md5">The published hash the server echoes.</param>
     /// <returns>The response.</returns>

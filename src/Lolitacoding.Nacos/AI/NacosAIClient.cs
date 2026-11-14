@@ -110,17 +110,22 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
             return connection;
         });
 
-        _mcp = new NacosMcpClient(
-            this, options, timeProvider, loggerFactory.CreateLogger<NacosMcpClient>(), snapshots);
-        _prompt = new NacosPromptClient(
-            this, options, timeProvider, loggerFactory.CreateLogger<NacosPromptClient>(), snapshots);
-
         var http = new NacosAIHttpClient(
             servers,
             httpClient,
             options.RequestTimeout,
             loggerFactory.CreateLogger<NacosAIHttpClient>(),
             authProvider);
+
+        _mcp = new NacosMcpClient(
+            this, options, timeProvider, loggerFactory.CreateLogger<NacosMcpClient>(), snapshots);
+        _prompt = new NacosPromptClient(
+            this,
+            options,
+            timeProvider,
+            loggerFactory.CreateLogger<NacosPromptClient>(),
+            http,
+            snapshots);
 
         _skill = new NacosSkillClient(
             http, options, timeProvider, loggerFactory.CreateLogger<NacosSkillClient>(), snapshots);

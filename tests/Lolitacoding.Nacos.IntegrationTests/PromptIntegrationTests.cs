@@ -252,9 +252,72 @@ public sealed class PromptIntegrationTests
         changes.Current.ShouldBeNull();
     }
 
+    [Fact]
+    public async Task GetPromptAsync_OverHttp_RoundTripsThroughARealServer()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
+        await using NacosClientFactory client =
+            CreateClient(container, transport: NacosAITransportMode.Http);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string promptKey = NacosHttp.UniqueId("prompt-http");
+
+        using var http = new HttpClient();
+        string token = await container.CreateAccessTokenAsync(ct);
+
+        await NacosHttp.PublishPromptAsync(
+            http, container.HttpAddress, promptKey, FirstVersion, "Hello over HTTP", null, token, ct);
+
+        // The scripted handler in the unit tests agrees with whatever the client builds, so only the
+        // real endpoint proves the path, the query names and the result envelope are the server's.
+        NacosPrompt prompt = await NacosEventually.BecomesAsync(
+            () => client.AI.Prompt.GetPromptAsync(promptKey, ct: ct),
+            value => value.Version == FirstVersion,
+            ct);
+
+        prompt.PromptKey.ShouldBe(promptKey);
+        prompt.Template.ShouldBe("Hello over HTTP");
+        prompt.Md5.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task SubscribePromptAsync_OverHttp_ReportsAWithdrawal()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AIImage);
+        await using NacosClientFactory client = CreateClient(
+            container, TimeSpan.FromMilliseconds(500), NacosAITransportMode.Http);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string promptKey = NacosHttp.UniqueId("prompt-http-withdraw");
+
+        using var http = new HttpClient();
+        string token = await container.CreateAccessTokenAsync(ct);
+
+        await NacosHttp.PublishPromptAsync(
+            http, container.HttpAddress, promptKey, FirstVersion, "Hello from 1.0.0", null, token, ct);
+
+        await using IAsyncEnumerator<NacosPrompt?> changes =
+            client.AI.Prompt.SubscribePromptAsync(promptKey, ct: ct).GetAsyncEnumerator(ct);
+
+        (await changes.MoveNextAsync()).ShouldBeTrue();
+        changes.Current!.Version.ShouldBe(FirstVersion);
+
+        await NacosHttp.DeletePromptAsync(http, container.HttpAddress, promptKey, token, ct);
+
+        // The refresh gets 304 while the prompt is unchanged and 404 once it is gone; both are status
+        // codes here, and the subscription has to treat them the way the gRPC result codes are treated
+        // for the withdrawal to be announced rather than waited out.
+        await NacosEventually.ReportsAsync(changes, prompt => prompt is null, ct);
+
+        changes.Current.ShouldBeNull();
+    }
+
     private static NacosClientFactory CreateClient(
         NacosContainer container,
-        TimeSpan? cacheRefreshInterval = null) =>
+        TimeSpan? cacheRefreshInterval = null,
+        NacosAITransportMode transport = NacosAITransportMode.Grpc) =>
         NacosClientFactory.Create(
             new NacosOptions
             {
@@ -263,6 +326,7 @@ public sealed class PromptIntegrationTests
                 AI = new NacosAIOptions
                 {
                     CacheRefreshInterval = cacheRefreshInterval ?? TimeSpan.FromSeconds(10),
+                    TransportMode = transport,
                 },
                 Reconnect = new NacosReconnectOptions
                 {

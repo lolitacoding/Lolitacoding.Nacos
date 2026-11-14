@@ -760,4 +760,22 @@ internal static partial class NacosAILog
         string agentName,
         string? version,
         int count);
+
+    /// <summary>Logs that an AI resource fell back from gRPC to HTTP.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="resource">The resource kind, such as <c>prompt</c>.</param>
+    /// <param name="reason">Why the gRPC transport could not serve the read.</param>
+    /// <remarks>
+    /// Information, not Warning: in <see cref="NacosAITransportMode.Auto"/> the fallback is the
+    /// configured behaviour. It is logged once when the client stops preferring gRPC, so a reader
+    /// sees why the requests moved without one entry per read.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8052,
+        Level = LogLevel.Information,
+        Message = "Reading {Resource} over the AI gRPC connection failed; the HTTP endpoint will be used until gRPC is retried: {Reason}")]
+    public static partial void AiTransportFallback(
+        ILogger logger,
+        string resource,
+        string reason);
 }

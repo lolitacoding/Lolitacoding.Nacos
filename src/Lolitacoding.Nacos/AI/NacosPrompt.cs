@@ -76,3 +76,24 @@ public sealed class NacosPrompt
     /// </remarks>
     public IList<NacosPromptVariable>? Variables { get; set; }
 }
+
+/// <summary>
+/// The envelope the HTTP prompt endpoint answers with.
+/// </summary>
+/// <remarks>
+/// The client OpenAPI wraps every answer in a result, including a successful one, so the prompt has
+/// to be read out of <see cref="Data"/> rather than from the body. The gRPC path carries the prompt
+/// as a field of the response message instead, which is why this type exists only for the HTTP
+/// transport.
+/// </remarks>
+internal sealed class NacosPromptResult
+{
+    /// <summary>Gets or sets the result code, zero for success.</summary>
+    public int Code { get; set; }
+
+    /// <summary>Gets or sets the message, which names the code rather than the reason.</summary>
+    public string? Message { get; set; }
+
+    /// <summary>Gets or sets the prompt.</summary>
+    public NacosPrompt? Data { get; set; }
+}
