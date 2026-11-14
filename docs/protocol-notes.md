@@ -1021,11 +1021,11 @@ including the MCP and agent endpoint publication paths and their heartbeat.
 
 This client routes prompts and the MCP registry. `NacosAIOptions.TransportMode` is the default, and
 `PromptTransportMode` / `McpTransportMode` override it per module. `Grpc` uses the AI connection and
-fails when it is unavailable; `Http` uses the client OpenAPI and never opens the gRPC connection;
-`Auto` tries gRPC first and falls back to HTTP after a `NacosConnectionException` or
-`NacosTimeoutException`, then stays on HTTP for 30 seconds before trying gRPC again. A server error
-code is not a transport failure and does not trigger the fallback, and the window is per resource, so
-an MCP outage does not move prompts onto HTTP.
+fails when it is unavailable; `Http` uses the client OpenAPI and does not open the gRPC connection
+for a read or a release; `Auto` tries gRPC first and falls back to HTTP after a
+`NacosConnectionException` or `NacosTimeoutException`, then stays on HTTP for 30 seconds before
+trying gRPC again. A server error code is not a transport failure and does not trigger the fallback,
+and the window is per resource, so an MCP outage does not move prompts onto HTTP.
 
 The resources without an HTTP implementation stay on gRPC: skills and agent specifications were
 always HTTP, the A2A card registry has no HTTP read in Java 3.3 either, and RAD agent

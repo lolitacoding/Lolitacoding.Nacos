@@ -462,8 +462,8 @@ the server chose. A read may fall back between transports; a release does not, b
 that failed may already have created the version — the failure is reported and only the next
 operation may choose HTTP. `Auto` tries gRPC first and moves to HTTP when the connection cannot be
 reached, then stays on HTTP for 30 seconds before trying gRPC again, so a failed connect is not paid
-on every read. `Http` never opens the AI gRPC connection, which is the point: the registry works
-behind an HTTP-only ingress.
+on every read. `Http` serves a read or a release without opening the AI gRPC connection, which is
+the point: the registry works behind an HTTP-only ingress.
 
 There is no MCP search over HTTP here: `AiHttpClientProxy` in Java 3.3 has no search method for the
 MCP registry, and adding one would be a client contract the official client does not have. Endpoint

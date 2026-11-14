@@ -482,11 +482,11 @@ builder.Services.AddNacos(options =>
 });
 ```
 
-`McpTransportMode` overrides `TransportMode` for this registry alone, and `Http` never opens the AI
-gRPC connection. A read may fall back between transports under `Auto`, but a release does not: a
-release that failed is reported rather than re-sent, because the first attempt may already have
-created the version. Endpoint registration stays on gRPC, whose lifetime is the connection's rather
-than a heartbeat's.
+`McpTransportMode` overrides `TransportMode` for this registry alone, and `Http` serves a read or a
+release over the OpenAPI without opening the AI gRPC connection. A read may fall back between
+transports under `Auto`, but a release does not: a release that failed is reported rather than
+re-sent, because the first attempt may already have created the version. Endpoint registration stays
+on gRPC, whose lifetime is the connection's rather than a heartbeat's.
 
 ### Prompts
 
