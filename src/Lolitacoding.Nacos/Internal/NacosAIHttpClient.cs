@@ -33,6 +33,15 @@ internal sealed class NacosAIHttpClient
     /// <summary>The header Nacos reads the access token from.</summary>
     private const string AccessTokenHeader = "accessToken";
 
+    /// <summary>The header that binds a stateful request to this process's AI publisher.</summary>
+    private const string ClientIdHeader = "X-Nacos-Client-Id";
+
+    /// <summary>The header that routes a stateful request to the AI module.</summary>
+    private const string RequestModuleHeader = "Request-Module";
+
+    /// <summary>The value the AI module expects in <see cref="RequestModuleHeader"/>.</summary>
+    private const string RequestModule = "AI";
+
     /// <summary>The status Nacos answers a conditional read with when the hash still matches.</summary>
     private const int NotModifiedStatusCode = 304;
 
@@ -41,6 +50,7 @@ internal sealed class NacosAIHttpClient
     private readonly INacosAuthProvider? _authProvider;
     private readonly TimeSpan _timeout;
     private readonly ILogger _logger;
+    private readonly string? _clientId;
 
     private int _nextServer;
 
@@ -54,12 +64,18 @@ internal sealed class NacosAIHttpClient
     /// <param name="authProvider">
     /// Supplies the access token, or <see langword="null"/> for anonymous access.
     /// </param>
+    /// <param name="clientId">
+    /// This process's AI publisher identity, or <see langword="null"/> when the client has none. It
+    /// is sent on every request so the server can bind an HTTP endpoint publication to the process
+    /// that owns it, and is ignored by the paths that do not publish anything.
+    /// </param>
     public NacosAIHttpClient(
         IReadOnlyList<NacosServerAddress> servers,
         HttpClient httpClient,
         TimeSpan timeout,
         ILogger logger,
-        INacosAuthProvider? authProvider = null)
+        INacosAuthProvider? authProvider = null,
+        string? clientId = null)
     {
         ArgumentNullException.ThrowIfNull(servers);
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -70,6 +86,7 @@ internal sealed class NacosAIHttpClient
         _timeout = timeout;
         _logger = logger;
         _authProvider = authProvider;
+        _clientId = clientId;
     }
 
     /// <summary>
@@ -135,6 +152,61 @@ internal sealed class NacosAIHttpClient
             form,
             headers,
             timeout,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Issues a PUT with no body and returns the response, whatever its status.
+    /// </summary>
+    /// <param name="path">The absolute path of the endpoint.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The response, with the body already read.</returns>
+    /// <exception cref="NacosConnectionException">No configured server could be reached.</exception>
+    /// <remarks>
+    /// The AI module's heartbeat is a PUT with no body: the client id header identifies what is being
+    /// kept alive, and the path says which module's publications are refreshed.
+    /// </remarks>
+    public async Task<NacosAIHttpResponse> PutAsync(string path, CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        return await SendWithFailoverAsync(
+            HttpMethod.Put,
+            path,
+            query: [],
+            form: null,
+            headers: null,
+            _timeout,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Issues a DELETE whose fields travel as query parameters, and returns the response.
+    /// </summary>
+    /// <param name="path">The absolute path of the endpoint.</param>
+    /// <param name="query">The fields, in order. A <see langword="null"/> value is omitted.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>The response, with the body already read.</returns>
+    /// <exception cref="NacosConnectionException">No configured server could be reached.</exception>
+    /// <remarks>
+    /// The server binds a DELETE from the query string rather than from a form body, so the same
+    /// fields a POST sends as a form are sent here as parameters.
+    /// </remarks>
+    public async Task<NacosAIHttpResponse> DeleteAsync(
+        string path,
+        IReadOnlyList<KeyValuePair<string, string?>> query,
+        CancellationToken ct)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(query);
+
+        return await SendWithFailoverAsync(
+            HttpMethod.Delete,
+            path,
+            query,
+            form: null,
+            headers: null,
+            _timeout,
             ct).ConfigureAwait(false);
     }
 
@@ -263,6 +335,21 @@ internal sealed class NacosAIHttpClient
             }
         }
 
+        // The server binds a stateful publication to the external client id and refuses a request
+        // whose module is not declared, so both travel with every request. A read is not stateful
+        // and the module header is only checked on the writes. A caller that sets either header
+        // itself — the watch binding does, because it needs the same values on its long poll — keeps
+        // control of it; adding a second value would make the server read one malformed header.
+        if (_clientId is not null && !HasHeader(headers, ClientIdHeader))
+        {
+            request.Headers.TryAddWithoutValidation(ClientIdHeader, _clientId);
+        }
+
+        if (method != HttpMethod.Get && !HasHeader(headers, RequestModuleHeader))
+        {
+            request.Headers.TryAddWithoutValidation(RequestModuleHeader, RequestModule);
+        }
+
         if (_authProvider is not null)
         {
             string? token = await _authProvider.GetAccessTokenAsync(ct).ConfigureAwait(false);
@@ -330,14 +417,20 @@ internal sealed class NacosAIHttpClient
                 ? []
                 : await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
 
+            bool succeeded = response.IsSuccessStatusCode
+                || response.StatusCode == (HttpStatusCode)NotModifiedStatusCode;
+
+            (string? message, int? errorCode) = succeeded
+                ? (null, null)
+                : ReadError(body, response.ReasonPhrase);
+
             return new NacosAIHttpResponse
             {
                 StatusCode = response.StatusCode,
                 Body = body,
                 Headers = CopyHeaders(response),
-                ErrorMessage = response.IsSuccessStatusCode || response.StatusCode == (HttpStatusCode)NotModifiedStatusCode
-                    ? null
-                    : ReadErrorMessage(body, response.ReasonPhrase),
+                ErrorMessage = message,
+                ErrorCode = errorCode,
             };
         }
     }
@@ -369,20 +462,54 @@ internal sealed class NacosAIHttpClient
     }
 
     /// <summary>
-    /// Extracts the message from an error response body.
+    /// Reports whether the caller already set a header.
+    /// </summary>
+    /// <param name="headers">The headers the caller supplied, or <see langword="null"/> for none.</param>
+    /// <param name="name">The header name, compared without regard to case.</param>
+    /// <returns><see langword="true"/> when the caller supplied the header.</returns>
+    private static bool HasHeader(
+        IReadOnlyList<KeyValuePair<string, string>>? headers,
+        string name)
+    {
+        if (headers is null)
+        {
+            return false;
+        }
+
+        foreach (KeyValuePair<string, string> header in headers)
+        {
+            if (string.Equals(header.Key, name, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Extracts the message and business code from an error response body.
     /// </summary>
     /// <param name="body">The response body.</param>
     /// <param name="reasonPhrase">The status reason phrase, used when the body is not a v3 result.</param>
-    /// <returns>The message to report.</returns>
+    /// <returns>The message to report and the business code the body named, when it named one.</returns>
     /// <remarks>
+    /// <para>
     /// A v3 endpoint answers an error with a result object, and the two string members say different
     /// things: <c>message</c> names the code (<c>resource not found</c>) while <c>data</c> carries the
     /// detail that is actually worth reporting (<c>Skill not found: hello</c>). The detail is
     /// preferred for that reason, with the code name as the fallback for a result that carries none.
     /// Anything else — a gateway's HTML page, an empty body — is not a message at all, so the reason
     /// phrase stands in rather than the body being handed to the caller as if it were one.
+    /// </para>
+    /// <para>
+    /// The code matters because a stateful AI error can carry a business code the HTTP status does
+    /// not express: a lost HTTP publisher is answered with 404 and code 50404, and the caller has to
+    /// see the latter to know that every publication has to be replayed rather than that one read
+    /// missed.
+    /// </para>
     /// </remarks>
-    private static string? ReadErrorMessage(byte[] body, string? reasonPhrase)
+    private static (string? Message, int? ErrorCode) ReadError(byte[] body, string? reasonPhrase)
     {
         if (body.Length > 0)
         {
@@ -392,9 +519,11 @@ internal sealed class NacosAIHttpClient
 
                 if (document.RootElement.ValueKind == JsonValueKind.Object)
                 {
-                    return ReadString(document.RootElement, "data")
+                    string? message = ReadString(document.RootElement, "data")
                         ?? ReadString(document.RootElement, "message")
                         ?? reasonPhrase;
+
+                    return (message, ReadInt32(document.RootElement, "code"));
                 }
             }
             catch (JsonException)
@@ -403,7 +532,7 @@ internal sealed class NacosAIHttpClient
             }
         }
 
-        return reasonPhrase;
+        return (reasonPhrase, null);
     }
 
     /// <summary>
@@ -424,6 +553,19 @@ internal sealed class NacosAIHttpClient
 
         return null;
     }
+
+    /// <summary>
+    /// Reads an integer member of a JSON object.
+    /// </summary>
+    /// <param name="element">The object.</param>
+    /// <param name="name">The member name.</param>
+    /// <returns>The value, or <see langword="null"/> when absent or not an integer.</returns>
+    private static int? ReadInt32(JsonElement element, string name)
+        => element.TryGetProperty(name, out JsonElement value)
+            && value.ValueKind == JsonValueKind.Number
+            && value.TryGetInt32(out int number)
+                ? number
+                : null;
 
     /// <summary>
     /// Appends the query parameters to a path.
@@ -475,6 +617,16 @@ internal sealed class NacosAIHttpResponse
 
     /// <summary>Gets the message of an error response.</summary>
     public string? ErrorMessage { get; init; }
+
+    /// <summary>
+    /// Gets the business code the error body named, or <see langword="null"/> when it named none.
+    /// </summary>
+    /// <remarks>
+    /// The status says how the request failed and this says why: a lost HTTP publisher is a 404
+    /// whose body carries <c>50404</c>, which is what tells a publisher to replay everything rather
+    /// than to treat the one endpoint as gone.
+    /// </remarks>
+    public int? ErrorCode { get; init; }
 
     /// <summary>
     /// Reads one response header.

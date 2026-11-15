@@ -26,9 +26,12 @@ namespace Lolitacoding.Nacos.AI;
 /// publish uses HTTP only while gRPC is known to be unreachable.
 /// </para>
 /// <para>
-/// Endpoint registration stays on gRPC whatever the transport says. The HTTP endpoint contract gives
-/// a publication a heartbeat and a TTL instead of the connection's lifetime, which is a separate
-/// piece of work; the gRPC endpoints remain Naming instances owned by the connection.
+/// Endpoint publication follows the same transport choice as the rest of the registry, but with one
+/// difference: the transport that owns a publication is chosen once and kept. A gRPC publication
+/// belongs to the connection and is replayed after a reconnect; an HTTP publication belongs to a
+/// heartbeating client and is kept alive by
+/// <see cref="NacosAIHttpPublicationCoordinator"/>. A removal therefore always goes to the
+/// transport the registration used, because each transport removes only its own record.
 /// </para>
 /// </remarks>
 internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisposable
@@ -50,6 +53,7 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
     private readonly NacosAIHttpClient _http;
     private readonly ILogger<NacosAgentRegistryClient> _logger;
     private readonly NacosAgentWatchManager _watch;
+    private readonly NacosAgentEndpointPublicationManager _endpoints;
     private readonly NacosAITransportFallback _fallback;
 
     /// <summary>
@@ -60,6 +64,7 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
     /// <param name="timeProvider">The clock used for retry and timeout timing.</param>
     /// <param name="loggerFactory">The logger factory.</param>
     /// <param name="http">The HTTP client the agent registry is published and read over.</param>
+    /// <param name="coordinator">The coordinator that heartbeats and replays HTTP publications.</param>
     /// <param name="random">The source of retry jitter, or <see langword="null"/> for a shared one.</param>
     /// <param name="httpWatch">
     /// The HTTP batch watch binding, or <see langword="null"/> when the AI client has no HTTP
@@ -71,6 +76,7 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
         TimeProvider timeProvider,
         ILoggerFactory loggerFactory,
         NacosAIHttpClient http,
+        NacosAIHttpPublicationCoordinator coordinator,
         Random? random = null,
         INacosAgentHttpWatchBinding? httpWatch = null)
     {
@@ -79,6 +85,7 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(loggerFactory);
         ArgumentNullException.ThrowIfNull(http);
+        ArgumentNullException.ThrowIfNull(coordinator);
 
         _owner = owner;
         _options = options;
@@ -92,6 +99,15 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
             loggerFactory.CreateLogger<NacosAgentWatchManager>(),
             random,
             httpWatch);
+        _endpoints = new NacosAgentEndpointPublicationManager(
+            ConnectForPublicationAsync,
+            http,
+            SelectPublicationOwner,
+            coordinator,
+            _fallback.RecordGrpcFailure,
+            options.RequestTimeout,
+            options.Namespace,
+            loggerFactory.CreateLogger<NacosAgentEndpointPublicationManager>());
     }
 
     /// <summary>
@@ -300,22 +316,7 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
                 nameof(batch));
         }
 
-        // Endpoint publication stays on gRPC in every mode: its owner is the connection, not a
-        // heartbeat, so it is not the same contract the HTTP endpoint path implements.
-        NacosGrpcConnection connection =
-            await ConnectAsync(NacosAITransportMode.Grpc, ct).ConfigureAwait(false);
-
-        var rpcRequest = new AgentEndpointRegisterRpcRequest
-        {
-            NamespaceId = _options.Namespace,
-            RegistrationBatch = batch,
-        };
-
-        await connection
-            .RequestAsync<AgentEndpointOperationResponse>(rpcRequest, ct)
-            .ConfigureAwait(false);
-
-        NacosAILog.AgentEndpointsRegistered(_logger, batch.AgentName!, batch.Protocol!, batch.Endpoints.Count);
+        await _endpoints.RegisterAsync(batch, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -327,21 +328,7 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
         ArgumentException.ThrowIfNullOrWhiteSpace(agentName);
         ArgumentException.ThrowIfNullOrWhiteSpace(protocol);
 
-        NacosGrpcConnection connection =
-            await ConnectAsync(NacosAITransportMode.Grpc, ct).ConfigureAwait(false);
-
-        var rpcRequest = new AgentEndpointDeregisterRpcRequest
-        {
-            NamespaceId = _options.Namespace,
-            AgentName = agentName,
-            Protocol = protocol,
-        };
-
-        await connection
-            .RequestAsync<AgentEndpointOperationResponse>(rpcRequest, ct)
-            .ConfigureAwait(false);
-
-        NacosAILog.AgentEndpointsDeregistered(_logger, agentName, protocol);
+        await _endpoints.DeregisterAsync(agentName, protocol, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -357,21 +344,57 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
     }
 
     /// <summary>
-    /// Releases the watches this client installed.
+    /// Releases the watches and endpoint publications this client owns.
     /// </summary>
-    /// <returns>A task that completes once every watch was closed.</returns>
+    /// <returns>A task that completes once everything was released.</returns>
     /// <remarks>
     /// This is called by the AI client that owns the connection rather than by a caller: the watches
     /// are closed with the client they were opened through, and a caller ends an individual watch by
-    /// leaving its enumeration.
+    /// leaving its enumeration. The endpoints are removed while the connection is still open, so a
+    /// gRPC publication can be taken down instead of waiting for the server to notice the connection
+    /// is gone.
     /// </remarks>
-    public ValueTask DisposeAsync() => _watch.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        await _endpoints.DisposeAsync().ConfigureAwait(false);
+        await _watch.DisposeAsync().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Republishes every gRPC endpoint publication this process still owns.
+    /// </summary>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>A task that completes once every publication was attempted.</returns>
+    public Task RestoreEndpointsAsync(CancellationToken ct) => _endpoints.RestoreAsync(ct);
 
     /// <summary>
     /// Gets the transport a RAD agent registry operation uses.
     /// </summary>
     private NacosAITransportMode EffectiveTransport =>
         _options.AI.ResolveTransport(_options.AI.AgentTransportMode);
+
+    /// <summary>
+    /// Chooses the transport that owns a newly published agent endpoint batch.
+    /// </summary>
+    /// <returns>The transport.</returns>
+    /// <remarks>
+    /// A pinned transport is used as asked. <see cref="NacosAITransportMode.Auto"/> publishes over
+    /// gRPC while it is worth trying and over HTTP during the window after a connection failure. The
+    /// choice is made once per publication and kept, because the heartbeat and the removal have to
+    /// reach the record the registration created.
+    /// </remarks>
+    private NacosAIPublicationTransport SelectPublicationOwner()
+    {
+        NacosAITransportMode mode = EffectiveTransport;
+
+        if (mode == NacosAITransportMode.Http
+            || (mode == NacosAITransportMode.Auto && !_fallback.GrpcIsWorthTrying()))
+        {
+            return NacosAIPublicationTransport.Http;
+        }
+
+        return NacosAIPublicationTransport.Grpc;
+    }
 
     /// <summary>
     /// Gets the connection, checking the RAD contract only when gRPC was pinned.
@@ -396,6 +419,27 @@ internal sealed class NacosAgentRegistryClient : INacosAgentRegistry, IAsyncDisp
         {
             EnsureRadSupported(connection);
         }
+
+        return connection;
+    }
+
+    /// <summary>
+    /// Gets the connection for an endpoint publication, including the removal a shutdown sends.
+    /// </summary>
+    /// <param name="ct">A token that cancels the connection attempt.</param>
+    /// <returns>The connected connection.</returns>
+    /// <remarks>
+    /// A publication always uses gRPC when it is sent over gRPC, so the RAD contract is checked here
+    /// rather than by <see cref="ConnectAsync"/> with a transport mode. The connection is the one
+    /// <see cref="NacosAIClient.GetConnectionForPublicationAsync"/> exposes, because the removal a
+    /// shutdown sends happens after the client stopped accepting new work.
+    /// </remarks>
+    private async Task<NacosGrpcConnection> ConnectForPublicationAsync(CancellationToken ct)
+    {
+        NacosGrpcConnection connection =
+            await _owner.GetConnectionForPublicationAsync(ct).ConfigureAwait(false);
+
+        EnsureRadSupported(connection);
 
         return connection;
     }

@@ -97,6 +97,61 @@ public sealed class McpHttpIntegrationTests
     }
 
     [Fact]
+    public async Task RegisterAndDeregisterEndpoint_OverHttp_RoundTripsThroughARealServer()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.McpHttpImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string name = NacosHttp.UniqueId("mcp-http-endpoint");
+
+        const int port = 18080;
+        const string exportPath = "/mcp/ref";
+
+        // A server reached over the network is published as a naming service, and the read names the
+        // one Nacos created on its behalf. The endpoint registered below is an instance of it.
+        await client.AI.Mcp.ReleaseServerAsync(RemoteServer(name, exportPath), ct: ct);
+
+        NacosMcpServerDetail released = await NacosEventually.BecomesAsync(
+            () => client.AI.Mcp.GetServerAsync(name, Version, ct),
+            value => value.RemoteServerConfig?.ServiceRef is not null,
+            ct);
+
+        released.RemoteServerConfig!.ServiceRef!.ServiceName.ShouldBe($"{name}::{Version}");
+
+        // The registration is a stateful HTTP write: the server binds it to the client id and expires
+        // it unless the client heartbeats. What this test proves is that the write reaches the same
+        // naming service the gRPC registration would, and that the read projects it back.
+        await client.AI.Mcp.RegisterServerEndpointAsync(name, "127.0.0.1", port, Version, ct);
+
+        NacosMcpServerDetail registered = await NacosEventually.BecomesAsync(
+            () => client.AI.Mcp.GetServerAsync(name, Version, ct),
+            value => ContainsEndpoint(value, port),
+            ct);
+
+        NacosMcpEndpointInfo endpoint =
+            registered.BackendEndpoints!.Single(candidate => candidate.Port == port);
+
+        endpoint.Address.ShouldBe("127.0.0.1");
+
+        // The path is the one the release exported the server under, not a property of the endpoint
+        // registration: Nacos projects the server's description onto every instance it resolves.
+        endpoint.Path.ShouldBe(exportPath);
+
+        await client.AI.Mcp.DeregisterServerEndpointAsync(name, "127.0.0.1", port, ct);
+
+        NacosMcpServerDetail removed = await NacosEventually.BecomesAsync(
+            () => client.AI.Mcp.GetServerAsync(name, Version, ct),
+            value => !ContainsEndpoint(value, port),
+            ct);
+
+        // Asserted rather than assumed: the wait gives up quietly, so a removal that never reached the
+        // server would otherwise pass as one that did.
+        ContainsEndpoint(removed, port).ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task GetServerAsync_OverHttp_MapsAnUnknownNameToTheNotFoundCode()
     {
         await using NacosContainer container =
@@ -166,4 +221,38 @@ public sealed class McpHttpIntegrationTests
         VersionDetail = new NacosMcpVersionDetail { Version = Version, IsLatest = true },
         LocalServerConfig = new JsonObject { ["command"] = "uvx" },
     };
+
+    /// <summary>
+    /// Builds a server specification for a server reached over the network.
+    /// </summary>
+    /// <param name="name">The server name.</param>
+    /// <param name="exportPath">The path the server is exported under.</param>
+    /// <returns>The specification.</returns>
+    /// <remarks>
+    /// No endpoint specification is given, which is what makes Nacos publish the backend as a naming
+    /// service of its own and name it in the read. An endpoint can then be registered against it, and
+    /// that registration is the stateful write this transport adds.
+    /// </remarks>
+    private static NacosMcpServer RemoteServer(string name, string exportPath) => new()
+    {
+        Name = name,
+        Protocol = NacosMcpProtocol.Sse,
+        FrontProtocol = NacosMcpProtocol.Sse,
+        Description = "An MCP server reached over the network.",
+        VersionDetail = new NacosMcpVersionDetail { Version = Version, IsLatest = true },
+        RemoteServerConfig = new NacosMcpRemoteServiceConfig
+        {
+            ExportPath = exportPath,
+            FrontEndpointConfigList = [],
+        },
+    };
+
+    /// <summary>
+    /// Reports whether the server resolves an endpoint at a port.
+    /// </summary>
+    /// <param name="detail">The detail the server returned.</param>
+    /// <param name="port">The port the endpoint was registered at.</param>
+    /// <returns><see langword="true"/> when the endpoint is there.</returns>
+    private static bool ContainsEndpoint(NacosMcpServerDetail detail, int port) =>
+        detail.BackendEndpoints?.Any(endpoint => endpoint.Port == port) == true;
 }

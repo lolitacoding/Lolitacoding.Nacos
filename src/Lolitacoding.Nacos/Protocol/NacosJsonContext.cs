@@ -133,6 +133,11 @@ namespace Lolitacoding.Nacos.Protocol;
 [JsonSerializable(typeof(AI.NacosAgentPublishResult))]
 [JsonSerializable(typeof(AI.NacosAgentSearchResult))]
 [JsonSerializable(typeof(AI.NacosAgentDiscoveryEnvelope))]
+// The RAD endpoint publication's HTTP transport: the endpoints travel as one JSON form field, and
+// the stateful answers report the intervals the HTTP publisher is kept alive with.
+[JsonSerializable(typeof(List<AI.NacosAgentRuntimeEndpoint>))]
+[JsonSerializable(typeof(AI.NacosClientLivenessInfo))]
+[JsonSerializable(typeof(AI.NacosClientLivenessResult))]
 [JsonSerializable(typeof(ServerCheckRequest))]
 [JsonSerializable(typeof(ServerCheckResponse))]
 [JsonSerializable(typeof(ConnectionSetupRequest))]

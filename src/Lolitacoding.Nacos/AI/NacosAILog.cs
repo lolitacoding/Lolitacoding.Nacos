@@ -799,4 +799,130 @@ internal static partial class NacosAILog
         ILogger logger,
         string resource,
         string reason);
+
+    /// <summary>Logs that replaying an MCP endpoint over HTTP failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The MCP server name.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A retryable failure keeps the intent for the next cycle, so this is a report rather than a
+    /// final outcome; a failure that will not resolve has already been rolled back.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8054,
+        Level = LogLevel.Warning,
+        Message = "Replaying the HTTP publication of MCP endpoint {Name} failed: {Reason}")]
+    public static partial void McpEndpointRedoFailed(
+        ILogger logger,
+        string name,
+        string reason);
+
+    /// <summary>Logs that removing an MCP endpoint failed while the client was shutting down.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="name">The MCP server name.</param>
+    /// <param name="address">The endpoint address.</param>
+    /// <param name="port">The endpoint port.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// Best effort: an HTTP endpoint the removal misses is expired by the server, and a gRPC one is
+    /// dropped with the connection, so a failure here costs time rather than correctness.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8055,
+        Level = LogLevel.Warning,
+        Message = "Removing MCP endpoint {Name} at {Address}:{Port} during shutdown failed: {Reason}")]
+    public static partial void McpEndpointDeregisterFailed(
+        ILogger logger,
+        string name,
+        string address,
+        int port,
+        string reason);
+
+    /// <summary>Logs that replaying an agent endpoint publication over HTTP failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="protocol">The protocol.</param>
+    /// <param name="reason">The error that was reported.</param>
+    [LoggerMessage(
+        EventId = 8056,
+        Level = LogLevel.Warning,
+        Message = "Replaying the HTTP publication of {Protocol} endpoints for agent {AgentName} failed: {Reason}")]
+    public static partial void AgentEndpointsRedoFailed(
+        ILogger logger,
+        string agentName,
+        string protocol,
+        string reason);
+
+    /// <summary>Logs that republishing an agent endpoint batch after a reconnect failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="protocol">The protocol.</param>
+    /// <param name="reason">The error that was reported.</param>
+    [LoggerMessage(
+        EventId = 8057,
+        Level = LogLevel.Warning,
+        Message = "Republishing {Protocol} endpoints for agent {AgentName} after a reconnect failed: {Reason}")]
+    public static partial void AgentEndpointsRestoreFailed(
+        ILogger logger,
+        string agentName,
+        string protocol,
+        string reason);
+
+    /// <summary>Logs that agent endpoint publications were republished after a reconnect.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="count">How many publications were republished.</param>
+    [LoggerMessage(
+        EventId = 8058,
+        Level = LogLevel.Information,
+        Message = "Republished {Count} agent endpoint publication(s) after a reconnect.")]
+    public static partial void AgentEndpointPublicationsRestored(ILogger logger, int count);
+
+    /// <summary>Logs that removing an agent endpoint publication failed during shutdown.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="agentName">The agent name.</param>
+    /// <param name="protocol">The protocol.</param>
+    /// <param name="reason">The error that was reported.</param>
+    [LoggerMessage(
+        EventId = 8059,
+        Level = LogLevel.Warning,
+        Message = "Removing {Protocol} endpoints for agent {AgentName} during shutdown failed: {Reason}")]
+    public static partial void AgentEndpointsDeregisterFailed(
+        ILogger logger,
+        string agentName,
+        string protocol,
+        string reason);
+
+    /// <summary>Logs that the shared AI HTTP publisher heartbeat failed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="module">The module that sent the heartbeat.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// A heartbeat that fails for any other reason is retried on the next cycle, so the publications
+    /// are not lost yet: the server expires them only after the timeout it reported.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8060,
+        Level = LogLevel.Warning,
+        Message = "The shared AI HTTP publisher heartbeat through {Module} failed: {Reason}")]
+    public static partial void AiPublicationHeartbeatFailed(
+        ILogger logger,
+        string module,
+        string reason);
+
+    /// <summary>Logs that the server no longer knows this process's HTTP publisher.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="reason">The error that was reported.</param>
+    /// <remarks>
+    /// The server dropped the client — after a restart, or after the publications expired — so every
+    /// module's HTTP publication is gone rather than one endpoint. All of them are marked for a
+    /// replay before any of them is sent, so the first replay cannot recreate the client and hide
+    /// the loss from the other module.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 8061,
+        Level = LogLevel.Warning,
+        Message = "The Nacos server no longer knows this AI HTTP publisher; every HTTP endpoint publication will be sent again: {Reason}")]
+    public static partial void AiPublicationClientLost(
+        ILogger logger,
+        string reason);
 }

@@ -24,6 +24,7 @@ namespace Lolitacoding.Nacos.AI;
 internal sealed class NacosAIClient : INacosAIClient, IDisposable
 {
     private readonly NacosLazyModuleConnection _connection;
+    private readonly NacosAIHttpPublicationCoordinator _coordinator;
     private readonly NacosMcpClient _mcp;
     private readonly NacosPromptClient _prompt;
     private readonly NacosSkillClient _skill;
@@ -115,7 +116,16 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
             httpClient,
             options.RequestTimeout,
             loggerFactory.CreateLogger<NacosAIHttpClient>(),
-            authProvider);
+            authProvider,
+            _clientUuid);
+
+        // The MCP and agent registries publish endpoints over the same HTTP client identity, so one
+        // coordinator heartbeats and replays both: the server keeps one liveness record per client,
+        // and a client it has forgotten has to be reported to every module before any of them
+        // replays.
+        _coordinator = new NacosAIHttpPublicationCoordinator(
+            timeProvider,
+            loggerFactory.CreateLogger<NacosAIHttpPublicationCoordinator>());
 
         _mcp = new NacosMcpClient(
             this,
@@ -123,6 +133,7 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
             timeProvider,
             loggerFactory.CreateLogger<NacosMcpClient>(),
             http,
+            _coordinator,
             snapshots);
         _prompt = new NacosPromptClient(
             this,
@@ -146,6 +157,7 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
             timeProvider,
             loggerFactory,
             http,
+            _coordinator,
             random,
             new NacosAgentHttpWatchClient(http, _clientUuid));
     }
@@ -182,6 +194,21 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
     }
 
     /// <summary>
+    /// Gets the connection for an endpoint publication, including the removal a shutdown sends.
+    /// </summary>
+    /// <param name="ct">A token that cancels the creation.</param>
+    /// <returns>The connection.</returns>
+    /// <remarks>
+    /// <see cref="DisposeAsync"/> stops new work before it disposes the modules, because each module
+    /// removes what it published while the connection is still open. A removal is not new work, so it
+    /// must not be refused by the disposed guard the public methods use. The publication managers
+    /// reject a registration after they are closed themselves, so reaching the connection here
+    /// cannot resurrect a publication the caller did not ask for.
+    /// </remarks>
+    internal Task<NacosGrpcConnection> GetConnectionForPublicationAsync(CancellationToken ct) =>
+        _connection.GetAsync(ct);
+
+    /// <summary>
     /// Replays every endpoint this process published.
     /// </summary>
     /// <param name="state">The state the transport reached.</param>
@@ -196,8 +223,11 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
 
         // The connection the watches were installed on is gone, so the server forgot them: they are
         // re-installed and re-read before the endpoints are replayed, because a caller following an
-        // agent is waiting on a state that the outage may have changed.
+        // agent is waiting on a state that the outage may have changed. Only the gRPC endpoint
+        // publications are replayed: an HTTP one is kept alive by its heartbeat and a reconnect says
+        // nothing about it.
         await _agent.Watch.RestoreAsync(ct).ConfigureAwait(false);
+        await _agent.RestoreEndpointsAsync(ct).ConfigureAwait(false);
         await _mcp.RestoreAsync(ct).ConfigureAwait(false);
         await _agentCard.RestoreAsync(ct).ConfigureAwait(false);
     }
@@ -225,13 +255,17 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
 
         // The subscriptions are stopped first: their refresh loops talk over the connection, and
         // completing them ends the enumerations a caller may still be reading. The watches are
-        // closed for the same reason, and before the connection so a removal can still be sent.
+        // closed for the same reason, and before the connection so a removal can still be sent. The
+        // endpoint publications are removed before the coordinator stops, so a heartbeat in flight
+        // cannot race the shutdown, and before the connection, so a gRPC removal still reaches the
+        // server.
         await _agent.DisposeAsync().ConfigureAwait(false);
         await _agentCard.DisposeAsync().ConfigureAwait(false);
         await _agentSpec.DisposeAsync().ConfigureAwait(false);
         await _skill.DisposeAsync().ConfigureAwait(false);
         await _prompt.DisposeAsync().ConfigureAwait(false);
         await _mcp.DisposeAsync().ConfigureAwait(false);
+        _coordinator.Dispose();
         await _connection.DisposeAsync().ConfigureAwait(false);
     }
 

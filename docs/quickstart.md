@@ -485,8 +485,9 @@ builder.Services.AddNacos(options =>
 `McpTransportMode` overrides `TransportMode` for this registry alone, and `Http` serves a read or a
 release over the OpenAPI without opening the AI gRPC connection. A read may fall back between
 transports under `Auto`, but a release does not: a release that failed is reported rather than
-re-sent, because the first attempt may already have created the version. Endpoint registration stays
-on gRPC, whose lifetime is the connection's rather than a heartbeat's.
+re-sent, because the first attempt may already have created the version. Endpoint registration follows
+the same setting: a gRPC publication lives as long as the connection, while an HTTP one is kept alive
+by a heartbeat and expires after a timeout, and a publication keeps the transport that first owned it.
 
 ### Prompts
 
@@ -541,7 +542,9 @@ subscription cache is the same either way, including the disk snapshot.
 An MCP release and a RAD agent publish are the exceptions to the fallback. A failed write is not
 retried over the other transport, because the attempt may have reached the server and created the
 version; the caller sees the failure and can decide. Under `Auto`, such a write is sent over HTTP
-only while gRPC is known to be unreachable. Endpoint registration stays on gRPC in every mode.
+only while gRPC is known to be unreachable. Endpoint registration follows the same choice: an HTTP
+publication is heartbeated at the interval the server returns and replayed when the server reports it
+has forgotten the client.
 
 ### Skills
 
@@ -843,8 +846,8 @@ builder.Services.AddNacos(options =>
 
 `AgentTransportMode` overrides `TransportMode` for this registry alone. A search and a discovery are
 reads and may fall back between transports under `Auto`, but a publish is not re-sent over the other
-transport: the attempt that failed may already have created the version. Endpoint registration and
-removal stay on gRPC in every mode, whose lifetime is the connection's rather than a heartbeat's.
+transport: the attempt that failed may already have created the version. Endpoint registration follows
+the same setting, with the same heartbeat-and-TTL lifecycle as the MCP registry.
 
 Five things are worth knowing before relying on this:
 
@@ -858,9 +861,11 @@ Five things are worth knowing before relying on this:
   and re-reads the server every `NacosAIOptions.CacheRefreshInterval` (10 s by default), because there
   is no push to subscribe to. A failed re-read leaves the cached copy in place and is retried, so a
   watcher outlives a control-plane outage.
-- An endpoint lives and dies with the connection that published it, so the client replays it after a
-  reconnect, and the version it was published for is remembered so that removing it removes it from the
-  service the registration used.
+- An endpoint published over gRPC lives and dies with the connection that published it, so the client
+  replays it after a reconnect, and the version it was published for is remembered so that removing it
+  removes it from the service the registration used. An endpoint published over HTTP is a record the
+  server keeps for the client id: the client heartbeats it, the server expires it after a timeout, and
+  a `50404` answer makes every HTTP publication of the process register again.
 - The AI connection is opened on first use, like the lock connection, and carries the `ai` module
   label plus a per-client `aiClientUuid` that Nacos records with everything the client publishes.
 - A skill and an agent specification are read over HTTP rather than over that connection, so a caller

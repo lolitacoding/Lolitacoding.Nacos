@@ -424,13 +424,14 @@ and its own request names:
   that names none. The version Nacos flags `is_latest` is also stored under the `latest` key, so a
   subscription without a version is answered from the cache rather than by another round trip, and a
   change is reported to both keys when it is the latest one.
-- **An endpoint is a Naming instance, not an AI record.** `McpServerEndpointRequest` (`type` ∈
+- **An endpoint is a Naming instance over gRPC, and a record of its own over HTTP.** `McpServerEndpointRequest` (`type` ∈
   `registerEndpoint`, `deregisterEndpoint`) is handled by `McpClientApplicationService.operateEndpoint`,
   which resolves the server's `REF` endpoint to a Naming service and registers the address as an
   instance of it, attributed to the publishing connection. So the endpoint is discovered, health
   checked and load balanced like any other instance, it disappears when the connection that published
   it closes, and the client replays it after a reconnect. The `version` field is what the server
-  resolves the target service by.
+  resolves the target service by. The HTTP endpoint contract reaches the same Naming service but owns
+  the record differently — see [HTTP endpoint publication](#http-endpoint-publication).
 - **The HTTP transport is a different wire shape.** `GET /v3/client/ai/mcp` takes `namespaceId`,
   `mcpName` and an optional `version`, and answers with the OpenAPI's result envelope whose `data` is
   the same detail the gRPC reply carries. `POST /v3/client/ai/mcp` is a form rather than one JSON
@@ -442,8 +443,9 @@ and its own request names:
   because the attempt that failed may already have created the version, so a second attempt could
   conflict with it or publish twice. Under `Auto`, a release is sent over HTTP only while gRPC is in
   its 30-second failure window, and a release that fails on gRPC is reported rather than retried.
-  Endpoint registration stays on gRPC in every mode: the HTTP publication contract gives an endpoint a
-  heartbeat and a TTL instead of the connection's lifetime, which is a separate piece of work.
+  Endpoint registration follows `McpTransportMode` as well: a gRPC publication is a Naming instance
+  owned by the connection, while an HTTP one is a server-side record kept alive by a heartbeat, so a
+  publication keeps the transport that first owned it and is removed the same way it was registered.
 - **No MCP search over HTTP.** `AiHttpClientProxy` in Java 3.3 has no search method for the MCP
   registry — the search controller exists, but the client does not call it — so adding one here would
   be a contract the official client does not have. `SearchMcpServersAsync` therefore remains absent.
@@ -850,6 +852,12 @@ interfaces and runtime endpoints, managed the way a prompt or a skill is.
 - **The digest is the discovery fingerprint.** `contentDigest` is what tells a caller whether what it
   holds is what the registry would serve now, and it is the same value the watch's fingerprint is
   derived from.
+- **An endpoint batch can also be published over HTTP.** The batch form of
+  [HTTP endpoint publication](#http-endpoint-publication) carries the same set — agent, protocol,
+  optional `runtimeVersion`/`versionRange`, and the endpoints as JSON — and the server applies the
+  same replace-by-publisher rule. A publication keeps the transport that first owned it, so a batch
+  registered over HTTP is heartbeated and removed over HTTP even if the client later moves its reads
+  to gRPC.
 
 ### Where this client deviates from the official client (RAD agents)
 
@@ -1035,9 +1043,11 @@ discovers one version. A publish is not retried on the other transport, because 
 failed may already have created the version; a search and a discovery are reads and may fall back,
 but only from `Auto` and only on a connection or timeout failure. `Http` and `Auto` skip the local
 `radV1` ability check — the HTTP endpoints are themselves the 3.3 contract, and the transport that
-answers reports a server that does not serve them. Endpoint registration and removal stay on gRPC in
-every mode: the HTTP endpoint contract gives a publication a heartbeat and a TTL instead of the
-connection's lifetime, which is a separate piece of work.
+answers reports a server that does not serve them.
+
+The MCP and RAD agent endpoint publications follow the same transport choice, but they are the one
+part of the registry with a lifecycle of their own, so they are described separately in
+[HTTP endpoint publication](#http-endpoint-publication).
 
 The resources without an HTTP implementation stay on gRPC: skills and agent specifications were
 always HTTP, and the A2A card registry has no HTTP read in Java 3.3 either. A server whose gRPC
@@ -1048,6 +1058,51 @@ The watch is the one other exception, because it has a second contract on the se
 `NacosAIOptions.AgentWatchTransport` selects gRPC, the HTTP batch long poll, periodic polling, or
 `Auto`, which tries them in that order. The batch and the polling fallback are described in
 [RAD agent watch](#rad-agent-watch).
+
+### HTTP endpoint publication
+
+> **Which server this describes.** The endpoint publication paths are Nacos **3.3.0** or newer:
+> `McpEndpointClientController` and `AgentEndpointClientController` are marked `@Since("3.3.0")`,
+> and the gRPC endpoint handlers they parallel exist from 3.0.3 (MCP) and 3.3.0 (RAD agents).
+
+An endpoint can be published over gRPC or over HTTP, and the two are not the same contract even
+though they reach the same Naming service. A gRPC publication is an instance owned by the AI
+connection: the server drops it with the connection, and the client replays it after a reconnect. An
+HTTP publication is a record the server keeps for a client id: the client has to heartbeat it or the
+server expires it. A publication therefore keeps the transport that first owned it — a removal and a
+heartbeat always reach the record the registration created — so a client never leaves one behind by
+changing its mind mid-life.
+
+| Operation | Path | Shape |
+| --- | --- | --- |
+| Register an MCP endpoint | `POST /v3/client/ai/mcp/endpoints` | form: `namespaceId`, `mcpName`, `address`, `port`, optional `version` |
+| Remove an MCP endpoint | `DELETE /v3/client/ai/mcp/endpoints` | query: `namespaceId`, `mcpName`, `address`, `port` |
+| Register agent endpoints | `POST /v3/client/ai/agents/endpoints` | form: `namespaceId`, `agentName`, `protocol`, `endpoints` (JSON), optional `runtimeVersion`/`versionRange` |
+| Remove agent endpoints | `DELETE /v3/client/ai/agents/endpoints` | query: `namespaceId`, `agentName`, `protocol` |
+| Heartbeat | `PUT /v3/client/ai/{mcp,agents}/endpoints/heartbeat` | no body |
+
+- **Every non-GET request carries `Request-Module: AI`**, which is what routes it to the AI module
+  rather than the naming one, and every request carries `X-Nacos-Client-Id`, the same UUID the gRPC
+  connection is labelled with. The client id is the identity the server binds the publications to.
+- **The first write answers with `ClientLivenessInfo`.** It carries `heartbeatIntervalMillis`,
+  `unhealthyTimeoutMillis` and `expireTimeoutMillis`; the client heartbeats at the interval and the
+  server marks the client unhealthy, then expires it and its publications, at the other two.
+- **One liveness record serves both modules.** The server keeps it per client id, not per module, so
+  `NacosAIHttpPublicationCoordinator` sends one heartbeat through whichever module owns a live
+  publication. A `50404` (`HTTP_CLIENT_NOT_FOUND`) means the server has forgotten the client: every
+  module's HTTP publication is marked before any is replayed, because replaying one first would
+  recreate the client and hide the loss from the other.
+- **An error body's `Result.code` wins over the HTTP status.** `50404` is a lost client, `50105`
+  (`AGENT_MIGRATION_IN_PROGRESS`) is a server whose agent lifecycle migration has not run, and
+  `50103` (`AGENT_ENDPOINT_PUBLICATION_OVER_LIMIT`) is a batch beyond the per-client limit. The
+  agent limit is 100 entries and is checked locally before the batch is sent, so the caller sees the
+  same refusal the server would have given without the round trip.
+- **A failed gRPC publication closes the `Auto` window.** A process that only publishes endpoints
+  would otherwise keep choosing a gRPC transport it cannot reach, so a connection failure on the
+  publication path records the failure the same way a read does.
+- **A2A card endpoints stay on gRPC.** Java 3.3 has no HTTP card read or card endpoint publication
+  (`registerA2a` / `deregisterA2a`), so the card registry does not participate.
+
 
 ## Authentication
 

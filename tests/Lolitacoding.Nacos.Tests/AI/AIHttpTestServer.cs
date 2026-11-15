@@ -17,6 +17,7 @@ namespace Lolitacoding.Nacos.Tests.AI;
 internal sealed class AIHttpTestServer : HttpMessageHandler
 {
     private readonly List<Uri> _requests = [];
+    private readonly List<HttpMethod> _methods = [];
     private readonly List<string?> _tokens = [];
     private readonly List<string?> _forms = [];
     private readonly List<Dictionary<string, string>> _headers = [];
@@ -78,6 +79,24 @@ internal sealed class AIHttpTestServer : HttpMessageHandler
             {
                 return _requests.Count;
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads the method of a recorded request.
+    /// </summary>
+    /// <param name="index">The index of the request.</param>
+    /// <returns>The method.</returns>
+    /// <remarks>
+    /// A stateful endpoint request is the one place in the AI module where the method carries the
+    /// meaning — a registration is a POST, a heartbeat a PUT and a removal a DELETE — so a test has
+    /// to be able to read it rather than infer it from the path.
+    /// </remarks>
+    public HttpMethod Method(int index)
+    {
+        lock (_requests)
+        {
+            return _methods[index];
         }
     }
 
@@ -352,6 +371,41 @@ internal sealed class AIHttpTestServer : HttpMessageHandler
     public static HttpResponseMessage NotFound(string detail, int code = 20004)
         => Result(HttpStatusCode.NotFound, code, "resource not found", detail);
 
+    /// <summary>Builds the answer a stateful AI request that carries nothing gets.</summary>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// A heartbeat and a removal are answered with a success result whose <c>data</c> is null, which
+    /// is the shape the server returns for <c>Result&lt;Void&gt;</c>.
+    /// </remarks>
+    public static HttpResponseMessage Accepted()
+        => Result(HttpStatusCode.OK, 0, "success");
+
+    /// <summary>Builds the answer an endpoint registration or heartbeat gets.</summary>
+    /// <param name="heartbeatIntervalMillis">How often the client should heartbeat.</param>
+    /// <param name="unhealthyTimeoutMillis">When a silent publication stops counting as healthy.</param>
+    /// <param name="expireTimeoutMillis">When a silent publication is deleted.</param>
+    /// <returns>The response.</returns>
+    /// <remarks>
+    /// The three intervals are the whole point of the HTTP endpoint contract: they replace the
+    /// connection lifetime a gRPC publication has with a schedule the client has to follow.
+    /// </remarks>
+    public static HttpResponseMessage Liveness(
+        long heartbeatIntervalMillis = 10_000,
+        long unhealthyTimeoutMillis = 30_000,
+        long expireTimeoutMillis = 60_000)
+    {
+        string data = string.Concat(
+            "{\"heartbeatIntervalMillis\":",
+            heartbeatIntervalMillis.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ",\"unhealthyTimeoutMillis\":",
+            unhealthyTimeoutMillis.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ",\"expireTimeoutMillis\":",
+            expireTimeoutMillis.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "}");
+
+        return Envelope(data);
+    }
+
     /// <summary>Builds a v3 result body with the given status.</summary>
     /// <param name="status">The HTTP status.</param>
     /// <param name="code">The business code.</param>
@@ -448,6 +502,7 @@ internal sealed class AIHttpTestServer : HttpMessageHandler
         {
             index = _requests.Count;
             _requests.Add(request.RequestUri!);
+            _methods.Add(request.Method);
             _tokens.Add(
                 request.Headers.TryGetValues("accessToken", out IEnumerable<string>? values)
                     ? string.Join(",", values)

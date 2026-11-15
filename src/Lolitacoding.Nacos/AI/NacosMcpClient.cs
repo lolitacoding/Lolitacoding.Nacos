@@ -25,10 +25,11 @@ namespace Lolitacoding.Nacos.AI;
 /// created the version.
 /// </para>
 /// <para>
-/// Endpoints published through this client are instances of a Naming service, so they are tied to
-/// the connection that registered them and are replayed after a reconnect by
-/// <see cref="RestoreAsync"/>. They stay on gRPC whatever the transport says: the HTTP endpoint
-/// contract gives them a different owner and lifetime, and that is a separate piece of work.
+/// Endpoints published through this client are instances of a Naming service. A gRPC registration is
+/// tied to the connection that made it and is replayed after a reconnect by
+/// <see cref="RestoreAsync"/>; an HTTP registration is tied to a heartbeating client and is kept
+/// alive and replayed by <see cref="NacosAIHttpPublicationCoordinator"/>. Which one owns an endpoint
+/// is decided when it is first published and kept with it.
 /// </para>
 /// </remarks>
 internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
@@ -61,6 +62,7 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
     /// <param name="timeProvider">The clock the subscription refresh interval is measured with.</param>
     /// <param name="logger">The logger.</param>
     /// <param name="http">The HTTP client the MCP endpoint is read and released over.</param>
+    /// <param name="coordinator">The coordinator that heartbeats and replays HTTP publications.</param>
     /// <param name="snapshots">
     /// The disk failover store, or <see langword="null"/> when details are kept in memory only.
     /// </param>
@@ -70,6 +72,7 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
         TimeProvider timeProvider,
         ILogger<NacosMcpClient> logger,
         NacosAIHttpClient http,
+        NacosAIHttpPublicationCoordinator coordinator,
         NacosAISnapshotStore? snapshots = null)
     {
         _owner = owner;
@@ -85,7 +88,22 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
             logger,
             NacosAISnapshot<NacosMcpServerDetail>.Create(
                 snapshots, NacosAISnapshotStore.McpKind, NacosJsonContext.Default.NacosMcpServerDetail));
-        _endpoints = new NacosMcpEndpointPublication(owner.GetConnectionAsync, options.Namespace, logger);
+        _endpoints = new NacosMcpEndpointPublication(
+            async (name, ct) =>
+            {
+                NacosGrpcConnection connection =
+                    await _owner.GetConnectionForPublicationAsync(ct).ConfigureAwait(false);
+                EnsureSupported(connection, name);
+
+                return connection;
+            },
+            http,
+            SelectPublicationOwner,
+            coordinator,
+            _fallback.RecordGrpcFailure,
+            options.RequestTimeout,
+            options.Namespace,
+            logger);
     }
 
     /// <inheritdoc />
@@ -233,9 +251,6 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, MaxPort);
 
-        NacosGrpcConnection connection = await _owner.GetConnectionAsync(ct).ConfigureAwait(false);
-        EnsureSupported(connection, name);
-
         await _endpoints.RegisterAsync(name, address, port, version, ct).ConfigureAwait(false);
     }
 
@@ -251,21 +266,24 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
         ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(port, MaxPort);
 
-        NacosGrpcConnection connection = await _owner.GetConnectionAsync(ct).ConfigureAwait(false);
-        EnsureSupported(connection, name);
-
         await _endpoints.DeregisterAsync(name, address, port, ct).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Republishes every endpoint this process still owns.
+    /// Republishes every gRPC endpoint this process still owns.
     /// </summary>
     /// <param name="ct">A token that cancels the work.</param>
     /// <returns>A task that completes once every endpoint was attempted.</returns>
     public Task RestoreAsync(CancellationToken ct) => _endpoints.RestoreAsync(ct);
 
     /// <inheritdoc />
-    public ValueTask DisposeAsync() => _cache.DisposeAsync();
+    public async ValueTask DisposeAsync()
+    {
+        // The endpoints are removed while the connection is still open, so a gRPC registration can
+        // be taken down instead of waiting for the server to notice the connection is gone.
+        await _endpoints.DisposeAsync().ConfigureAwait(false);
+        await _cache.DisposeAsync().ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Reads one version of a server from the registry.
@@ -314,6 +332,29 @@ internal sealed class NacosMcpClient : INacosMcpRegistry, IAsyncDisposable
     /// </summary>
     private NacosAITransportMode EffectiveTransport =>
         _options.AI.ResolveTransport(_options.AI.McpTransportMode);
+
+    /// <summary>
+    /// Chooses the transport that owns a newly published MCP endpoint.
+    /// </summary>
+    /// <returns>The transport.</returns>
+    /// <remarks>
+    /// A pinned transport is used as asked. <see cref="NacosAITransportMode.Auto"/> publishes over
+    /// gRPC while it is worth trying and over HTTP during the window after a connection failure,
+    /// which is the same choice a read makes. The choice is made once per endpoint and kept: a
+    /// heartbeat or removal has to reach the record the registration created.
+    /// </remarks>
+    private NacosAIPublicationTransport SelectPublicationOwner()
+    {
+        NacosAITransportMode mode = EffectiveTransport;
+
+        if (mode == NacosAITransportMode.Http
+            || (mode == NacosAITransportMode.Auto && !_fallback.GrpcIsWorthTrying()))
+        {
+            return NacosAIPublicationTransport.Http;
+        }
+
+        return NacosAIPublicationTransport.Grpc;
+    }
 
     /// <summary>
     /// Reads one version of a server over the AI gRPC connection.

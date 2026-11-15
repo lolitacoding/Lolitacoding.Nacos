@@ -713,9 +713,10 @@ public sealed class NacosAIOptions
     /// to be unreachable. Search and discovery are reads and may fall back.
     /// </para>
     /// <para>
-    /// Endpoint registration stays on gRPC whatever this value says: the HTTP endpoint contract gives
-    /// a publication a heartbeat and a TTL instead of the connection's lifetime, which is a separate
-    /// piece of work. The watch is also separate and is governed by
+    /// Endpoint registration follows this value as well: a gRPC publication belongs to the connection
+    /// that made it, while an HTTP one is kept alive by a heartbeat and expired by the server after a
+    /// timeout. A publication keeps the transport that first owned it, so a removal or a heartbeat
+    /// always reaches the record its registration created. The watch is separate and is governed by
     /// <see cref="AgentWatchTransport"/>.
     /// </para>
     /// </remarks>

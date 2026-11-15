@@ -100,6 +100,78 @@ public sealed class AgentHttpIntegrationTests
     }
 
     [Fact]
+    public async Task RegisterAndDeregisterEndpoints_OverHttp_RoundTripsThroughARealServer()
+    {
+        await using NacosContainer container =
+            await NacosContainer.StartAsync(NacosIntegrationImages.AgentHttpImage);
+        await using NacosClientFactory client = CreateClient(container);
+
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        string agentName = NacosHttp.UniqueId("rad-http-endpoints");
+        const string uri = "http://10.0.0.7:9000/a2a";
+
+        await NacosEventually.WritesAsync(
+            () => client.AI.Agent.PublishAgentAsync(
+                new NacosAgentPublishRequest
+                {
+                    AgentName = agentName,
+                    Version = Version,
+                    Description = "Callable.",
+                    AutoSubmit = true,
+                    CallInterfaces = [CallInterface()],
+                },
+                ct),
+            ct);
+
+        await NacosEventually.BecomesAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName }, ct: ct),
+            value => value.Version == Version,
+            ct);
+
+        // The batch is a stateful HTTP write: the server binds it to the client id and expires it
+        // unless the client heartbeats. What this test proves is that the write reaches the same
+        // registry the gRPC registration would, and that a discovery reports it back.
+        await client.AI.Agent.RegisterEndpointsAsync(
+            new NacosAgentEndpointBatch
+            {
+                AgentName = agentName,
+                Protocol = "a2a",
+
+                // The batch says which agent versions its endpoints serve, and an endpoint without a
+                // binding inherits it. A registration that names neither has no version to bind to,
+                // which the registry refuses.
+                RuntimeVersion = Version,
+                VersionRange = "[1.0.0,2.0.0)",
+                Endpoints =
+                [
+                    new NacosAgentRuntimeEndpoint { Uri = uri, Transport = "JSONRPC" },
+                ],
+            },
+            ct);
+
+        NacosAgentDiscoveryResult discovered = await NacosEventually.BecomesAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName }, ct: ct),
+            value => RuntimeUris(value).Contains(uri),
+            ct);
+
+        RuntimeUris(discovered).ShouldContain(uri);
+
+        await client.AI.Agent.DeregisterEndpointsAsync(agentName, "a2a", ct);
+
+        // The removal is by protocol because the endpoints a process registered are only meaningful
+        // as a set, so what a discovery reports afterwards has none of them.
+        NacosAgentDiscoveryResult removed = await NacosEventually.BecomesAsync(
+            () => client.AI.Agent.DiscoverAgentAsync(
+                new NacosAgentReference { AgentName = agentName }, ct: ct),
+            value => !RuntimeUris(value).Contains(uri),
+            ct);
+
+        RuntimeUris(removed).ShouldNotContain(uri);
+    }
+
+    [Fact]
     public async Task DiscoverAgentAsync_OverHttp_MapsAnUnknownAgentToTheNotFoundCode()
     {
         await using NacosContainer container =
@@ -159,6 +231,19 @@ public sealed class AgentHttpIntegrationTests
         NativeDescriptor = JsonSerializer.SerializeToElement(new { name = "planner" }),
         EndpointSourceOrder = ["RUNTIME", "DECLARED"],
     };
+
+    /// <summary>
+    /// Collects the runtime endpoint URIs a discovery reported.
+    /// </summary>
+    /// <param name="result">The discovery result.</param>
+    /// <returns>The URIs.</returns>
+    private static List<string> RuntimeUris(NacosAgentDiscoveryResult result) =>
+        [.. (result.CallInterfaces ?? [])
+            .SelectMany(callInterface => callInterface.EndpointSets ?? [])
+            .Where(set => string.Equals(set.Source, "RUNTIME", StringComparison.Ordinal))
+            .SelectMany(set => set.Endpoints ?? [])
+            .Select(endpoint => endpoint.Uri)
+            .OfType<string>()];
 
     private static NacosClientFactory CreateClient(NacosContainer container) =>
         NacosClientFactory.Create(

@@ -271,6 +271,19 @@ public sealed class NacosAgentRegistryClientTests
         var server = RadServer();
         await using NacosAIClient client = server.CreateClient(Namespaced("staging"));
 
+        // A removal has to reach the record the registration created, so the client has to own one.
+        // The manager keeps what it published rather than sending a removal for something it never
+        // registered, which is the same contract the official client has.
+        await client.Agent.RegisterEndpointsAsync(
+            new NacosAgentEndpointBatch
+            {
+                AgentName = "planner",
+                Protocol = "a2a",
+                RuntimeVersion = "build-42",
+                Endpoints = [new NacosAgentRuntimeEndpoint { Uri = "http://10.0.0.7:9000/a2a" }],
+            },
+            TestContext.Current.CancellationToken);
+
         await client.Agent.DeregisterEndpointsAsync(
             "planner", "a2a", TestContext.Current.CancellationToken);
 
