@@ -613,4 +613,12 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **有意偏离**：保护只作用于推送路径，不守卫 `GetInstancesAsync` 的直接查询。Java 把守卫放在两种来源共用的 `processServiceInfo` 里，这里分开是为了保留「直接查询始终报告服务端当前状态」的既有契约——真实撤下仍能被观察到。
 - **验收**：Release 构建零警告零错误；单元测试 **999 个全绿**（新增 3 个：记账字段从 wire 透出、保护开启时忽略空推送、保护关闭时应用空推送）；`NacosNamingClientTests` 57 个全绿；`NamingIntegrationTests` 7 个全绿（首个测试新增 `CacheMillis > 0`、`LastRefTime > 0`，证明真实服务端确实填了这两个字段）。`PublicAPI.Unshipped.txt` 新增 4 个 `NacosServiceInfo` 属性与 `PushEmptyProtection`。文档更新 `configuration.md`（`PushEmptyProtection` 行）、`protocol-notes.md`（新鲜度字段与空推送保护两段）、`java-parity.md`（P3-20 / P3-23 标记完成）。
 
+#### P3-18 · 订阅内省（✅ 已完成）
+
+- **缺口**：Java 的 `NamingService.getSubscribeServices()` 让调用方枚举本进程当前订阅了哪些服务（`InstancesChangeNotifier.getSubscribeServices` 把订阅表按 `ServiceInfo.fromKey` 报出）。本客户端没有对应入口，长生命周期进程无法在不重复订阅的前提下报告自己维持着哪些服务。
+- **公共面**：`INacosNamingClient.GetSubscribedServices()` 返回 `IReadOnlyList<NacosServiceSubscription>`；新公共记录 `NacosServiceSubscription` 只有 `Service`（`NacosServiceKey`）与 `Clusters`（可空，`null` 表示全部 cluster）。方法同步、不接受 token、不建立连接。
+- **语义**：直接读客户端自己的订阅表（与推送路径同一份状态），每个服务端订阅一条；同一服务不同 cluster 过滤是两个条目，共享同一过滤的多个消费者共用一个条目——与客户端的实际行为一致。条目在订阅迭代器越过首个 `yield` 后才出现（此时才向服务端发送 `SubscribeServiceRequest`），最后一个消费者停止枚举时消失。返回的是快照，并发打开/关闭的订阅可能出现在结果里也可能不出现。
+- **有意偏离**：Java 返回 `List<ServiceInfo>`（hosts 为空）。这里返回专门的记录，因为 `NacosServiceInfo.Instances` 为空会被读成「该服务没有实例」，而实际含义是「没有做过读」。
+- **验收**：Release 构建零警告零错误；单元测试 **1001 个全绿**（新增 2 个：报告两个订阅各自的 cluster 过滤且最后一个消费者停止后条目消失、释放后抛 `ObjectDisposedException`）；`NacosNamingClientTests` 59 个全绿；`NamingIntegrationTests` 在既有订阅测试中新增内省断言（真实容器：订阅生效后能枚举到自己，`Clusters` 为 `null`）。`FakeNamingClient` 补齐接口实现。`PublicAPI.Unshipped.txt` 新增方法、类型与其记录成员。文档更新 `java-parity.md`（P3-18 标记完成）、`protocol-notes.md`（内省只读客户端）、`quickstart.md`（枚举订阅示例）。
+
 > 阶段 2–4 的类名与 DTO 字段以 `nacos-develop`（`specs/en/ai/*`、`specs/en/lock/lock-spec.md`、`api/src/main/java`、`client/src/main/java`）为准。所有新增公共 API 同步更新 `PublicAPI.Unshipped.txt`，并补充对应文档与测试。

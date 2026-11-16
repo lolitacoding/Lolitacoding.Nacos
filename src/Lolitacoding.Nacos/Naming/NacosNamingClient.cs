@@ -366,6 +366,19 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <inheritdoc />
+    public IReadOnlyList<NacosServiceSubscription> GetSubscribedServices()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        // The dictionary holds one entry per live server-side subscription, keyed by service and
+        // cluster filter, so this is a direct read of the same state the push path walks. It is a
+        // snapshot: a subscription opened or closed concurrently may or may not appear, which is
+        // what a caller of an introspection API should expect.
+        return [.. _subscriptions.Values.Select(subscription =>
+            new NacosServiceSubscription(subscription.Service, subscription.Clusters))];
+    }
+
+    /// <inheritdoc />
     public async Task<NacosServiceListPage> GetServicesAsync(
         int pageNo = 1,
         int pageSize = 10,

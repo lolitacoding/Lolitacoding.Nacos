@@ -303,3 +303,44 @@ public sealed record NacosServiceChange
     /// <summary>Gets the new instances.</summary>
     public IReadOnlyList<NacosInstance> Instances => Service.Instances;
 }
+
+/// <summary>
+/// Describes a subscription the client currently holds.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is what <see cref="INacosNamingClient.GetSubscribedServices"/> reports. It is not a
+/// <see cref="NacosServiceInfo"/>: that type carries an instance list, and a subscription keeps
+/// none of its own — the client holds the last state per service, not per subscription, so an
+/// empty instance list here would read as "the service has no instances" rather than "no read was
+/// made". What a subscription really is, and all this record reports, is a service plus the
+/// cluster filter it was opened with.
+/// </para>
+/// <para>
+/// Two subscriptions of one service with different cluster filters are two entries, because they
+/// are two subscriptions on the server. Two consumers that share a filter share one entry, which
+/// is what the client does as well.
+/// </para>
+/// </remarks>
+public sealed record NacosServiceSubscription
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="NacosServiceSubscription"/> record.
+    /// </summary>
+    /// <param name="service">The service the subscription observes.</param>
+    /// <param name="clusters">The cluster filter, or <see langword="null"/> for every cluster.</param>
+    internal NacosServiceSubscription(NacosServiceKey service, string? clusters)
+    {
+        Service = service;
+        Clusters = clusters;
+    }
+
+    /// <summary>Gets the service the subscription observes.</summary>
+    public NacosServiceKey Service { get; }
+
+    /// <summary>
+    /// Gets the cluster filter the subscription was opened with, or <see langword="null"/> when it
+    /// observes every cluster.
+    /// </summary>
+    public string? Clusters { get; }
+}

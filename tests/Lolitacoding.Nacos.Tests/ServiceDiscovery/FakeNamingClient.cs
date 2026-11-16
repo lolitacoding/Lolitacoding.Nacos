@@ -100,6 +100,12 @@ internal sealed class FakeNamingClient : INacosNamingClient
         Task.FromResult(new NacosServiceListPage(0, []));
 
     /// <inheritdoc />
+    public IReadOnlyList<NacosServiceSubscription> GetSubscribedServices() =>
+        // The provider under test subscribes to one service at a time; introspection is not part of
+        // its contract, so the fake reports what it was given rather than tracking subscriptions.
+        [];
+
+    /// <inheritdoc />
     public async IAsyncEnumerable<NacosServiceChange> SubscribeAsync(
         NacosServiceKey service,
         string? clusters = null,

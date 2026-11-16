@@ -727,6 +727,58 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
+    public async Task GetSubscribedServices_ReportsEachLiveSubscription()
+    {
+        // The introspection the Java SDK calls getSubscribeServices(). It reads the client's own
+        // state, so it works without a connection and reports the cluster filter a subscription
+        // was opened with rather than the instances that happen to be cached.
+        using NamingHarness harness = new();
+
+        harness.Client.GetSubscribedServices().ShouldBeEmpty();
+
+        var payment = new NacosServiceKey("payment-service", "DEFAULT_GROUP");
+
+        Subscription first = await harness.SubscribeAsync(Service);
+        Subscription second = await harness.SubscribeAsync(payment, clusters: "CLUSTER-A");
+
+        try
+        {
+            // A subscription is recorded before its server-side request, but the second one's
+            // registration races with the harness returning, so wait for both to be visible.
+            await NamingHarness.WaitForAsync(
+                () => harness.Client.GetSubscribedServices().Count == 2);
+
+            IReadOnlyList<NacosServiceSubscription> subscriptions =
+                harness.Client.GetSubscribedServices();
+
+            subscriptions.Count.ShouldBe(2);
+            subscriptions.ShouldContain(s =>
+                s.Service.ServiceName == "order-service" && s.Clusters == null);
+            subscriptions.ShouldContain(s =>
+                s.Service.ServiceName == "payment-service" && s.Clusters == "CLUSTER-A");
+        }
+        finally
+        {
+            await first.DisposeAsync();
+            await second.DisposeAsync();
+        }
+
+        // The entry is removed when the last consumer stops, which is when the client sends the
+        // unsubscribe request: reporting it after that would claim a server-side subscription
+        // that no longer exists.
+        await NamingHarness.WaitForAsync(() => harness.Client.GetSubscribedServices().Count == 0);
+    }
+
+    [Fact]
+    public async Task GetSubscribedServices_ThrowsAfterDisposal()
+    {
+        using NamingHarness harness = new();
+        await harness.Client.DisposeAsync();
+
+        Should.Throw<ObjectDisposedException>(() => harness.Client.GetSubscribedServices());
+    }
+
+    [Fact]
     public async Task Subscribe_AppliesTheStateTheServerReportsWhenTheSubscriptionBecomesLive()
     {
         // The read that seeds a subscription happens before the subscription exists on the server,
@@ -1417,9 +1469,12 @@ public sealed class NacosNamingClientTests
         /// <param name="selector">
         /// The client-side filter to apply, or <see langword="null"/> for the plain subscription.
         /// </param>
+        /// <param name="clusters">The cluster filter, or <see langword="null"/> for every cluster.</param>
         /// <returns>The subscription handle.</returns>
         public async Task<Subscription> SubscribeAsync(
-            NacosServiceKey service, INacosInstanceSelector? selector = null)
+            NacosServiceKey service,
+            INacosInstanceSelector? selector = null,
+            string? clusters = null)
         {
             await _connection.ConnectAsync(TestContext.Current.CancellationToken);
 
@@ -1433,7 +1488,7 @@ public sealed class NacosNamingClientTests
                     if (selector is null)
                     {
                         await foreach (NacosServiceChange change in
-                            Client.SubscribeAsync(service, ct: cts.Token))
+                            Client.SubscribeAsync(service, clusters, cts.Token))
                         {
                             changes.Writer.TryWrite(change);
                         }

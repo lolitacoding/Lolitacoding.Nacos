@@ -227,6 +227,29 @@ public interface INacosNamingClient : IAsyncDisposable
         CancellationToken ct = default);
 
     /// <summary>
+    /// Lists the subscriptions the client currently holds.
+    /// </summary>
+    /// <returns>
+    /// One entry per subscription, ordered by nothing in particular. Empty when the client holds
+    /// none.
+    /// </returns>
+    /// <remarks>
+    /// <para>
+    /// This is the official Java SDK's <c>NamingService.getSubscribeServices()</c>. It reports what
+    /// the client is subscribed to, not what the server holds: a caller can use it to see which
+    /// services a long-lived process is keeping current, without opening a second subscription.
+    /// </para>
+    /// <para>
+    /// The list is a snapshot of the client's own state and takes no token: it neither waits for
+    /// the server nor opens a connection, so it is safe to call while a connection is down. A
+    /// subscription appears once it is live and disappears when its last consumer stops
+    /// enumerating, which is exactly the lifetime of the server-side subscription.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ObjectDisposedException">The client has been disposed.</exception>
+    IReadOnlyList<NacosServiceSubscription> GetSubscribedServices();
+
+    /// <summary>
     /// Observes the part of a service's instance list a selector keeps.
     /// </summary>
     /// <param name="service">The service to observe.</param>

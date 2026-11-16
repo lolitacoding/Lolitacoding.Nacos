@@ -126,6 +126,16 @@ await foreach (NacosServiceChange change in client.Naming.SubscribeAsync(service
 }
 ```
 
+A long-lived process can ask what it is currently subscribed to. The answer is the client's own
+subscription table, so it needs no connection and sends nothing:
+
+```csharp
+foreach (NacosServiceSubscription subscription in client.Naming.GetSubscribedServices())
+{
+    Console.WriteLine($"{subscription.Service} (clusters: {subscription.Clusters ?? "all"})");
+}
+```
+
 Optional load-balancing helpers are provided but are not wired into the client:
 
 ```csharp

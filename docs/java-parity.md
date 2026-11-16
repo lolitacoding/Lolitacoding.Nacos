@@ -393,7 +393,7 @@ implementation is `EndpointServerListProvider`.
 
 All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
 re-audit added two P2 rows, P2-16 and P2-17, and both are now closed. The P3 list is no longer closed
-by design alone: P3-11 to P3-13 remain non-goals, P3-20 and P3-23 are now closed, and P3-18, P3-19,
+by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-20 and P3-23 are now closed, and P3-19,
 P3-21 and P3-22 remain work items.
 
 ## 2026-11 re-audit against Nacos 3.3
@@ -401,15 +401,15 @@ P3-21 and P3-22 remain work items.
 The rows above were cut from the 3.2 surface. This pass re-read the same checkout at `1511b5a`
 (2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
 sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
-configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; four
-remain after the slices that followed: P3-18, P3-19, P3-21 and P3-22.
+configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; three
+remain after the slices that followed: P3-19, P3-21 and P3-22.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
 | P1-15 | AI registry over HTTP, with a per-module transport choice | `AgentTransportMode`, `nacosAiTransportMode` and its five per-module keys, `McpTransportRouter`, `PromptTransportRouter`, `AgentTransportRouter`, `AiHttpClientProxy`, endpoint publication heartbeat | **Done** — `NacosAITransportMode`, `NacosAIOptions.TransportMode`/`PromptTransportMode`/`McpTransportMode`/`AgentTransportMode`, prompts, MCP reads/releases/endpoints, and RAD agent publish/search/discover/endpoints over HTTP with the publication heartbeat (S1–S5) | A deployment whose ingress is HTTP-only cannot read or publish most AI resources, and there is no way to opt into HTTP the way Java 3.3 lets a caller do. |
 | P2-16 | A2A batch endpoint registration | `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` → `BatchAgentEndpointRequest` | **Done** — `INacosAgentCardRegistry.RegisterAgentEndpointsAsync`, log event 8051 | Publishing one agent on several transports cost a round trip each, and the set could not be replaced atomically. |
 | P2-17 | Conditional configuration read | `ConfigService.getConfig(GetConfigRequest)` with `localMd5`, `getConfigWithResult` | **Done** — `INacosConfigClient.GetConfigConditionalAsync`, `NacosConfigResult`, log event 4031 | A large configuration was re-sent on every read even when the caller already held the content. |
-| P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Missing** | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
+| P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Done** — `INacosNamingClient.GetSubscribedServices()`, `NacosServiceSubscription` | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
 | P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Missing** — the request is dropped, so the server's one-second wait expires | The console's client-metrics page reports an error for a .NET client. |
 | P3-20 | `ServiceInfo` bookkeeping fields | `cacheMillis`, `lastRefTime`, `allIPs`, `reachProtectionThreshold` | **Done** — `NacosServiceInfo.CacheMillis` / `LastRefTime` / `AllIPs` / `ReachProtectionThreshold` | No functional loss; a caller cannot tell how old a list is, or which addresses the server considered. |
 | P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Missing** — only username/password login (`NacosOptions.UserName`/`Password`); `INacosAuthProvider` exists but is internal, so there is no public hook either | An MSE or OIDC deployment cannot authenticate, and a token minted elsewhere cannot be handed to the client. |

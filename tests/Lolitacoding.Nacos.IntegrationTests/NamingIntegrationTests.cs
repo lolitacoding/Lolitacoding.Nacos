@@ -85,6 +85,15 @@ public sealed class NamingIntegrationTests
 
         enumerator.Current.Instances.ShouldContain(i => i.Port == 8081);
 
+        // The subscription is registered with the server only once the iterator has resumed past
+        // its first yield, which the push above proves has happened. Introspection reports that
+        // entry from the client's own table, without asking the server.
+        IReadOnlyList<NacosServiceSubscription> subscriptions =
+            client.Naming.GetSubscribedServices();
+
+        subscriptions.ShouldContain(s =>
+            s.Service.ServiceName == service.ServiceName && s.Clusters == null);
+
         // The subscription is effective by now, so the offline push follows the deregistration.
         await NacosEventually.PushedAsync(
             ct => client.Naming.DeregisterInstanceAsync(service, instance, ct),

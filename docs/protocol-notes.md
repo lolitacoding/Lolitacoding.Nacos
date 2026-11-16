@@ -298,6 +298,14 @@ configuration, and the protocol is a small state machine over three request type
   the plain overload's `clusters` argument is the server-side narrowing. A consumer is notified only
   when its selected view changes, and the first element is filtered the same way, so a subscription
   never starts from a list it would not deliver later.
+- **Introspection reads the client, not the server.** `GetSubscribedServices()` reports the entries
+  the client itself holds — one per live subscription, keyed by service and cluster filter — and sends
+  nothing. That is why it works while the connection is down, and why an entry appears only after the
+  subscription's iterator has resumed past its first yield: the server-side subscription is
+  registered at that point. Java's `getSubscribeServices()` reports the same table as
+  `ServiceInfo.fromKey`, with an empty host list; this client returns `NacosServiceSubscription`
+  instead, because an empty `Instances` would read as "the service has no instances" rather than
+  "no read was made".
 - **The service list is paged.** `ServiceListRequest{namespace, groupName, pageNo, pageSize}` is
   answered with `ServiceListResponse{count, serviceNames}`. `count` is the number of services in the
   group *before* paging, so a page beyond the last one returns no names and still reports the total.
