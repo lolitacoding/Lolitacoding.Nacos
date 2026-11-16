@@ -874,6 +874,25 @@ public sealed class NacosNamingOptions
     public TimeSpan FuzzyWatchResyncInterval { get; set; } = TimeSpan.FromMinutes(3);
 
     /// <summary>
+    /// Gets or sets a value indicating whether an empty or error push is refused rather than
+    /// applied.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A push whose instances are all unhealthy or all weighted to zero is treated as a likely
+    /// empty answer — the shape a control-plane hiccup takes when it loses the service state — and
+    /// the last good list is kept. This is the Java client's
+    /// <c>namingPushEmptyProtection</c>, which is off by default there; it is off by default here
+    /// too, so an existing deployment sees no change.
+    /// </para>
+    /// <para>
+    /// A direct query is never guarded: it always reports what the server currently holds, which
+    /// is how a caller can still observe a real withdrawal.
+    /// </para>
+    /// </remarks>
+    public bool PushEmptyProtection { get; set; }
+
+    /// <summary>
     /// Validates the naming options.
     /// </summary>
     /// <exception cref="NacosConfigurationException">A value is invalid.</exception>

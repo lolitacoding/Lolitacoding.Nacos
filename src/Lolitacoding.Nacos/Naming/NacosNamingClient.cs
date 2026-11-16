@@ -647,6 +647,16 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     {
         NacosServiceInfo info = Materialize(key, pushed, fromLocalCache: false);
 
+        // An empty or error push must not replace a good list when protection is on. The Java
+        // client's ServiceInfoHolder makes the same decision before it caches anything; here the
+        // guard sits before the cache write so a rejected push leaves both the memory and the
+        // disk copy of the last good list untouched.
+        if (IsEmptyOrErrorPush(pushed, _options.Naming.PushEmptyProtection))
+        {
+            NacosNamingLog.EmptyPushIgnored(_logger, key.ToString());
+            return;
+        }
+
         // The cache is refreshed on every push, so a later outage has the freshest possible list
         // even if no query was ever issued.
         _cache[key.ToString()] = info;
@@ -1035,7 +1045,48 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             info?.Hosts is null ? [] : [.. info.Hosts.Select(ToInstance)],
             info?.Clusters,
             info?.Checksum,
-            fromLocalCache);
+            fromLocalCache)
+        {
+            CacheMillis = info?.CacheMillis ?? 0,
+            LastRefTime = info?.LastRefTime ?? 0,
+            AllIPs = info?.AllIPs ?? false,
+            ReachProtectionThreshold = info?.ReachProtectionThreshold ?? false,
+        };
+
+    /// <summary>
+    /// Decides whether a pushed state is an empty or error answer that must not replace the list
+    /// the client already holds.
+    /// </summary>
+    /// <param name="info">The pushed state.</param>
+    /// <param name="pushEmptyProtection">Whether the opt-in protection is enabled.</param>
+    /// <returns><see langword="true"/> when the push should be ignored.</returns>
+    /// <remarks>
+    /// A push that carries no host list at all is always ignored, because there is nothing to
+    /// apply. The rest of the check is the opt-in part: with protection on, a push whose hosts are
+    /// all unhealthy or all weighted to zero is treated the way the server's own protection
+    /// threshold would be — as a likely empty answer rather than as a real withdrawal — and the
+    /// last good list is kept. A direct query is not guarded: it always reports what the server
+    /// says, which is the contract this client documents for a plain lookup.
+    /// </remarks>
+    private static bool IsEmptyOrErrorPush(ServiceInfo info, bool pushEmptyProtection)
+    {
+        if (info.Hosts is null)
+        {
+            return true;
+        }
+
+        if (!pushEmptyProtection)
+        {
+            return false;
+        }
+
+        if (info.AllIPs)
+        {
+            return false;
+        }
+
+        return !info.Hosts.Any(host => host.Healthy && host.Weight > 0);
+    }
 
     /// <summary>
     /// Converts a wire instance into the public model.

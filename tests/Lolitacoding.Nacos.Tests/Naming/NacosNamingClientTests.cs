@@ -534,6 +534,40 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
+    public async Task GetInstances_ReportsTheBookkeepingTheServerSent()
+    {
+        // The wire's cacheMillis, lastRefTime, allIPs and reachProtectionThreshold tell a caller
+        // how fresh the list is and whether it was served from the server's protection threshold.
+        // Dropping them leaves a caller unable to tell a protected answer from a normal one.
+        using NamingHarness harness = new(handler: request =>
+            PayloadCodec.ReadTypeName(request) == "ServiceQueryRequest"
+                ? PayloadCodec.Encode(new QueryServiceResponse
+                {
+                    ServiceInfo = new ServiceInfo
+                    {
+                        Name = "order-service",
+                        GroupName = "DEFAULT_GROUP",
+                        Checksum = "sum-1",
+                        CacheMillis = 5000,
+                        LastRefTime = 1_700_000_000_123,
+                        AllIPs = true,
+                        ReachProtectionThreshold = true,
+                        Hosts = [Host(8080)],
+                    },
+                })
+                : NamingHarness.Fallback(request));
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        NacosServiceInfo info = await harness.Client.GetInstancesAsync(
+            Service, ct: TestContext.Current.CancellationToken);
+
+        info.CacheMillis.ShouldBe(5000);
+        info.LastRefTime.ShouldBe(1_700_000_000_123);
+        info.AllIPs.ShouldBeTrue();
+        info.ReachProtectionThreshold.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task GetInstances_TreatsANonPositiveWeightAsUnweighted()
     {
         // A malformed entry must not fail the whole lookup, and a zero weight cannot be balanced.
@@ -653,6 +687,43 @@ public sealed class NacosNamingClientTests
             TestContext.Current.CancellationToken);
 
         (await subscription.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Subscribe_WithPushEmptyProtection_IgnoresAnEmptyPush()
+    {
+        // The opt-in protection is the Java client's namingPushEmptyProtection: a push whose hosts
+        // are all unhealthy or all weighted to zero is treated as a likely empty answer, so the
+        // last good list stays in place rather than being replaced by nothing.
+        using NamingHarness harness = new(pushEmptyProtection: true);
+
+        await using Subscription subscription = await harness.SubscribeAsync(Service);
+        NacosServiceChange initial = await subscription.RequireNextAsync();
+        initial.Instances.Count.ShouldBe(2);
+
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-2", ports: []),
+            TestContext.Current.CancellationToken);
+
+        (await subscription.TryNextAsync(TimeSpan.FromMilliseconds(200))).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Subscribe_WithoutPushEmptyProtection_AppliesAnEmptyPush()
+    {
+        // Off by default, so an existing deployment sees the server's word exactly as before: a
+        // service that really lost its last instance must look empty to a subscriber.
+        using NamingHarness harness = new();
+
+        await using Subscription subscription = await harness.SubscribeAsync(Service);
+        await subscription.RequireNextAsync();
+
+        await harness.Client.OnServiceChangedAsync(
+            Push(checksum: "sum-2", ports: []),
+            TestContext.Current.CancellationToken);
+
+        NacosServiceChange change = await subscription.RequireNextAsync();
+        change.Instances.ShouldBeEmpty();
     }
 
     [Fact]
@@ -1221,7 +1292,8 @@ public sealed class NacosNamingClientTests
             string @namespace = "public",
             string cluster = "DEFAULT",
             Func<Payload, Payload>? handler = null,
-            NacosServiceSnapshotStore? snapshots = null)
+            NacosServiceSnapshotStore? snapshots = null,
+            bool pushEmptyProtection = false)
         {
             Handler = handler ?? Fallback;
             Snapshots = snapshots;
@@ -1247,7 +1319,11 @@ public sealed class NacosNamingClientTests
             {
                 ServerAddresses = ["127.0.0.1:8848"],
                 Namespace = @namespace,
-                Naming = new NacosNamingOptions { DefaultCluster = cluster },
+                Naming = new NacosNamingOptions
+                {
+                    DefaultCluster = cluster,
+                    PushEmptyProtection = pushEmptyProtection,
+                },
                 Reconnect = new NacosReconnectOptions
                 {
                     InitialDelay = TimeSpan.FromMilliseconds(1),

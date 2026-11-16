@@ -279,6 +279,19 @@ configuration, and the protocol is a small state machine over three request type
   `ServiceInfoHolder.processServiceInfo` → `InstancesDiffer.doDiff` keys both lists by `ip:port`,
   compares the descriptions, and drops a push whose `lastRefTime` predates the applied state.
 - `ServiceInfo.allIps` serialises as `allIPs` (capital `IP`) on the wire.
+- **The list carries its own freshness.** A query answer and a push both fill `cacheMillis` and
+  `lastRefTime`: the server sets the latter to the moment it produced the state
+  (`ServiceStorage`/`ServiceUtil`), and the former to its push cache duration. This client exposes
+  both on `NacosServiceInfo`, together with `allIPs` and `reachProtectionThreshold`, so a caller can
+  tell a protected or stale list from a fresh one without keeping a clock of its own. A disk snapshot
+  reports zero for the timestamps because it records no server stamp.
+- **An empty push can be refused.** The Java client's `namingPushEmptyProtection` treats a push whose
+  hosts are all unhealthy or all weighted to zero as a likely empty answer and keeps the last good
+  list. `NacosNamingOptions.PushEmptyProtection` is the same opt-in switch, off by default; when it
+  is on the guard runs before the cache write, so the memory and disk copies of the last good list
+  both survive. A direct query is never guarded — it always reports what the server holds, which is
+  how a real withdrawal is still observed — and that is a deliberate difference from the Java holder,
+  which guards the shared processing step for both sources.
 - **Selectors are client-side only.** `SubscribeServiceRequest` carries nothing but `subscribe` and
   `clusters`; there is no selector field on any message. The selector overload subscribes with an
   empty cluster filter — Java's `Constants.NULL` — and narrows each pushed list on the client, while

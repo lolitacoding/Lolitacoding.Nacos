@@ -219,6 +219,43 @@ public sealed record NacosServiceInfo
     public string? Checksum { get; init; }
 
     /// <summary>
+    /// Gets how long the server considers this list fresh, in milliseconds.
+    /// </summary>
+    /// <remarks>
+    /// This is the wire's <c>cacheMillis</c>. The server sets it on a query answer and on a push;
+    /// a caller comparing it with <see cref="LastRefTime"/> can tell how old the list is without
+    /// keeping a clock of its own.
+    /// </remarks>
+    public long CacheMillis { get; init; }
+
+    /// <summary>
+    /// Gets the server timestamp, in milliseconds since the Unix epoch, of the state this list
+    /// came from. Zero when the server did not report one, as with a local snapshot.
+    /// </summary>
+    public long LastRefTime { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the list contains every instance rather than only the
+    /// healthy ones.
+    /// </summary>
+    /// <remarks>
+    /// This is the wire's <c>allIPs</c>. When it is set the server's protection threshold was
+    /// reached, so the list may include unhealthy instances that were kept to avoid an empty
+    /// answer.
+    /// </remarks>
+    public bool AllIPs { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the server reported that the service reached its
+    /// protection threshold when this list was produced.
+    /// </summary>
+    /// <remarks>
+    /// A protected list is served with whatever the server last knew rather than with an empty
+    /// one, which is what keeps a control-plane hiccup from looking like a full outage.
+    /// </remarks>
+    public bool ReachProtectionThreshold { get; init; }
+
+    /// <summary>
     /// Gets a value indicating whether the value was served from a local cache because the server
     /// was unreachable.
     /// </summary>

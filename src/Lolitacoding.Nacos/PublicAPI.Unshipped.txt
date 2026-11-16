@@ -945,6 +945,8 @@ Lolitacoding.Nacos.NacosNamingOptions.FuzzyWatchResyncInterval.set -> void
 Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.set -> void
 Lolitacoding.Nacos.NacosNamingOptions.NacosNamingOptions() -> void
+Lolitacoding.Nacos.NacosNamingOptions.PushEmptyProtection.get -> bool
+Lolitacoding.Nacos.NacosNamingOptions.PushEmptyProtection.set -> void
 Lolitacoding.Nacos.NacosOptions
 Lolitacoding.Nacos.NacosOptions.AI.get -> Lolitacoding.Nacos.NacosAIOptions!
 Lolitacoding.Nacos.NacosOptions.AI.set -> void
@@ -1100,6 +1102,10 @@ Lolitacoding.Nacos.Naming.NacosServiceChange.PreviousChecksum.get -> string?
 Lolitacoding.Nacos.Naming.NacosServiceChange.Service.get -> Lolitacoding.Nacos.Naming.NacosServiceInfo!
 Lolitacoding.Nacos.Naming.NacosServiceInfo
 Lolitacoding.Nacos.Naming.NacosServiceInfo.<Clone>$() -> Lolitacoding.Nacos.Naming.NacosServiceInfo!
+Lolitacoding.Nacos.Naming.NacosServiceInfo.AllIPs.get -> bool
+Lolitacoding.Nacos.Naming.NacosServiceInfo.AllIPs.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceInfo.CacheMillis.get -> long
+Lolitacoding.Nacos.Naming.NacosServiceInfo.CacheMillis.init -> void
 Lolitacoding.Nacos.Naming.NacosServiceInfo.Checksum.get -> string?
 Lolitacoding.Nacos.Naming.NacosServiceInfo.Checksum.init -> void
 Lolitacoding.Nacos.Naming.NacosServiceInfo.Clusters.get -> string?
@@ -1112,6 +1118,10 @@ Lolitacoding.Nacos.Naming.NacosServiceInfo.Instances.get -> System.Collections.G
 Lolitacoding.Nacos.Naming.NacosServiceInfo.Instances.init -> void
 Lolitacoding.Nacos.Naming.NacosServiceInfo.Key.get -> Lolitacoding.Nacos.Naming.NacosServiceKey!
 Lolitacoding.Nacos.Naming.NacosServiceInfo.Key.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceInfo.LastRefTime.get -> long
+Lolitacoding.Nacos.Naming.NacosServiceInfo.LastRefTime.init -> void
+Lolitacoding.Nacos.Naming.NacosServiceInfo.ReachProtectionThreshold.get -> bool
+Lolitacoding.Nacos.Naming.NacosServiceInfo.ReachProtectionThreshold.init -> void
 Lolitacoding.Nacos.Naming.NacosServiceKey
 Lolitacoding.Nacos.Naming.NacosServiceKey.<Clone>$() -> Lolitacoding.Nacos.Naming.NacosServiceKey!
 Lolitacoding.Nacos.Naming.NacosServiceKey.Equals(Lolitacoding.Nacos.Naming.NacosServiceKey? other) -> bool

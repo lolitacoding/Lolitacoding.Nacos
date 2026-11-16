@@ -35,6 +35,11 @@ public sealed class NamingIntegrationTests
 
         info.Instances.ShouldContain(i => i.Port == 8080 && i.IpAddress == "10.20.30.40");
 
+        // The server stamps every query answer with the list's freshness and the moment it produced
+        // it; a caller that cannot see those cannot tell a stale failover copy from a live answer.
+        info.CacheMillis.ShouldBeGreaterThan(0);
+        info.LastRefTime.ShouldBeGreaterThan(0);
+
         await client.Naming.DeregisterInstanceAsync(service, instance, TestContext.Current.CancellationToken);
 
         NacosServiceInfo after = await NacosEventually.BecomesAsync(

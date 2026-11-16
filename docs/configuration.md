@@ -111,6 +111,7 @@ stay invisible until the outage that needs it. The naming store reports `5010` (
 | `Ephemeral` | `bool` | `true` | Register instances as ephemeral by default. |
 | `EnableLocalCache` | `bool` | `true` | Write the last known service list to disk so a restart during an outage can still resolve it. |
 | `FuzzyWatchResyncInterval` | `TimeSpan` | 3 min | How often every naming pattern watch is re-sent so a push lost on a healthy connection is repaired. The server answers a re-sent watch with a diff, so the repetition is idempotent. Must be positive. |
+| `PushEmptyProtection` | `bool` | `false` | Refuse a push whose instances are all unhealthy or all weighted to zero rather than replacing the last good list with it. This is the Java client's `namingPushEmptyProtection`, which is off by default there and here. A direct query is never guarded: it always reports what the server currently holds, which is how a real withdrawal is still observed. |
 
 ### `NacosAIOptions`
 

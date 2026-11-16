@@ -241,4 +241,20 @@ internal static partial class NacosNamingLog
         Level = LogLevel.Information,
         Message = "Published {Count} instances of {Service} as one batch.")]
     public static partial void InstancesRegistered(ILogger logger, string service, int count);
+
+    /// <summary>
+    /// Logs that an empty or error push was ignored so the last good list stays in place.
+    /// </summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service the push was for.</param>
+    /// <remarks>
+    /// A warning because the push was refused rather than applied: an operator who enabled
+    /// <c>PushEmptyProtection</c> asked for this, but a run of these still points at a control
+    /// plane that is losing service state.
+    /// </remarks>
+    [LoggerMessage(
+        EventId = 5022,
+        Level = LogLevel.Warning,
+        Message = "Ignored an empty or error push for {Service}; the last good instance list is kept.")]
+    public static partial void EmptyPushIgnored(ILogger logger, string service);
 }
