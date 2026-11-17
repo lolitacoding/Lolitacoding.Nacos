@@ -986,6 +986,24 @@ public sealed class NacosNamingOptions
     public TimeSpan FuzzyWatchResyncInterval { get; set; } = TimeSpan.FromMinutes(3);
 
     /// <summary>
+    /// Gets or sets how often a failed registration or deregistration is retried in the background.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the official client's <c>redoDelayTime</c>, whose default is three seconds. A failure
+    /// is still reported to the caller; what the interval controls is how soon the intent is
+    /// re-asserted afterwards, so a transient server error repairs itself instead of waiting for
+    /// the next reconnect.
+    /// </para>
+    /// <para>
+    /// Subscriptions are not retried on this timer: a subscription here is a pull enumeration whose
+    /// first request failure ends the enumeration, so there is no cached intent to re-assert. A live
+    /// subscription is still re-established by the reconnect replay.
+    /// </para>
+    /// </remarks>
+    public TimeSpan RedoDelay { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
     /// Gets or sets a value indicating whether an empty or error push is refused rather than
     /// applied.
     /// </summary>
@@ -1026,6 +1044,12 @@ public sealed class NacosNamingOptions
         {
             throw new NacosConfigurationException(
                 "NacosNamingOptions.FuzzyWatchResyncInterval must be greater than zero.");
+        }
+
+        if (RedoDelay <= TimeSpan.Zero)
+        {
+            throw new NacosConfigurationException(
+                "NacosNamingOptions.RedoDelay must be greater than zero.");
         }
     }
 }

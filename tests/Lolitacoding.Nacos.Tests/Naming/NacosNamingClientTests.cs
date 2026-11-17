@@ -7,6 +7,7 @@ using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Lolitacoding.Nacos.Tests.Transport;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Lolitacoding.Nacos.Tests.Naming;
 
@@ -117,19 +118,26 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
-    public async Task RegisterInstance_WhenTheServerRejects_ForgetsTheRegistration()
+    public async Task RegisterInstance_WhenTheServerRejects_KeepsTheIntentForRedo()
     {
-        // A registration that never reached the server must not be replayed later as though it had
-        // been accepted, or a reconnect would resurrect an instance the caller was told failed.
-        using NamingHarness harness = new(handler: request =>
-            PayloadCodec.ReadTypeName(request) is "InstanceRequest" or "PersistentInstanceRequest"
-                ? PayloadCodec.Encode(new InstanceResponse
-                {
-                    ResultCode = NacosResponse.FailureCode,
-                    ErrorCode = 20005,
-                    Message = "rejected",
-                })
-                : NamingHarness.Fallback(request));
+        // The official client records the intent before sending and re-asserts it on a timer, so a
+        // transient rejection repairs itself instead of leaving the instance unregistered. The
+        // failure still reaches the caller, which may want to react now.
+        var clock = new FakeTimeProvider();
+        bool reject = true;
+
+        using NamingHarness harness = new(
+            clientClock: clock,
+            redoDelay: TimeSpan.FromSeconds(3),
+            handler: request =>
+                reject && PayloadCodec.ReadTypeName(request) == "InstanceRequest"
+                    ? PayloadCodec.Encode(new InstanceResponse
+                    {
+                        ResultCode = NacosResponse.FailureCode,
+                        ErrorCode = 20005,
+                        Message = "rejected",
+                    })
+                    : NamingHarness.Fallback(request));
 
         await harness.ConnectAsync(TestContext.Current.CancellationToken);
 
@@ -137,33 +145,37 @@ public sealed class NacosNamingClientTests
             () => harness.Client.RegisterInstanceAsync(
                 Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken));
 
-        await harness.DropAndReconnectAsync();
-
-        // Replay runs after the reconnect event rather than inside it, so give it the chance to
-        // (wrongly) resend before asserting that it did not.
-        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
-
         harness.CountRequests("InstanceRequest").ShouldBe(1);
-        harness.CountRequests("PersistentInstanceRequest").ShouldBe(0);
+
+        reject = false;
+        clock.Advance(TimeSpan.FromSeconds(3));
+
+        await NamingHarness.WaitForAsync(() => harness.CountRequests("InstanceRequest") == 2);
+
+        harness.LastRequest<InstanceRequest>().Instance!.Ip.ShouldBe("10.0.0.5");
     }
 
     [Fact]
-    public async Task RegisterInstance_WhenAReplacementIsRejected_KeepsTheEarlierRegistration()
+    public async Task RegisterInstance_WhenAReplacementIsRejected_RetriesTheReplacement()
     {
-        // The failed attempt never reached the server, so the server still holds the earlier set.
-        // Forgetting it would lose that instance at the next reconnect, when only the replay can
-        // restore what the connection took with it.
+        // The replacement is the caller's latest intent, so it is what the redo loop re-asserts.
+        // Keeping the earlier registration instead would silently undo a registration the caller
+        // can see was attempted.
+        var clock = new FakeTimeProvider();
         bool reject = false;
 
-        using NamingHarness harness = new(handler: request =>
-            reject && PayloadCodec.ReadTypeName(request) == "InstanceRequest"
-                ? PayloadCodec.Encode(new InstanceResponse
-                {
-                    ResultCode = NacosResponse.FailureCode,
-                    ErrorCode = 20005,
-                    Message = "rejected",
-                })
-                : NamingHarness.Fallback(request));
+        using NamingHarness harness = new(
+            clientClock: clock,
+            redoDelay: TimeSpan.FromSeconds(3),
+            handler: request =>
+                reject && PayloadCodec.ReadTypeName(request) == "InstanceRequest"
+                    ? PayloadCodec.Encode(new InstanceResponse
+                    {
+                        ResultCode = NacosResponse.FailureCode,
+                        ErrorCode = 20005,
+                        Message = "rejected",
+                    })
+                    : NamingHarness.Fallback(request));
 
         await harness.ConnectAsync(TestContext.Current.CancellationToken);
 
@@ -177,15 +189,11 @@ public sealed class NacosNamingClientTests
                 Service, new NacosInstance("10.0.0.6", 8081), TestContext.Current.CancellationToken));
 
         reject = false;
+        clock.Advance(TimeSpan.FromSeconds(3));
 
-        int before = harness.CountRequests("InstanceRequest");
+        await NamingHarness.WaitForAsync(() => harness.CountRequests("InstanceRequest") == 3);
 
-        await harness.DropAndReconnectAsync();
-        await NamingHarness.WaitForAsync(
-            () => harness.CountRequests("InstanceRequest") > before);
-
-        // The replay restores the set the server still has, not the attempt it refused.
-        harness.LastRequest<InstanceRequest>().Instance!.Ip.ShouldBe("10.0.0.5");
+        harness.LastRequest<InstanceRequest>().Instance!.Ip.ShouldBe("10.0.0.6");
     }
 
     [Fact]
@@ -200,6 +208,89 @@ public sealed class NacosNamingClientTests
         InstanceRequest request = harness.LastRequest<InstanceRequest>();
         request.Type.ShouldBe(InstanceRequest.DeregisterType);
         request.Instance!.Ip.ShouldBe("10.0.0.5");
+    }
+
+    [Fact]
+    public async Task DeregisterInstance_WhenTheServerRejects_RetriesTheRemoval()
+    {
+        // A failed removal is the one case where dropping the intent is actively harmful: a
+        // persistent instance would stay registered until the process exits, so the removal is
+        // re-asserted even though the failure already reached the caller.
+        var clock = new FakeTimeProvider();
+        bool reject = true;
+
+        using NamingHarness harness = new(
+            clientClock: clock,
+            redoDelay: TimeSpan.FromSeconds(3),
+            handler: request =>
+                reject && PayloadCodec.ReadTypeName(request) == "InstanceRequest"
+                    ? PayloadCodec.Encode(new InstanceResponse
+                    {
+                        ResultCode = NacosResponse.FailureCode,
+                        ErrorCode = 20005,
+                        Message = "rejected",
+                    })
+                    : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<NacosServerException>(
+            () => harness.Client.DeregisterInstanceAsync(
+                Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken));
+
+        harness.CountRequests("InstanceRequest").ShouldBe(1);
+
+        reject = false;
+        clock.Advance(TimeSpan.FromSeconds(3));
+
+        await NamingHarness.WaitForAsync(() => harness.CountRequests("InstanceRequest") == 2);
+
+        InstanceRequest request = harness.LastRequest<InstanceRequest>();
+        request.Type.ShouldBe(InstanceRequest.DeregisterType);
+        request.Instance!.Ip.ShouldBe("10.0.0.5");
+    }
+
+    [Fact]
+    public async Task RegisterInstance_SupersedesAPendingDeregistration()
+    {
+        // The caller changed their mind: the latest intent is a registration, so the retry must not
+        // remove the service afterwards.
+        var clock = new FakeTimeProvider();
+        bool reject = true;
+
+        using NamingHarness harness = new(
+            clientClock: clock,
+            redoDelay: TimeSpan.FromSeconds(3),
+            handler: request =>
+                reject && PayloadCodec.ReadTypeName(request) == "InstanceRequest"
+                    && PayloadCodec.Decode<InstanceRequest>(request)!.Type
+                        == InstanceRequest.DeregisterType
+                    ? PayloadCodec.Encode(new InstanceResponse
+                    {
+                        ResultCode = NacosResponse.FailureCode,
+                        ErrorCode = 20005,
+                        Message = "rejected",
+                    })
+                    : NamingHarness.Fallback(request));
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await Should.ThrowAsync<NacosServerException>(
+            () => harness.Client.DeregisterInstanceAsync(
+                Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken));
+
+        reject = false;
+
+        await harness.Client.RegisterInstanceAsync(
+            Service, new NacosInstance("10.0.0.5", 8080), TestContext.Current.CancellationToken);
+
+        int requests = harness.CountRequests("InstanceRequest");
+        clock.Advance(TimeSpan.FromSeconds(3));
+
+        // The redo pass must find nothing to do, so no further removal is sent.
+        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
+
+        harness.CountRequests("InstanceRequest").ShouldBe(requests);
     }
 
     [Fact]
@@ -281,17 +372,26 @@ public sealed class NacosNamingClientTests
     }
 
     [Fact]
-    public async Task RegisterInstances_WhenTheServerRejects_ForgetsTheRegistration()
+    public async Task RegisterInstances_WhenTheServerRejects_KeepsTheBatchForRedo()
     {
-        using NamingHarness harness = new(handler: request =>
-            PayloadCodec.ReadTypeName(request) == "BatchInstanceRequest"
-                ? PayloadCodec.Encode(new BatchInstanceResponse
-                {
-                    ResultCode = NacosResponse.FailureCode,
-                    ErrorCode = 20005,
-                    Message = "rejected",
-                })
-                : NamingHarness.Fallback(request));
+        // The whole batch is the caller's intent, so it is re-asserted as one request rather than
+        // dropped or split. A batch that is retried per instance would replace the published set
+        // repeatedly and could leave it half-applied.
+        var clock = new FakeTimeProvider();
+        bool reject = true;
+
+        using NamingHarness harness = new(
+            clientClock: clock,
+            redoDelay: TimeSpan.FromSeconds(3),
+            handler: request =>
+                reject && PayloadCodec.ReadTypeName(request) == "BatchInstanceRequest"
+                    ? PayloadCodec.Encode(new BatchInstanceResponse
+                    {
+                        ResultCode = NacosResponse.FailureCode,
+                        ErrorCode = 20005,
+                        Message = "rejected",
+                    })
+                    : NamingHarness.Fallback(request));
 
         await harness.ConnectAsync(TestContext.Current.CancellationToken);
 
@@ -301,13 +401,15 @@ public sealed class NacosNamingClientTests
                 [new NacosInstance("10.0.0.5", 8080), new NacosInstance("10.0.0.6", 8081)],
                 TestContext.Current.CancellationToken));
 
-        await harness.DropAndReconnectAsync();
-
-        // The replay is asynchronous, so the absence assertion needs a window in which a replay
-        // could have arrived.
-        await Task.Delay(TimeSpan.FromMilliseconds(250), TestContext.Current.CancellationToken);
-
         harness.CountRequests("BatchInstanceRequest").ShouldBe(1);
+
+        reject = false;
+        clock.Advance(TimeSpan.FromSeconds(3));
+
+        await NamingHarness.WaitForAsync(() => harness.CountRequests("BatchInstanceRequest") == 2);
+
+        harness.CountRequests("InstanceRequest").ShouldBe(0);
+        harness.LastRequest<BatchInstanceRequest>().Instances!.Count.ShouldBe(2);
     }
 
     [Fact]
@@ -1345,7 +1447,9 @@ public sealed class NacosNamingClientTests
             string cluster = "DEFAULT",
             Func<Payload, Payload>? handler = null,
             NacosServiceSnapshotStore? snapshots = null,
-            bool pushEmptyProtection = false)
+            bool pushEmptyProtection = false,
+            TimeProvider? clientClock = null,
+            TimeSpan? redoDelay = null)
         {
             Handler = handler ?? Fallback;
             Snapshots = snapshots;
@@ -1375,6 +1479,7 @@ public sealed class NacosNamingClientTests
                 {
                     DefaultCluster = cluster,
                     PushEmptyProtection = pushEmptyProtection,
+                    RedoDelay = redoDelay ?? TimeSpan.FromSeconds(3),
                 },
                 Reconnect = new NacosReconnectOptions
                 {
@@ -1394,7 +1499,7 @@ public sealed class NacosNamingClientTests
                 new Random(1234));
 
             Client = new NacosNamingClient(
-                options, _connection, TimeProvider.System, NullLogger<NacosNamingClient>.Instance, Snapshots);
+                options, _connection, clientClock ?? TimeProvider.System, NullLogger<NacosNamingClient>.Instance, Snapshots);
         }
 
         /// <summary>Gets or sets the request handler, so a test can change behaviour midway.</summary>

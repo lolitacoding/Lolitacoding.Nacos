@@ -950,6 +950,8 @@ Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.set -> void
 Lolitacoding.Nacos.NacosNamingOptions.NacosNamingOptions() -> void
 Lolitacoding.Nacos.NacosNamingOptions.PushEmptyProtection.get -> bool
 Lolitacoding.Nacos.NacosNamingOptions.PushEmptyProtection.set -> void
+Lolitacoding.Nacos.NacosNamingOptions.RedoDelay.get -> System.TimeSpan
+Lolitacoding.Nacos.NacosNamingOptions.RedoDelay.set -> void
 Lolitacoding.Nacos.NacosOidcOptions
 Lolitacoding.Nacos.NacosOidcOptions.ClientId.get -> string?
 Lolitacoding.Nacos.NacosOidcOptions.ClientId.set -> void

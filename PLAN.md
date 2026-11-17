@@ -628,6 +628,14 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **S3 限制（有意不覆盖）**：不实现 STS 凭据发现（`ramRoleName` / 凭据文件），需要时由调用方以 `INacosAuthProvider` 提供；AI registry 的 HTTP 传输不在签名范围内，只有 gRPC 被装饰。
 - **验收（S3）**：Release 全量构建零警告零错误；新增 `NacosRamAuthProviderTests` 16 个（config 三种资源形态、naming 分组/已分组/空服务、lock 仅 ak、内部请求不签名、AI 自带与默认 namespace、v4 config/naming/AI、token 为 null、Invalidate/Dispose 安全、重复签名替换头），全部以固定时钟 `2024-01-01T00:00:00Z` 的预计算向量断言；工厂选择 2 个（RAM 选中、空服务器列表也可用）；`Validate()` 的 RAM 校验与互斥 7 个；传输层 1 个（RAM 头被附加且无 `accessToken`）。`PublicAPI.Unshipped.txt` 新增 `NacosOptions.Ram`（2 行）与 `NacosRamOptions`（7 行）。文档更新 `configuration.md`（`Ram` 行、`NacosRamOptions` 表、Authentication 段与限制）、`java-parity.md`（P3-21 标记 Done，记录 STS 与 AI HTTP 限制）。集成测试限制：固定镜像 `nacos/nacos-server:v3.0.2` 不含 RAM 服务端校验，签名契约由单测向量覆盖。
 
+#### P3-22 · redo 队列（✅ 已完成）
+
+- **缺口**：Java 的 `client/redo` 把注册、订阅与 AI 发布的失败意图缓存下来，由 `RedoScheduledTask` 每 3 秒（`DEFAULT_REDO_DELAY_TIME`）重试，短暂的服务端错误不会让调用方永久失去注册。本客户端此前在失败时回滚意图，只在重连时重放，因此一次瞬时失败必须由调用方自己重试。
+- **实现**：`NacosNamingClient` 改为记录意图后重试。注册（单实例、批量、批量裁剪后的剩余集合）失败时不再回滚，最新的 `Registration` 保持 `Confirmed = false`，由 redo 定时器重发；注销失败时把目标放入 `_pendingDeregistrations`，由同一定时器重发。新增 `NacosNamingOptions.RedoDelay`（默认 3 秒，必须为正），对应 Java 的 `redoDelayTime`。一次 redo pass 用 `Interlocked` 防重入，断连时直接跳过（重连重放已覆盖该情形），逐项只捕获 `NacosException`，避免一个坏服务阻断其他项；空闲时停止定时器，`DisposeAsync` 清理定时器与两个待办表。日志事件 5023 `RegistrationRedone`、5024 `DeregistrationRedone`、5025 `RedoFailed`。
+- **语义变化**：失败仍向调用方抛出——调用方需要立刻知道，而重试只是把意图保留下来。旧语义「注册失败即遗忘、替换失败保留上一份」被有意替换为「最新意图优先并被重试」，旧的两个测试随之改写。新注册会清除同一服务的待重试注销，最新意图生效。
+- **有意偏离**：订阅不做 redo。这里的订阅是拉取式枚举，首个请求失败即结束枚举，没有可缓存的意图供定时器重发；活着的订阅仍由重连重放恢复。AI 发布同样没有 redo 记录，因为发布是调用方 await 的请求而非已登记意图。
+- **验收**：Release 全量构建零警告零错误；单元测试 **1071 个全绿**（新增/改写 5 个：单实例注册失败后 redo 成功、替换注册失败后重发替换、批量注册失败后整批重发、注销失败后重试成功、新注册取代待重试注销；另加 `RedoDelay` 非正校验 1 个）。`PublicAPI.Unshipped.txt` 新增 `NacosNamingOptions.RedoDelay`（2 行）。文档更新 `configuration.md`（`RedoDelay` 行）、`java-parity.md`（P3-22 标记 Done，记录订阅与 AI 发布的偏离）。
+
 #### P3-19 · 客户端配置指标（✅ 已完成）
 
 - **缺口**：`MetricsControllerV3.getClientMetrics`（`GET /v3/admin/cs/metrics/ip`）向该 IP 的**每条**连接发 `ClientConfigMetricRequest`，每条只等 1 秒；任一连接不回应，整个管理调用就 500。Java 的 `ClientWorker.getMetrics` 从 `cacheMap` 与快照应答；本客户端把不认识的推送丢弃并记日志，控制台的客户端指标页因此对 .NET 客户端报错。

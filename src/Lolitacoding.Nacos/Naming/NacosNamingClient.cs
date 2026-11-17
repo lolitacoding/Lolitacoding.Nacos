@@ -46,6 +46,12 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     /// <summary>Instances this client registered, keyed by service and endpoint.</summary>
     private readonly ConcurrentDictionary<string, Registration> _registrations = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Deregistrations that failed and must be retried, keyed by service.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, PendingDeregistration> _pendingDeregistrations =
+        new(StringComparer.Ordinal);
+
     /// <summary>Subscriptions this client holds, keyed by service and cluster filter.</summary>
     private readonly ConcurrentDictionary<string, Subscription> _subscriptions = new(StringComparer.Ordinal);
 
@@ -69,6 +75,15 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     /// Re-sends every watch periodically, or <see langword="null"/> until the first watch is opened.
     /// </summary>
     private ITimer? _serviceWatchResyncTimer;
+
+    /// <summary>
+    /// Retries failed registrations and deregistrations periodically, or <see langword="null"/>
+    /// until the first failure is recorded.
+    /// </summary>
+    private ITimer? _redoRegistrationsTimer;
+
+    /// <summary>Prevents two redo passes from overlapping when one outlives the interval.</summary>
+    private int _redoRunning;
 
     private bool _disposed;
 
@@ -124,11 +139,13 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         NacosServiceKey resolved = service.WithDefaultNamespace(_options.Namespace);
         NacosInstance resolvedInstance = ApplyDefaultCluster(instance);
 
+        // A registration supersedes a deregistration still waiting to be retried for this service.
+        _pendingDeregistrations.TryRemove(resolved.ToString(), out _);
+
         // The registration is recorded before it is sent, so a reconnect that races the first
         // attempt still finds it and replays it. The key is the service, not the endpoint: the
         // server keeps one published instance set per service per connection, so a new
         // registration supersedes the previous one for replay as well.
-        _registrations.TryGetValue(resolved.ToString(), out Registration? previous);
         var registration = new Registration(resolved, [resolvedInstance], isBatch: false);
         _registrations[resolved.ToString()] = registration;
 
@@ -139,9 +156,10 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         }
         catch
         {
-            // The registration never reached the server, so it must not be replayed later as
-            // though it had been accepted; the set the server still holds is the one to keep.
-            Revert(resolved, registration, previous);
+            // The intent stays recorded, unconfirmed, so the redo loop re-asserts it in the
+            // background. The failure still reaches the caller, which may want to react now rather
+            // than wait for the retry.
+            StartRedo();
             throw;
         }
 
@@ -190,7 +208,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         }
 
         var registration = new Registration(resolved, resolvedInstances, isBatch: true);
-        _registrations.TryGetValue(resolved.ToString(), out Registration? previous);
+        _pendingDeregistrations.TryRemove(resolved.ToString(), out _);
         _registrations[resolved.ToString()] = registration;
 
         try
@@ -200,7 +218,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         }
         catch
         {
-            Revert(resolved, registration, previous);
+            StartRedo();
             throw;
         }
 
@@ -225,6 +243,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         // endpoint.
         _registrations.TryRemove(resolved.ToString(), out _);
 
+        var pending = new PendingDeregistration(resolved, resolvedInstance);
         var request = new InstanceRequest
         {
             Namespace = resolved.Namespace,
@@ -234,7 +253,21 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             Instance = ToWireInstance(resolved, resolvedInstance),
         };
 
-        await _connection.RequestAsync<InstanceResponse>(request, ct).ConfigureAwait(false);
+        try
+        {
+            await _connection.RequestAsync<InstanceResponse>(request, ct).ConfigureAwait(false);
+
+            // Whatever was queued for this service is now obsolete: the removal has happened.
+            _pendingDeregistrations.TryRemove(resolved.ToString(), out _);
+        }
+        catch
+        {
+            // The removal is retried in the background, so a transient failure does not leave a
+            // persistent instance registered until the process exits.
+            _pendingDeregistrations[resolved.ToString()] = pending;
+            StartRedo();
+            throw;
+        }
 
         NacosNamingLog.InstanceDeregistered(
             _logger, resolved.ToString(), resolvedInstance.Endpoint);
@@ -291,16 +324,28 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
             // the same server state without a lingering empty published set, so it is preferred.
             _registrations.TryRemove(resolved.ToString(), out _);
 
+            NacosInstance last = ApplyDefaultCluster(instances[0]);
+            var pending = new PendingDeregistration(resolved, last);
             var request = new InstanceRequest
             {
                 Namespace = resolved.Namespace,
                 ServiceName = resolved.ServiceName,
                 GroupName = resolved.GroupName,
                 Type = InstanceRequest.DeregisterType,
-                Instance = ToWireInstance(resolved, ApplyDefaultCluster(instances[0])),
+                Instance = ToWireInstance(resolved, last),
             };
 
-            await _connection.RequestAsync<InstanceResponse>(request, ct).ConfigureAwait(false);
+            try
+            {
+                await _connection.RequestAsync<InstanceResponse>(request, ct).ConfigureAwait(false);
+                _pendingDeregistrations.TryRemove(resolved.ToString(), out _);
+            }
+            catch
+            {
+                _pendingDeregistrations[resolved.ToString()] = pending;
+                StartRedo();
+                throw;
+            }
 
             NacosNamingLog.InstanceDeregistered(_logger, resolved.ToString(), instances[0].Endpoint);
             return;
@@ -308,8 +353,8 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 
         // The remainder replaces the tracked batch before it is sent, so a reconnect that races the
         // attempt replays the set the caller asked for rather than the one being replaced.
-        _registrations.TryGetValue(resolved.ToString(), out Registration? previous);
         var replacement = new Registration(resolved, remainder, isBatch: true);
+        _pendingDeregistrations.TryRemove(resolved.ToString(), out _);
         _registrations[resolved.ToString()] = replacement;
 
         try
@@ -319,7 +364,7 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
         }
         catch
         {
-            Revert(resolved, replacement, previous);
+            StartRedo();
             throw;
         }
 
@@ -565,7 +610,11 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
 
         _subscriptions.Clear();
         _registrations.Clear();
+        _pendingDeregistrations.Clear();
         _cache.Clear();
+
+        _redoRegistrationsTimer?.Dispose();
+        _redoRegistrationsTimer = null;
 
         // A fuzzy watch subscription is ended by completing its channel rather than by dropping it:
         // a consumer awaiting the next event would otherwise stay parked until its own token was
@@ -1824,36 +1873,175 @@ internal sealed class NacosNamingClient : INacosNamingClient, IDisposable
     }
 
     /// <summary>
-    /// Undoes a registration whose send failed, unless a later call for the same service has
-    /// replaced it.
+    /// Starts the timer that retries failed registrations and deregistrations.
     /// </summary>
-    /// <param name="service">The service the registration belongs to.</param>
-    /// <param name="failed">The registration whose send failed.</param>
-    /// <param name="previous">
-    /// The registration the failed attempt replaced, or <see langword="null"/> when the service had
-    /// none.
-    /// </param>
-    /// <remarks>
-    /// The failed attempt never reached the server, so the set the server still holds is the one to
-    /// replay: forgetting it would silently drop an instance the next reconnect should restore.
-    /// </remarks>
-    private void Revert(NacosServiceKey service, Registration failed, Registration? previous)
+    private void StartRedo()
     {
-        // Revert only if the map still holds the failed attempt: a concurrent registration for the
-        // same service replaced the entry and owns it now.
-        if (previous is null)
+        TimeSpan interval = _options.Naming.RedoDelay;
+
+        _redoRegistrationsTimer ??= _timeProvider.CreateTimer(
+            static state => ((NacosNamingClient)state!).OnRedoTimer(),
+            this,
+            Timeout.InfiniteTimeSpan,
+            Timeout.InfiniteTimeSpan);
+
+        _redoRegistrationsTimer.Change(interval, interval);
+    }
+
+    /// <summary>
+    /// Stops the redo timer once there is nothing left to retry.
+    /// </summary>
+    private void StopRedoIfIdle()
+    {
+        if (_pendingDeregistrations.IsEmpty && !_registrations.Values.Any(r => !r.Confirmed))
         {
-            ((ICollection<KeyValuePair<string, Registration>>)_registrations)
-                .Remove(new KeyValuePair<string, Registration>(service.ToString(), failed));
+            _redoRegistrationsTimer?.Change(Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan);
         }
-        else
+    }
+
+    /// <summary>
+    /// Runs one redo pass without blocking the timer callback.
+    /// </summary>
+    private void OnRedoTimer() => _ = RedoPendingAsync();
+
+    /// <summary>
+    /// Re-asserts every registration and deregistration that has not been acknowledged.
+    /// </summary>
+    /// <returns>A task that completes once one pass finished.</returns>
+    /// <remarks>
+    /// The official client's <c>RedoScheduledTask</c>. A pass is skipped while the transport is
+    /// disconnected, because the reconnect replay is the mechanism for that case; this exists for a
+    /// transient failure that leaves the connection looking healthy. Only <see cref="NacosException"/>
+    /// is handled per item: one service that cannot be repaired must not stop the others.
+    /// </remarks>
+    private async Task RedoPendingAsync()
+    {
+        if (_disposed || Interlocked.CompareExchange(ref _redoRunning, 1, 0) != 0)
         {
-            _registrations.TryUpdate(service.ToString(), previous, failed);
+            return;
         }
+
+        try
+        {
+            if (_connection.State != NacosTransportState.Connected)
+            {
+                return;
+            }
+
+            foreach (PendingDeregistration pending in _pendingDeregistrations.Values)
+            {
+                try
+                {
+                    await SendDeregistrationAsync(pending.Service, pending.Instance, isRedo: true, CancellationToken.None)
+                        .ConfigureAwait(false);
+
+                    RemovePendingDeregistration(pending.Service.ToString(), pending);
+                    NacosNamingLog.DeregistrationRedone(_logger, pending.Service.ToString());
+                }
+                catch (NacosException ex)
+                {
+                    NacosNamingLog.RedoFailed(_logger, pending.Service.ToString(), ex.Message);
+                }
+            }
+
+            foreach (Registration registration in _registrations.Values)
+            {
+                if (registration.Confirmed)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await SendRegistrationAsync(registration, isReplay: true, CancellationToken.None)
+                        .ConfigureAwait(false);
+
+                    registration.Confirmed = true;
+                    NacosNamingLog.RegistrationRedone(_logger, registration.Service.ToString());
+                }
+                catch (NacosException ex)
+                {
+                    NacosNamingLog.RedoFailed(_logger, registration.Service.ToString(), ex.Message);
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // A timer callback has no caller to report to; an escaping exception would be
+            // unobserved and could take the process down on finalisation.
+            NacosNamingLog.RedoFailed(_logger, "<all>", ex.Message);
+        }
+        finally
+        {
+            Volatile.Write(ref _redoRunning, 0);
+            StopRedoIfIdle();
+        }
+    }
+
+    /// <summary>
+    /// Sends a deregistration and waits for the acknowledgement.
+    /// </summary>
+    /// <param name="service">The resolved service key.</param>
+    /// <param name="instance">The instance to remove.</param>
+    /// <param name="isRedo">Whether this is a background retry.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>A task that completes once the server acknowledged the removal.</returns>
+    private async Task SendDeregistrationAsync(
+        NacosServiceKey service,
+        NacosInstance instance,
+        bool isRedo,
+        CancellationToken ct)
+    {
+        var request = new InstanceRequest
+        {
+            Namespace = service.Namespace,
+            ServiceName = service.ServiceName,
+            GroupName = service.GroupName,
+            Type = InstanceRequest.DeregisterType,
+            Instance = ToWireInstance(service, instance),
+        };
+
+        if (isRedo)
+        {
+            request.SetHeader("replay", "true");
+        }
+
+        await _connection.RequestAsync<InstanceResponse>(request, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes a pending deregistration only when it is still the one that was just sent.
+    /// </summary>
+    /// <param name="key">The service key.</param>
+    /// <param name="pending">The entry that succeeded.</param>
+    private void RemovePendingDeregistration(string key, PendingDeregistration pending)
+    {
+        ((ICollection<KeyValuePair<string, PendingDeregistration>>)_pendingDeregistrations)
+            .Remove(new KeyValuePair<string, PendingDeregistration>(key, pending));
     }
 
     private static string SubscriptionId(NacosServiceKey service, string? clusters) =>
         string.Concat(service.ToString(), "|", clusters ?? string.Empty);
+
+    /// <summary>A deregistration this client still owes the server.</summary>
+    /// <remarks>
+    /// Only a removal that leaves no instance behind is retried this way. Removing part of a batch
+    /// is sent as a fresh registration of the remainder, so it is tracked as a registration.
+    /// </remarks>
+    private sealed class PendingDeregistration
+    {
+        public PendingDeregistration(NacosServiceKey service, NacosInstance instance)
+        {
+            Service = service;
+            Instance = instance;
+        }
+
+        /// <summary>Gets the service the instance belonged to.</summary>
+        public NacosServiceKey Service { get; }
+
+        /// <summary>Gets the instance to remove.</summary>
+        public NacosInstance Instance { get; }
+    }
 
     /// <summary>A registration this client owns and must replay after a reconnect.</summary>
     /// <remarks>

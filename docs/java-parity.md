@@ -393,16 +393,15 @@ implementation is `EndpointServerListProvider`.
 
 All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
 re-audit added two P2 rows, P2-16 and P2-17, and both are now closed. The P3 list is no longer closed
-by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-19, P3-20, P3-21 and P3-23 are now
-closed, and P3-22 is still a work item.
+by design alone: P3-11 to P3-13 remain non-goals and P3-18 to P3-23 are now closed.
 
 ## 2026-11 re-audit against Nacos 3.3
 
 The rows above were cut from the 3.2 surface. This pass re-read the same checkout at `1511b5a`
 (2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
 sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
-configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; one
-remains after the slices that followed, P3-22.
+configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found, and all
+seven are now closed.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
@@ -413,7 +412,7 @@ remains after the slices that followed, P3-22.
 | P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Done** — the client answers the server's request from its listener table and snapshot store; no public API is involved | The console's client-metrics page reported an error for a .NET client; it now shows its listener count, version, snapshot directory and the requested cache/snapshot entries. |
 | P3-20 | `ServiceInfo` bookkeeping fields | `cacheMillis`, `lastRefTime`, `allIPs`, `reachProtectionThreshold` | **Done** — `NacosServiceInfo.CacheMillis` / `LastRefTime` / `AllIPs` / `ReachProtectionThreshold` | No functional loss; a caller cannot tell how old a list is, or which addresses the server considered. |
 | P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Done** — `NacosOptions.AccessToken`, a public `INacosAuthProvider`, OIDC through `NacosOptions.Oidc`, and static AccessKey/SecretKey signing through `NacosOptions.Ram`; STS credential discovery and AI HTTP signing are documented limits | An MSE or OIDC deployment can authenticate, and a token minted elsewhere can be handed to the client. |
-| P3-22 | Redo queue for failed registrations and subscriptions | `client/redo` (`RedoService`, `NamingRedoService`, the AI redo hooks) | **Missing** — a failure reaches the caller and only a reconnect replays | A caller must retry a transient failure; Java retries it in the background. |
+| P3-22 | Redo queue for failed registrations and subscriptions | `client/redo` (`RedoService`, `NamingRedoService`, the AI redo hooks) | **Done** — naming registrations and deregistrations are retried through `NacosNamingOptions.RedoDelay`, log events 5023–5025; subscriptions and AI publication are documented deviations | A transient failure still reaches the caller, but the intent is repaired in the background instead of waiting for the next reconnect. |
 | P3-23 | Empty-push protection | `namingPushEmptyProtection` | **Done** — `NacosNamingOptions.PushEmptyProtection`, log event 5022 | Opt-in robustness for a failover-cache race; off by default in Java. |
 
 ### P1-15: AI registry over HTTP
@@ -660,10 +659,19 @@ unit vectors rather than an end-to-end container test.
 ### P3-22: redo
 
 Java's `client/redo` package keeps a `RedoService` that retries a failed registration, subscription
-or AI publication in the background with a backoff, so a transient server error does not reach the
-caller. Here a failure reaches the caller, and the client replays only on reconnect. That is a
-defensible .NET choice — a task that throws is easier to reason about than one that silently retries
-— but it is a difference, and it is why the AI publication state has no redo entry to restore.
+or AI publication in the background with a backoff. This client now does the same for naming
+registrations and deregistrations, through `NacosNamingOptions.RedoDelay` (the official
+`redoDelayTime`, three seconds). A failed registration keeps the intent it recorded and a failed
+deregistration is queued, and both are re-asserted on a timer. The failure still reaches the caller,
+so a task that throws stays easier to reason about than one that silently retries: what the redo loop
+adds is that the intent is not lost. A pass is skipped while the transport is disconnected, because
+the reconnect replay already covers that case.
+
+Two parts of the Java feature are deliberately not reproduced. Subscriptions are not retried,
+because a subscription here is a pull enumeration: its first request failure ends the enumeration,
+so there is no cached intent a timer could re-assert. And the AI publication state has no redo
+entry, because publishing there is a request the caller awaits rather than a registered intent; the
+reconnect replay still restores what the connection took with it.
 
 ### P3-23: empty-push protection
 

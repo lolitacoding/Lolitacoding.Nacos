@@ -280,6 +280,16 @@ public sealed class NacosServiceWatchTests
     }
 
     [Fact]
+    public void Options_RejectANonPositiveRedoDelay()
+    {
+        // The delay is the retry period for a failed registration, so zero or negative would either
+        // spin the timer or leave the retry disabled while the caller was told the intent is kept.
+        var options = new NacosNamingOptions { RedoDelay = TimeSpan.Zero };
+
+        Should.Throw<NacosConfigurationException>(options.Validate);
+    }
+
+    [Fact]
     public async Task Watch_SeedsALateSubscriberFromTheSetAlreadyKnown()
     {
         await using WatchHarness harness = new();

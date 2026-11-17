@@ -257,4 +257,32 @@ internal static partial class NacosNamingLog
         Level = LogLevel.Warning,
         Message = "Ignored an empty or error push for {Service}; the last good instance list is kept.")]
     public static partial void EmptyPushIgnored(ILogger logger, string service);
+
+    /// <summary>Logs that a failed registration was re-sent successfully.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service that was registered.</param>
+    [LoggerMessage(
+        EventId = 5023,
+        Level = LogLevel.Information,
+        Message = "Re-registered {Service} after an earlier registration failed.")]
+    public static partial void RegistrationRedone(ILogger logger, string service);
+
+    /// <summary>Logs that a failed deregistration was re-sent successfully.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service the instance was removed from.</param>
+    [LoggerMessage(
+        EventId = 5024,
+        Level = LogLevel.Information,
+        Message = "Completed the deregistration of {Service} after an earlier attempt failed.")]
+    public static partial void DeregistrationRedone(ILogger logger, string service);
+
+    /// <summary>Logs that a redo attempt failed and will be retried on the next tick.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="service">The service the attempt was for, or <c>&lt;all&gt;</c>.</param>
+    /// <param name="reason">The failure.</param>
+    [LoggerMessage(
+        EventId = 5025,
+        Level = LogLevel.Warning,
+        Message = "A Nacos naming redo attempt for {Service} failed and will be retried: {Reason}")]
+    public static partial void RedoFailed(ILogger logger, string service, string reason);
 }
