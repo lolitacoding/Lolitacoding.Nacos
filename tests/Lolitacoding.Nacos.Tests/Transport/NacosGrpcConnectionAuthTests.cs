@@ -259,6 +259,41 @@ public sealed class NacosGrpcConnectionAuthTests
         provider.InvalidateCount.ShouldBe(0);
     }
 
+    [Fact]
+    public async Task RequestAsync_AttachesRamSignatureHeadersInsteadOfAToken()
+    {
+        // RAM has no token: the transport asks for one, gets null, and then lets the provider
+        // decorate the request with the signature the server verifies.
+        Payload? captured = null;
+        using var provider = new NacosRamAuthProvider(
+            new NacosRamOptions { AccessKey = "the-ak", SecretKey = "the-sk" },
+            TimeProvider.System,
+            "public");
+
+        await using NacosGrpcConnection connection = CreateConnection(
+            request =>
+            {
+                if (PayloadCodec.ReadTypeName(request) == "ServerCheckRequest")
+                {
+                    return FakeServerCheck.Responding()(request);
+                }
+
+                captured = request;
+                return PayloadCodec.Encode(new ConfigQueryResponse { Content = "ok" });
+            },
+            provider);
+
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+        await connection.RequestAsync<ConfigQueryResponse>(
+            new ConfigQueryRequest { DataId = "a", Group = "g" },
+            TestContext.Current.CancellationToken);
+
+        captured.ShouldNotBeNull();
+        captured.Metadata.Headers["Spas-AccessKey"].ShouldBe("the-ak");
+        captured.Metadata.Headers["Spas-Signature"].ShouldNotBeNullOrEmpty();
+        captured.Metadata.Headers.ShouldNotContainKey("accessToken");
+    }
+
     private static NacosGrpcConnection CreateConnection(
         Func<Payload, Payload> responder,
         INacosAuthProvider? authProvider)

@@ -168,6 +168,49 @@ public sealed class NacosAuthProviderFactoryTests
     }
 
     [Fact]
+    public void Create_ReturnsARamProviderWhenRamIsConfigured()
+    {
+        NacosOptions options = new()
+        {
+            Ram = new NacosRamOptions
+            {
+                AccessKey = "the-ak",
+                SecretKey = "the-sk",
+            },
+            ServerAddresses = [Server.Original],
+        };
+
+        INacosAuthProvider provider = Create(options);
+
+        provider.ShouldBeOfType<NacosRamAuthProvider>();
+    }
+
+    [Fact]
+    public void Create_DoesNotNeedAServerForRam()
+    {
+        // RAM signs with the access key rather than logging in, so an empty server list is not a
+        // reason to refuse the provider the way it is for a login.
+        NacosOptions options = new()
+        {
+            Ram = new NacosRamOptions
+            {
+                AccessKey = "the-ak",
+                SecretKey = "the-sk",
+            },
+        };
+
+        INacosAuthProvider provider = NacosAuthProviderFactory.Create(
+            options,
+            [],
+            new HttpClient(),
+            TimeProvider.System,
+            NullLogger.Instance,
+            new Random(1234));
+
+        provider.ShouldBeOfType<NacosRamAuthProvider>();
+    }
+
+    [Fact]
     public async Task AnonymousProvider_NeverReturnsAToken()
     {
         string? token = await AnonymousNacosAuthProvider.Instance

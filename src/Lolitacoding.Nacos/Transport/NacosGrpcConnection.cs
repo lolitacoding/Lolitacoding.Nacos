@@ -377,6 +377,13 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
                 // the header is cleared rather than left to be re-sent.
                 request.RemoveHeader(ProtocolHeaders.AccessToken);
             }
+
+            if (_authProvider is INacosRequestMetadataProvider metadataProvider)
+            {
+                // RAM signing covers a resource string and a timestamp, so it is recomputed for
+                // every attempt rather than cached like a token.
+                metadataProvider.ApplyRequestMetadata(request);
+            }
         }
 
         INacosChannel channel = await ResolveChannelAsync(ct).ConfigureAwait(false);

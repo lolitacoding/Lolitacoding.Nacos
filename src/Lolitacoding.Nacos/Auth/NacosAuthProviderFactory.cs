@@ -25,8 +25,9 @@ internal static class NacosAuthProviderFactory
     /// <param name="random">The random source used to pick the token refresh window.</param>
     /// <returns>
     /// The caller's provider when one is configured, a static provider when a pre-issued token is
-    /// set, an OpenID Connect provider when OIDC is configured, a logging-in provider when
-    /// credentials are configured, otherwise the stateless anonymous provider.
+    /// set, an OpenID Connect provider when OIDC is configured, a RAM signer when RAM is
+    /// configured, a logging-in provider when credentials are configured, otherwise the stateless
+    /// anonymous provider.
     /// </returns>
     public static INacosAuthProvider Create(
         NacosOptions options,
@@ -60,6 +61,13 @@ internal static class NacosAuthProviderFactory
             // OpenID Connect mints the token at the identity provider, so the Nacos server list
             // plays no part in authentication.
             return new NacosOidcAuthProvider(options.Oidc, httpClient, timeProvider, logger, random);
+        }
+
+        if (options.Ram is not null)
+        {
+            // RAM signs each request with the access key, so there is no token to obtain and no
+            // server list to obtain it from.
+            return new NacosRamAuthProvider(options.Ram, timeProvider, options.Namespace);
         }
 
         if (!options.HasCredentials)

@@ -1008,6 +1008,8 @@ Lolitacoding.Nacos.NacosOptions.Optional.get -> bool
 Lolitacoding.Nacos.NacosOptions.Optional.set -> void
 Lolitacoding.Nacos.NacosOptions.Password.get -> string?
 Lolitacoding.Nacos.NacosOptions.Password.set -> void
+Lolitacoding.Nacos.NacosOptions.Ram.get -> Lolitacoding.Nacos.NacosRamOptions?
+Lolitacoding.Nacos.NacosOptions.Ram.set -> void
 Lolitacoding.Nacos.NacosOptions.Reconnect.get -> Lolitacoding.Nacos.NacosReconnectOptions!
 Lolitacoding.Nacos.NacosOptions.Reconnect.set -> void
 Lolitacoding.Nacos.NacosOptions.RequestTimeout.get -> System.TimeSpan
@@ -1021,6 +1023,14 @@ Lolitacoding.Nacos.NacosOptions.UserName.set -> void
 Lolitacoding.Nacos.NacosOptionsValidator
 Lolitacoding.Nacos.NacosOptionsValidator.NacosOptionsValidator() -> void
 Lolitacoding.Nacos.NacosOptionsValidator.Validate(string? name, Lolitacoding.Nacos.NacosOptions! options) -> Microsoft.Extensions.Options.ValidateOptionsResult!
+Lolitacoding.Nacos.NacosRamOptions
+Lolitacoding.Nacos.NacosRamOptions.AccessKey.get -> string?
+Lolitacoding.Nacos.NacosRamOptions.AccessKey.set -> void
+Lolitacoding.Nacos.NacosRamOptions.NacosRamOptions() -> void
+Lolitacoding.Nacos.NacosRamOptions.SecretKey.get -> string?
+Lolitacoding.Nacos.NacosRamOptions.SecretKey.set -> void
+Lolitacoding.Nacos.NacosRamOptions.SignatureRegionId.get -> string?
+Lolitacoding.Nacos.NacosRamOptions.SignatureRegionId.set -> void
 Lolitacoding.Nacos.NacosReconnectOptions
 Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosReconnectOptions.InitialDelay.set -> void

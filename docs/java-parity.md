@@ -393,17 +393,16 @@ implementation is `EndpointServerListProvider`.
 
 All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
 re-audit added two P2 rows, P2-16 and P2-17, and both are now closed. The P3 list is no longer closed
-by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-19, P3-20 and P3-23 are now closed,
-P3-21 is nearly done (the pre-issued token, the public provider and OIDC; RAM remains), and P3-22
-is still a work item.
+by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-19, P3-20, P3-21 and P3-23 are now
+closed, and P3-22 is still a work item.
 
 ## 2026-11 re-audit against Nacos 3.3
 
 The rows above were cut from the 3.2 surface. This pass re-read the same checkout at `1511b5a`
 (2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
 sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
-configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; two
-remain after the slices that followed, P3-21 (RAM signing) and P3-22.
+configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; one
+remains after the slices that followed, P3-22.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
@@ -413,7 +412,7 @@ remain after the slices that followed, P3-21 (RAM signing) and P3-22.
 | P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Done** — `INacosNamingClient.GetSubscribedServices()`, `NacosServiceSubscription` | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
 | P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Done** — the client answers the server's request from its listener table and snapshot store; no public API is involved | The console's client-metrics page reported an error for a .NET client; it now shows its listener count, version, snapshot directory and the requested cache/snapshot entries. |
 | P3-20 | `ServiceInfo` bookkeeping fields | `cacheMillis`, `lastRefTime`, `allIPs`, `reachProtectionThreshold` | **Done** — `NacosServiceInfo.CacheMillis` / `LastRefTime` / `AllIPs` / `ReachProtectionThreshold` | No functional loss; a caller cannot tell how old a list is, or which addresses the server considered. |
-| P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Partial** — `NacosOptions.AccessToken`, a public `INacosAuthProvider` via `NacosOptions.AuthProvider`, and OIDC through `NacosOptions.Oidc` are done; RAM signing remains | An MSE or OIDC deployment can now authenticate, and a token minted elsewhere can be handed to the client. |
+| P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Done** — `NacosOptions.AccessToken`, a public `INacosAuthProvider`, OIDC through `NacosOptions.Oidc`, and static AccessKey/SecretKey signing through `NacosOptions.Ram`; STS credential discovery and AI HTTP signing are documented limits | An MSE or OIDC deployment can authenticate, and a token minted elsewhere can be handed to the client. |
 | P3-22 | Redo queue for failed registrations and subscriptions | `client/redo` (`RedoService`, `NamingRedoService`, the AI redo hooks) | **Missing** — a failure reaches the caller and only a reconnect replays | A caller must retry a transient failure; Java retries it in the background. |
 | P3-23 | Empty-push protection | `namingPushEmptyProtection` | **Done** — `NacosNamingOptions.PushEmptyProtection`, log event 5022 | Opt-in robustness for a failover-cache race; off by default in Java. |
 
@@ -638,8 +637,25 @@ cached. A rejection forces one refresh, suppressed for 60 seconds, and the rejec
 the meantime. No transport change was needed: the server's OIDC plugin reads the same `accessToken`
 metadata the existing login path already sends.
 
-**S3 — RAM signing (not started).** It will be a provider behind the same public interface rather
-than new transport code.
+**S3 — RAM signing (done).** `NacosOptions.Ram` takes a `NacosRamOptions` and the client signs each
+request with the AccessKey/SecretKey pair instead of presenting a token, which is the official
+client's `RamClientAuthServiceImpl`. The signature covers a resource string and the current
+millisecond, so it is recomputed per request rather than cached; that needed one internal seam,
+`INacosRequestMetadataProvider`, which the transport calls after it has attached (or cleared) the
+token. The field names follow the official client and differ by module: configuration and AI
+requests carry `Spas-AccessKey`, `Timestamp` and `Spas-Signature`; naming requests carry `ak`,
+`data` and `signature`; lock requests carry only `ak`. Configuration signs `tenant+group` (or the
+group, or the bare timestamp when neither is present), AI signs `namespace+DEFAULT_GROUP`, and
+naming signs `timestamp@@group@@service`. A configured `SignatureRegionId` derives the v4 signing
+key (`aliyun_v4` + secret → date → region → `mse-nacos` → `aliyun_v4_request`) and announces
+`signatureVersion=v4`; the signature algorithm itself stays HMAC-SHA1, as in Java.
+
+Two limits are recorded rather than hidden. STS credentials — a RAM role or a credential file — are
+not discovered by the client; `ramRoleName` therefore has no option, and a deployment that needs
+STS can supply an `INacosAuthProvider`. And signing covers the gRPC transport only, so the AI
+registry's HTTP transport is not decorated. The open-source server ships no RAM verifier, so the
+signature is only meaningful against a compatible (MSE) deployment and its contract is pinned by
+unit vectors rather than an end-to-end container test.
 
 ### P3-22: redo
 

@@ -21,7 +21,8 @@ and `Naming`.
 | `Password` | `string?` | `null` | Must be set together with `UserName`. |
 | `AccessToken` | `string?` | `null` | A token obtained outside the client, presented on every request. No login is sent. Mutually exclusive with `UserName`/`Password` and `AuthProvider`. |
 | `AuthProvider` | `INacosAuthProvider?` | `null` | Supplies (and refreshes) the token. The client never disposes it. Mutually exclusive with `AccessToken` and `UserName`/`Password`. |
-| `Oidc` | `NacosOidcOptions?` | `null` | Obtains a token from an OpenID Connect identity provider with the OAuth2 client-credentials grant. Mutually exclusive with the other three sources. |
+| `Oidc` | `NacosOidcOptions?` | `null` | Obtains a token from an OpenID Connect identity provider with the OAuth2 client-credentials grant. Mutually exclusive with the other four sources. |
+| `Ram` | `NacosRamOptions?` | `null` | Signs each request with an Alibaba Cloud AccessKey/SecretKey instead of presenting a token. Mutually exclusive with the other four sources. |
 | `RequestTimeout` | `TimeSpan` | 5 s | Timeout for a single request, and the budget a request waits for a connection when it arrives during a reconnect (see `docs/faq.md`). Must be positive. |
 | `ConnectionTimeout` | `TimeSpan` | 10 s | Timeout for establishing the connection and finishing the gRPC handshake. Must be positive. |
 | `HealthCheckInterval` | `TimeSpan` | 5 s | How long a connection may sit idle before it is probed. Mirrors the official client's keep-alive. |
@@ -44,8 +45,8 @@ and `Naming`.
 
 ### Authentication
 
-An auth-enabled server accepts exactly one source for the access token, and the four sources are
-mutually exclusive; `Validate()` rejects a configuration that sets more than one.
+An auth-enabled server accepts exactly one source of identity, and the five sources are mutually
+exclusive; `Validate()` rejects a configuration that sets more than one.
 
 - **User name and password** — `UserName` and `Password` together. The client logs in over HTTP,
   caches the token and refreshes it before it expires, reproducing the official client's randomised
@@ -57,6 +58,11 @@ mutually exclusive; `Validate()` rejects a configuration that sets more than one
   provider with the OAuth2 client-credentials grant and refreshes it before it expires, using the
   same randomised window as the password login. This is the official client's
   `nacos.client.auth.oidc.*` family. Either `IssuerUri` (discovery) or `TokenEndpoint` is required.
+- **Alibaba Cloud RAM** — `Ram`, a `NacosRamOptions`. Every request is signed with an
+  AccessKey/SecretKey pair instead of carrying a token: the key identifies the caller and the
+  secret signs a timestamped resource string. This is the identity scheme Alibaba Cloud MSE Nacos
+  accepts; the open-source server ships no RAM verifier. A configured `SignatureRegionId` selects
+  the v4 key derivation.
 - **A caller-supplied provider** — `AuthProvider`, an `INacosAuthProvider`. Use it when the token
   has to be obtained or refreshed by logic the client does not own, such as a credential file that
   is re-read periodically. Every connection shares the one instance, so it must be safe for
@@ -95,6 +101,18 @@ var options = new NacosOptions
     ServerAddresses = ["http://127.0.0.1:8848"],
     AuthProvider = new MyAuthProvider(),
 };
+
+// Alibaba Cloud RAM: each request is signed, no token is issued.
+var options = new NacosOptions
+{
+    ServerAddresses = ["http://127.0.0.1:8848"],
+    Ram = new NacosRamOptions
+    {
+        AccessKey = Environment.GetEnvironmentVariable("NACOS_RAM_ACCESS_KEY")!,
+        SecretKey = Environment.GetEnvironmentVariable("NACOS_RAM_SECRET_KEY")!,
+        SignatureRegionId = "cn-hangzhou",   // omit for the legacy signing scheme
+    },
+};
 ```
 
 #### `NacosOidcOptions`
@@ -111,6 +129,21 @@ Discovery is lazy: constructing a client does not contact the identity provider,
 provider surfaces when the first token is needed rather than at startup. A token whose
 `expires_in` is missing is assumed to last 300 seconds; one whose `expires_in` is present but not a
 positive number is reported as an authentication failure rather than cached.
+
+#### `NacosRamOptions`
+
+| Property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `AccessKey` | `string?` | `null` | **Required.** The access key that identifies the caller. |
+| `SecretKey` | `string?` | `null` | **Required.** The secret key used to sign requests. It is never sent. |
+| `SignatureRegionId` | `string?` | `null` | When set, the v4 signing key is derived from the secret key and the request announces `signatureVersion=v4`. Empty selects the legacy scheme, where the secret key signs directly. |
+
+The signed fields follow the official client exactly and differ by module: configuration and AI
+requests carry `Spas-AccessKey`, `Timestamp` and `Spas-Signature`; naming requests carry `ak`, `data`
+and `signature`; lock requests carry only `ak`. Two limits are deliberate. STS credentials — a RAM
+role or a credential file — are not discovered by the client; a deployment that needs them can
+supply an `INacosAuthProvider`. And signing covers the gRPC transport only, so the AI registry's
+HTTP transport is not decorated.
 
 ### Address-server discovery
 

@@ -110,6 +110,22 @@ public sealed class NacosOptions
     public NacosOidcOptions? Oidc { get; set; }
 
     /// <summary>
+    /// Gets or sets the Alibaba Cloud RAM settings used to sign requests.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When this is set the client signs every request with the AccessKey/SecretKey pair instead of
+    /// presenting an access token. This is the identity scheme Alibaba Cloud MSE Nacos accepts; the
+    /// open-source server ships no RAM verifier.
+    /// </para>
+    /// <para>
+    /// It is mutually exclusive with <see cref="AccessToken"/>, <see cref="AuthProvider"/>,
+    /// <see cref="Oidc"/> and <see cref="UserName"/> and <see cref="Password"/>.
+    /// </para>
+    /// </remarks>
+    public NacosRamOptions? Ram { get; set; }
+
+    /// <summary>
     /// Gets or sets the timeout applied to a single request.
     /// </summary>
     /// <remarks>
@@ -292,6 +308,12 @@ public sealed class NacosOptions
     /// Gets a value indicating whether OpenID Connect is configured.
     /// </summary>
     internal bool HasOidc => Oidc is not null;
+
+    /// <summary>
+    /// Gets a value indicating whether Alibaba Cloud RAM signing is configured.
+    /// </summary>
+    internal bool HasRam => Ram is not null;
+
     /// <summary>Gets a value indicating whether an address server is configured.</summary>
     internal bool HasEndpoint => !string.IsNullOrWhiteSpace(Endpoint);
 
@@ -361,19 +383,26 @@ public sealed class NacosOptions
                 "NacosOptions.AccessToken and NacosOptions.UserName/Password are mutually exclusive; a pre-issued token needs no login and the client cannot combine the two.");
         }
 
-        if (AuthProvider is not null && (HasAccessToken || HasCredentials || HasOidc))
+        if (AuthProvider is not null && (HasAccessToken || HasCredentials || HasOidc || HasRam))
         {
             throw new NacosConfigurationException(
-                "NacosOptions.AuthProvider is mutually exclusive with NacosOptions.AccessToken, NacosOptions.Oidc and NacosOptions.UserName/Password; the provider is the only source of the token.");
+                "NacosOptions.AuthProvider is mutually exclusive with NacosOptions.AccessToken, NacosOptions.Oidc, NacosOptions.Ram and NacosOptions.UserName/Password; the provider is the only source of the token.");
         }
 
-        if (HasOidc && (HasAccessToken || HasCredentials))
+        if (HasOidc && (HasAccessToken || HasCredentials || HasRam))
         {
             throw new NacosConfigurationException(
-                "NacosOptions.Oidc is mutually exclusive with NacosOptions.AccessToken and NacosOptions.UserName/Password; OpenID Connect is the only source of the token.");
+                "NacosOptions.Oidc is mutually exclusive with NacosOptions.AccessToken, NacosOptions.Ram and NacosOptions.UserName/Password; OpenID Connect is the only source of the token.");
+        }
+
+        if (HasRam && (HasAccessToken || HasCredentials))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.Ram is mutually exclusive with NacosOptions.AccessToken and NacosOptions.UserName/Password; request signing is the only source of identity.");
         }
 
         Oidc?.Validate();
+        Ram?.Validate();
 
         if (RequestTimeout <= TimeSpan.Zero)
         {
@@ -1092,6 +1121,64 @@ public sealed class NacosOidcOptions
         {
             throw new NacosConfigurationException(
                 $"NacosOidcOptions.{propertyName} must be an absolute http or https URL.");
+        }
+    }
+}
+
+/// <summary>
+/// Configures Alibaba Cloud RAM request signing.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This is the official client's <c>RamClientAuthServiceImpl</c>: the access key identifies the
+/// caller and the secret key signs a timestamped resource string. The secret key is never sent.
+/// It is the identity scheme Alibaba Cloud MSE Nacos accepts; the open-source server ships no RAM
+/// verifier, so the signature is only meaningful against a compatible deployment.
+/// </para>
+/// <para>
+/// The current slice covers static AccessKey/SecretKey signing. STS credentials (a RAM role or a
+/// credential file) are not obtained by the client; a deployment that needs them can supply an
+/// <see cref="INacosAuthProvider"/> instead.
+/// </para>
+/// </remarks>
+public sealed class NacosRamOptions
+{
+    /// <summary>
+    /// Gets or sets the access key that identifies the caller.
+    /// </summary>
+    public string? AccessKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the secret key used to sign requests. It is never sent.
+    /// </summary>
+    public string? SecretKey { get; set; }
+
+    /// <summary>
+    /// Gets or sets the region whose v4 signing key is derived from the secret key.
+    /// </summary>
+    /// <remarks>
+    /// Setting this selects the v4 key derivation and adds <c>signatureVersion=v4</c> to the
+    /// request, matching the official client's <c>signatureRegionId</c>. When it is empty the
+    /// secret key signs directly, which is the legacy scheme.
+    /// </remarks>
+    public string? SignatureRegionId { get; set; }
+
+    /// <summary>
+    /// Validates the RAM settings.
+    /// </summary>
+    /// <exception cref="NacosConfigurationException">A required value is missing.</exception>
+    internal void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(AccessKey))
+        {
+            throw new NacosConfigurationException(
+                "NacosRamOptions.AccessKey is required when RAM authentication is configured.");
+        }
+
+        if (string.IsNullOrWhiteSpace(SecretKey))
+        {
+            throw new NacosConfigurationException(
+                "NacosRamOptions.SecretKey is required when RAM authentication is configured.");
         }
     }
 }
