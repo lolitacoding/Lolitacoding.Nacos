@@ -61,6 +61,68 @@ public sealed class NacosAuthProviderFactoryTests
     }
 
     [Fact]
+    public void Create_ReturnsTheCallersProviderUnchanged()
+    {
+        // The caller owns the instance: wrapping or replacing it would hide it from the code that
+        // intends to refresh and dispose it.
+        var provided = new FakeAuthProvider("from-the-caller");
+        NacosOptions options = new()
+        {
+            AuthProvider = provided,
+            ServerAddresses = [Server.Original],
+        };
+
+        INacosAuthProvider provider = Create(options);
+
+        provider.ShouldBeSameAs(provided);
+    }
+
+    [Fact]
+    public void Create_ReturnsAStaticProviderForAPreIssuedToken()
+    {
+        NacosOptions options = new()
+        {
+            AccessToken = "minted-elsewhere",
+            ServerAddresses = [Server.Original],
+        };
+
+        INacosAuthProvider provider = Create(options);
+
+        provider.ShouldBeOfType<StaticNacosAuthProvider>();
+    }
+
+    [Fact]
+    public void Create_DoesNotNeedAServerForAPreIssuedToken()
+    {
+        // A token handed to the process needs no login round trip, so an empty server list is not
+        // a reason to refuse the provider the way it is for a login.
+        NacosOptions options = new() { AccessToken = "minted-elsewhere" };
+
+        INacosAuthProvider provider = NacosAuthProviderFactory.Create(
+            options,
+            [],
+            new HttpClient(),
+            TimeProvider.System,
+            NullLogger.Instance,
+            new Random(1234));
+
+        provider.ShouldBeOfType<StaticNacosAuthProvider>();
+    }
+
+    [Fact]
+    public async Task StaticProvider_KeepsReturningTheTokenAfterInvalidate()
+    {
+        // A pre-issued token cannot be re-minted here, so a rejection must surface rather than turn
+        // into an endless loop presenting nothing.
+        using var provider = new StaticNacosAuthProvider("minted-elsewhere");
+
+        provider.Invalidate();
+        string? token = await provider.GetAccessTokenAsync(TestContext.Current.CancellationToken);
+
+        token.ShouldBe("minted-elsewhere");
+    }
+
+    [Fact]
     public async Task AnonymousProvider_NeverReturnsAToken()
     {
         string? token = await AnonymousNacosAuthProvider.Instance

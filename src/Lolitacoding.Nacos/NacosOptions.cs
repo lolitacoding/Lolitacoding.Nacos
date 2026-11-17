@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using Lolitacoding.Nacos.Auth;
 using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Internal;
 
@@ -54,6 +55,42 @@ public sealed class NacosOptions
     /// Gets or sets the password used to authenticate against a secured Nacos server.
     /// </summary>
     public string? Password { get; set; }
+
+    /// <summary>
+    /// Gets or sets an access token that was obtained outside the client and is presented on every
+    /// request.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is for a deployment that hands a process a token it did not mint — a sidecar, a
+    /// platform secret, or a login made over HTTP by the application itself. When it is set no
+    /// login request is sent, and <see cref="UserName"/> and <see cref="Password"/> must be left
+    /// empty because there is no meaningful way to combine the two.
+    /// </para>
+    /// <para>
+    /// The client cannot refresh a token it did not mint. When the server rejects it, the rejection
+    /// surfaces to the caller, which then has to supply a new one; use <see cref="AuthProvider"/>
+    /// when the refresh has to happen automatically.
+    /// </para>
+    /// </remarks>
+    public string? AccessToken { get; set; }
+
+    /// <summary>
+    /// Gets or sets the provider that supplies the access token.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Use this when the token is obtained or refreshed by logic the client does not own, such as
+    /// an OIDC token endpoint or a credential file that is re-read periodically. Every connection
+    /// shares the one instance, so it must be safe for concurrent use.
+    /// </para>
+    /// <para>
+    /// The client never disposes it, because the instance belongs to the caller. It is mutually
+    /// exclusive with <see cref="AccessToken"/> and with <see cref="UserName"/> and
+    /// <see cref="Password"/>.
+    /// </para>
+    /// </remarks>
+    public INacosAuthProvider? AuthProvider { get; set; }
 
     /// <summary>
     /// Gets or sets the timeout applied to a single request.
@@ -229,6 +266,11 @@ public sealed class NacosOptions
     internal bool HasCredentials =>
         !string.IsNullOrEmpty(UserName) && !string.IsNullOrEmpty(Password);
 
+    /// <summary>
+    /// Gets a value indicating whether a pre-issued access token was supplied.
+    /// </summary>
+    internal bool HasAccessToken => !string.IsNullOrWhiteSpace(AccessToken);
+
     /// <summary>Gets a value indicating whether an address server is configured.</summary>
     internal bool HasEndpoint => !string.IsNullOrWhiteSpace(Endpoint);
 
@@ -290,6 +332,18 @@ public sealed class NacosOptions
         {
             throw new NacosConfigurationException(
                 "NacosOptions.Password is set but NacosOptions.UserName is empty; both are required to authenticate.");
+        }
+
+        if (HasAccessToken && HasCredentials)
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.AccessToken and NacosOptions.UserName/Password are mutually exclusive; a pre-issued token needs no login and the client cannot combine the two.");
+        }
+
+        if (AuthProvider is not null && (HasAccessToken || HasCredentials))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.AuthProvider is mutually exclusive with NacosOptions.AccessToken and NacosOptions.UserName/Password; the provider is the only source of the token.");
         }
 
         if (RequestTimeout <= TimeSpan.Zero)

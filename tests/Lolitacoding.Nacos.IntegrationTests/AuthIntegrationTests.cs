@@ -1,4 +1,6 @@
 using Lolitacoding.Nacos.Auth;
+using Lolitacoding.Nacos.Client;
+using Lolitacoding.Nacos.Config;
 using Lolitacoding.Nacos.Internal;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -135,6 +137,88 @@ public sealed class AuthIntegrationTests : IAsyncLifetime
             "x",
             accessToken: null,
             TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task Client_WorksWithAPreIssuedTokenAndNoCredentials()
+    {
+        // The whole point of NacosOptions.AccessToken: a process that was handed a token by
+        // something else connects and talks to a secured server without ever logging in. The token
+        // is obtained over HTTP here only because a test has no sidecar to mint one.
+        using var http = new HttpClient();
+
+        string? token = await NacosHttp.TryLoginAsync(
+            http,
+            _container.HttpAddress,
+            NacosIntegrationImages.DefaultUserName,
+            NacosIntegrationImages.DefaultPassword,
+            TestContext.Current.CancellationToken);
+
+        token.ShouldNotBeNullOrEmpty();
+
+        var options = new NacosOptions
+        {
+            ServerAddresses = [_container.HttpAddress],
+            AccessToken = token,
+            ConnectionTimeout = TimeSpan.FromSeconds(15),
+            RequestTimeout = TimeSpan.FromSeconds(10),
+        };
+
+        await using NacosClientFactory client = NacosClientFactory.Create(
+            options,
+            httpClient: null,
+            channelFactory: null,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance);
+
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        var key = new NacosConfigKey(NacosHttp.UniqueId("preissued-token-it"), "DEFAULT_GROUP");
+        string content = NacosHttp.ConfigContent("pre-issued");
+
+        await client.Config.PublishConfigAsync(
+            key, content, "text", ct: TestContext.Current.CancellationToken);
+
+        NacosConfigResult value = await NacosEventually.BecomesAsync(
+            () => client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+            result => result.Exists,
+            TestContext.Current.CancellationToken);
+
+        value.Content.ShouldBe(content);
+    }
+
+    [Fact]
+    public async Task Client_RejectsAPreIssuedTokenTheServerDoesNotAccept()
+    {
+        // A token that was not minted by this server must surface as a rejection rather than be
+        // retried forever, because the client cannot refresh a token it did not obtain. The
+        // handshake may be accepted and the first real request refused, so both are inside the
+        // assertion.
+        var options = new NacosOptions
+        {
+            ServerAddresses = [_container.HttpAddress],
+            AccessToken = "not-a-token-this-server-issued",
+            ConnectionTimeout = TimeSpan.FromSeconds(15),
+            RequestTimeout = TimeSpan.FromSeconds(10),
+        };
+
+        await using NacosClientFactory client = NacosClientFactory.Create(
+            options,
+            httpClient: null,
+            channelFactory: null,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance);
+
+        await Should.ThrowAsync<NacosServerException>(async () =>
+        {
+            await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+            await client.Config.PublishConfigAsync(
+                new NacosConfigKey(NacosHttp.UniqueId("preissued-bad-token-it"), "DEFAULT_GROUP"),
+                NacosHttp.ConfigContent("rejected"),
+                "text",
+                ct: TestContext.Current.CancellationToken);
+        });
     }
 
     private NacosOptions CreateOptions() => new()

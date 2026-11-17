@@ -24,8 +24,9 @@ internal static class NacosAuthProviderFactory
     /// <param name="logger">The logger for authentication diagnostics.</param>
     /// <param name="random">The random source used to pick the token refresh window.</param>
     /// <returns>
-    /// A token provider when credentials are configured, otherwise the stateless anonymous
-    /// provider.
+    /// The caller's provider when one is configured, a static provider when a pre-issued token is
+    /// set, a logging-in provider when credentials are configured, otherwise the stateless
+    /// anonymous provider.
     /// </returns>
     public static INacosAuthProvider Create(
         NacosOptions options,
@@ -40,6 +41,19 @@ internal static class NacosAuthProviderFactory
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
+
+        if (options.AuthProvider is not null)
+        {
+            // The caller owns the provider and its lifetime, so it is handed back unchanged rather
+            // than wrapped: wrapping would hide the instance from a caller that wants to dispose it.
+            return options.AuthProvider;
+        }
+
+        if (options.HasAccessToken)
+        {
+            // A pre-issued token needs no login round trip and no server list to log in against.
+            return new StaticNacosAuthProvider(options.AccessToken!);
+        }
 
         if (!options.HasCredentials)
         {

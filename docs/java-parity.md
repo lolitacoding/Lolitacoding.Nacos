@@ -393,8 +393,9 @@ implementation is `EndpointServerListProvider`.
 
 All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
 re-audit added two P2 rows, P2-16 and P2-17, and both are now closed. The P3 list is no longer closed
-by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-19, P3-20 and P3-23 are now closed, and
-P3-21 and P3-22 remain work items.
+by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-19, P3-20 and P3-23 are now closed,
+P3-21 is partly done (the pre-issued token and the public provider; OIDC and RAM remain), and P3-22
+is still a work item.
 
 ## 2026-11 re-audit against Nacos 3.3
 
@@ -402,7 +403,7 @@ The rows above were cut from the 3.2 surface. This pass re-read the same checkou
 (2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
 sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
 configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; two
-remain after the slices that followed: P3-21 and P3-22.
+remain after the slices that followed, P3-21 (OIDC and RAM) and P3-22.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
@@ -412,7 +413,7 @@ remain after the slices that followed: P3-21 and P3-22.
 | P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Done** — `INacosNamingClient.GetSubscribedServices()`, `NacosServiceSubscription` | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
 | P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Done** — the client answers the server's request from its listener table and snapshot store; no public API is involved | The console's client-metrics page reported an error for a .NET client; it now shows its listener count, version, snapshot directory and the requested cache/snapshot entries. |
 | P3-20 | `ServiceInfo` bookkeeping fields | `cacheMillis`, `lastRefTime`, `allIPs`, `reachProtectionThreshold` | **Done** — `NacosServiceInfo.CacheMillis` / `LastRefTime` / `AllIPs` / `ReachProtectionThreshold` | No functional loss; a caller cannot tell how old a list is, or which addresses the server considered. |
-| P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Missing** — only username/password login (`NacosOptions.UserName`/`Password`); `INacosAuthProvider` exists but is internal, so there is no public hook either | An MSE or OIDC deployment cannot authenticate, and a token minted elsewhere cannot be handed to the client. |
+| P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Partial** — `NacosOptions.AccessToken` and a public `INacosAuthProvider` via `NacosOptions.AuthProvider` cover the pre-issued token; OIDC and RAM remain | An MSE or OIDC deployment cannot authenticate yet, but a token minted elsewhere can now be handed to the client. |
 | P3-22 | Redo queue for failed registrations and subscriptions | `client/redo` (`RedoService`, `NamingRedoService`, the AI redo hooks) | **Missing** — a failure reaches the caller and only a reconnect replays | A caller must retry a transient failure; Java retries it in the background. |
 | P3-23 | Empty-push protection | `namingPushEmptyProtection` | **Done** — `NacosNamingOptions.PushEmptyProtection`, log event 5022 | Opt-in robustness for a failover-cache race; off by default in Java. |
 
@@ -608,16 +609,26 @@ and `LastRefTime` is cheap; the other two should wait for a consumer.
 
 ### P3-21: authentication variants
 
-Java ships three ways to authenticate that this library does not: a pre-issued `accessToken`
+Java ships three ways to authenticate beyond a user name and password: a pre-issued `accessToken`
 (`PropertyKeyConst.ACCESS_TOKEN`), OIDC (`nacos.client.auth.oidc.issuer-uri`, `client-id`,
 `client-secret`, `scope`, `token-endpoint`), and RAM role signing (`accessKey`, `secretKey`,
-`ramRoleName`, `signatureRegionId`). Here `NacosOptions.UserName`/`Password` drive the login endpoint
-and that is the whole surface: `INacosAuthProvider` exists, but it is internal, so a caller cannot
-substitute a provider either.
+`ramRoleName`, `signatureRegionId`).
 
-The two that matter in practice are the token and OIDC. A process that was handed a token by a
-sidecar has no way to pass it on, and an OIDC or MSE deployment cannot authenticate at all without a
-username and password.
+**S1 — pre-issued token and a public provider (done).** `NacosOptions.AccessToken` presents a token
+the client did not mint: no login request is sent and the value is used unchanged. The client cannot
+refresh it, so a rejection reaches the caller instead of looping. `INacosAuthProvider` is now public
+and can be supplied through `NacosOptions.AuthProvider` when the token has to be refreshed by the
+caller's own logic, which is the hook OIDC and RAM will be built on. The client does not dispose a
+provider it was given. The three sources — provider, token, credentials — are mutually exclusive and
+`Validate()` rejects a configuration that sets more than one.
+
+One difference from Java is worth recording: `PropertyKeyConst.ACCESS_TOKEN` no longer exists in the
+3.x client, so this is not a property-for-property port. Java 3.x always logs in and keeps the token
+in `NacosClientAuthServiceImpl`; the .NET option is the equivalent of "the token is already in the
+identity context". A deployment that used the 2.x property maps to `AccessToken` here.
+
+**S2 — OIDC (not started).** **S3 — RAM signing (not started).** Both will be providers behind the
+new public interface rather than new transport code.
 
 ### P3-22: redo
 

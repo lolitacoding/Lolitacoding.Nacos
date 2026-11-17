@@ -699,6 +699,9 @@ Lolitacoding.Nacos.AI.NacosSkill.Name.get -> string?
 Lolitacoding.Nacos.AI.NacosSkill.Name.set -> void
 Lolitacoding.Nacos.AI.NacosSkill.Version.get -> string?
 Lolitacoding.Nacos.AI.NacosSkill.Version.set -> void
+Lolitacoding.Nacos.Auth.INacosAuthProvider
+Lolitacoding.Nacos.Auth.INacosAuthProvider.GetAccessTokenAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+Lolitacoding.Nacos.Auth.INacosAuthProvider.Invalidate() -> void
 Lolitacoding.Nacos.Client.NacosClient
 Lolitacoding.Nacos.Client.NacosClient.AI.get -> Lolitacoding.Nacos.AI.INacosAIClient!
 Lolitacoding.Nacos.Client.NacosClient.Config.get -> Lolitacoding.Nacos.Config.INacosConfigClient!
@@ -950,8 +953,12 @@ Lolitacoding.Nacos.NacosNamingOptions.PushEmptyProtection.set -> void
 Lolitacoding.Nacos.NacosOptions
 Lolitacoding.Nacos.NacosOptions.AI.get -> Lolitacoding.Nacos.NacosAIOptions!
 Lolitacoding.Nacos.NacosOptions.AI.set -> void
+Lolitacoding.Nacos.NacosOptions.AccessToken.get -> string?
+Lolitacoding.Nacos.NacosOptions.AccessToken.set -> void
 Lolitacoding.Nacos.NacosOptions.AppName.get -> string?
 Lolitacoding.Nacos.NacosOptions.AppName.set -> void
+Lolitacoding.Nacos.NacosOptions.AuthProvider.get -> Lolitacoding.Nacos.Auth.INacosAuthProvider?
+Lolitacoding.Nacos.NacosOptions.AuthProvider.set -> void
 Lolitacoding.Nacos.NacosOptions.Config.get -> Lolitacoding.Nacos.NacosConfigOptions!
 Lolitacoding.Nacos.NacosOptions.Config.set -> void
 Lolitacoding.Nacos.NacosOptions.ConnectionTimeout.get -> System.TimeSpan

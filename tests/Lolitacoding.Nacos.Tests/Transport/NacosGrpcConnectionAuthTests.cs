@@ -187,6 +187,45 @@ public sealed class NacosGrpcConnectionAuthTests
     }
 
     [Fact]
+    public async Task RequestAsync_SurfacesARejectionOfAPreIssuedTokenWithoutRefreshingIt()
+    {
+        // A token handed to the client cannot be re-minted here, so both attempts present the same
+        // value and the rejection reaches the caller. Returning a token that never changes is what
+        // keeps this from becoming a login loop the client cannot escape.
+        var provider = new StaticNacosAuthProvider("minted-elsewhere");
+        var presented = new List<string?>();
+
+        await using NacosGrpcConnection connection = CreateConnection(
+            request =>
+            {
+                if (PayloadCodec.ReadTypeName(request) == "ServerCheckRequest")
+                {
+                    return FakeServerCheck.Responding()(request);
+                }
+
+                presented.Add(request.Metadata.Headers["accessToken"]);
+
+                return PayloadCodec.Encode(new ErrorResponse
+                {
+                    ResultCode = NacosResponse.FailureCode,
+                    ErrorCode = 403,
+                    Message = "token invalid!",
+                });
+            },
+            provider);
+
+        await connection.ConnectAsync(TestContext.Current.CancellationToken);
+
+        NacosServerException ex = await Should.ThrowAsync<NacosServerException>(
+            () => connection.RequestAsync<ConfigQueryResponse>(
+                new ConfigQueryRequest { DataId = "a", Group = "g" },
+                TestContext.Current.CancellationToken));
+
+        ex.ErrorCode.ShouldBe(403);
+        presented.ShouldBe(["minted-elsewhere", "minted-elsewhere"]);
+    }
+
+    [Fact]
     public async Task RequestAsync_DoesNotRefreshOnAnUnrelatedError()
     {
         // Only a credential rejection justifies another login; a missing resource must surface

@@ -19,6 +19,8 @@ and `Naming`.
 | `Namespace` | `string` | `"public"` | The namespace (tenant) all operations default to. An empty value is normalised to `public`. Must be ASCII. |
 | `UserName` | `string?` | `null` | Credential for an auth-enabled server. Must be set together with `Password`. |
 | `Password` | `string?` | `null` | Must be set together with `UserName`. |
+| `AccessToken` | `string?` | `null` | A token obtained outside the client, presented on every request. No login is sent. Mutually exclusive with `UserName`/`Password` and `AuthProvider`. |
+| `AuthProvider` | `INacosAuthProvider?` | `null` | Supplies (and refreshes) the token. The client never disposes it. Mutually exclusive with `AccessToken` and `UserName`/`Password`. |
 | `RequestTimeout` | `TimeSpan` | 5 s | Timeout for a single request, and the budget a request waits for a connection when it arrives during a reconnect (see `docs/faq.md`). Must be positive. |
 | `ConnectionTimeout` | `TimeSpan` | 10 s | Timeout for establishing the connection and finishing the gRPC handshake. Must be positive. |
 | `HealthCheckInterval` | `TimeSpan` | 5 s | How long a connection may sit idle before it is probed. Mirrors the official client's keep-alive. |
@@ -38,6 +40,45 @@ and `Naming`.
 | `Config` | `NacosConfigOptions` | see below | Configuration-centre options. |
 | `Naming` | `NacosNamingOptions` | see below | Naming options. |
 | `AI` | `NacosAIOptions` | see below | AI registry options. |
+
+### Authentication
+
+An auth-enabled server accepts exactly one source for the access token, and the three sources are
+mutually exclusive; `Validate()` rejects a configuration that sets more than one.
+
+- **User name and password** — `UserName` and `Password` together. The client logs in over HTTP,
+  caches the token and refreshes it before it expires, reproducing the official client's randomised
+  refresh window. A rejected token is refreshed once and the request retried.
+- **A pre-issued token** — `AccessToken`. Nothing is logged in; the value is presented unchanged on
+  every request. Use it when a sidecar, a platform secret or the application itself already minted
+  a token. The client cannot refresh a token it did not mint, so a rejection reaches the caller.
+- **A caller-supplied provider** — `AuthProvider`, an `INacosAuthProvider`. Use it when the token
+  has to be obtained or refreshed by logic the client does not own, such as an OIDC token endpoint
+  or a credential file that is re-read periodically. Every connection shares the one instance, so
+  it must be safe for concurrent use; the client never disposes it.
+
+```csharp
+// A token minted elsewhere: no login request, no refresh.
+var options = new NacosOptions
+{
+    ServerAddresses = ["http://127.0.0.1:8848"],
+    AccessToken = Environment.GetEnvironmentVariable("NACOS_ACCESS_TOKEN"),
+};
+
+// A token the application refreshes itself.
+public sealed class MyAuthProvider : INacosAuthProvider
+{
+    public ValueTask<string?> GetAccessTokenAsync(CancellationToken ct = default) => ...;
+    public void Invalidate() { /* drop the cached token; the next call mints a new one */ }
+    public void Dispose() { }
+}
+
+var options = new NacosOptions
+{
+    ServerAddresses = ["http://127.0.0.1:8848"],
+    AuthProvider = new MyAuthProvider(),
+};
+```
 
 ### Address-server discovery
 

@@ -613,6 +613,15 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **有意偏离**：保护只作用于推送路径，不守卫 `GetInstancesAsync` 的直接查询。Java 把守卫放在两种来源共用的 `processServiceInfo` 里，这里分开是为了保留「直接查询始终报告服务端当前状态」的既有契约——真实撤下仍能被观察到。
 - **验收**：Release 构建零警告零错误；单元测试 **999 个全绿**（新增 3 个：记账字段从 wire 透出、保护开启时忽略空推送、保护关闭时应用空推送）；`NacosNamingClientTests` 57 个全绿；`NamingIntegrationTests` 7 个全绿（首个测试新增 `CacheMillis > 0`、`LastRefTime > 0`，证明真实服务端确实填了这两个字段）。`PublicAPI.Unshipped.txt` 新增 4 个 `NacosServiceInfo` 属性与 `PushEmptyProtection`。文档更新 `configuration.md`（`PushEmptyProtection` 行）、`protocol-notes.md`（新鲜度字段与空推送保护两段）、`java-parity.md`（P3-20 / P3-23 标记完成）。
 
+#### P3-21 · 认证变体（🚧 S1 已完成）
+
+- **缺口**：Java 在用户名/密码之外还有三种认证：预签发 `accessToken`（2.x 的 `PropertyKeyConst.ACCESS_TOKEN`）、OIDC（`nacos.client.auth.oidc.*`）、RAM 角色签名（`accessKey` / `secretKey` / `ramRoleName`）。本库只有 `NacosOptions.UserName` / `Password`，且 `INacosAuthProvider` 是 internal——外部既无法把别处铸造的 token 交给客户端，也无法替换认证方式，OIDC / MSE 部署完全无法接入。
+- **S1 实现（预签发 token + 公开扩展点）**：新增 `NacosOptions.AccessToken`（静态 token，不发任何登录请求）与 `NacosOptions.AuthProvider`（`INacosAuthProvider`，由调用方提供并负责刷新/释放）。`INacosAuthProvider` 改为 public；`NacosAuthProviderFactory.Create` 的选择顺序变为「调用方 provider → 静态 token → 用户名/密码登录 → 匿名」。新增 internal `StaticNacosAuthProvider`：`Invalidate()` 不清空 token（预签发 token 无法在此刷新，拒绝应上抛，由 403 重试一次后冒泡）。
+- **互斥校验**：`NacosOptions.Validate()` 拒绝 `AccessToken` 与 `UserName`/`Password` 同时设置、`AuthProvider` 与 `AccessToken` 或凭据同时设置——三种来源各自唯一。客户端不 Dispose 调用方传入的 provider（所有权归调用方），文档已写明。
+- **有意偏离**：Nacos 3.x 的 `PropertyKeyConst` 已无 `ACCESS_TOKEN`，Java 3.x 总是登录并把 token 存在 `NacosClientAuthServiceImpl`；这里的 `AccessToken` 等价于「token 已在身份上下文中」，2.x 的该属性映射到此选项。
+- **验收**：Release 构建零警告零错误；单元测试全绿（新增工厂选择/静态 token/空服务器列表/Invalidate 不改 token 共 4 个、`Validate()` 互斥 5 个、403 下静态 token 原样重试一次并抛出 1 个）；`AuthIntegrationTests` 新增「预签发 token 连接并发布/读取配置」与「服务器不接受的 token 抛 `NacosServerException`」两项，跑在真实 auth-enabled `v3.0.2` 容器上。`PublicAPI.Unshipped.txt` 新增 `INacosAuthProvider`（2 行）与 `AccessToken`、`AuthProvider`（各 2 行）。文档更新 `configuration.md`（选项表 + Authentication 段）、`quickstart.md`（预签发 token 示例）、`java-parity.md`（P3-21 标记 Partial，S1 完成）。
+- **后续**：S2 OIDC、S3 RAM 都作为 `INacosAuthProvider` 的实现接入，不改传输层。
+
 #### P3-19 · 客户端配置指标（✅ 已完成）
 
 - **缺口**：`MetricsControllerV3.getClientMetrics`（`GET /v3/admin/cs/metrics/ip`）向该 IP 的**每条**连接发 `ClientConfigMetricRequest`，每条只等 1 秒；任一连接不回应，整个管理调用就 500。Java 的 `ClientWorker.getMetrics` 从 `cacheMap` 与快照应答；本客户端把不认识的推送丢弃并记日志，控制台的客户端指标页因此对 .NET 客户端报错。

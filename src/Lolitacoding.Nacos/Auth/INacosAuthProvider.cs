@@ -7,14 +7,17 @@ namespace Lolitacoding.Nacos.Auth;
 /// <para>
 /// This is the seam that keeps authentication out of the transport. The transport asks for a
 /// token before each request and reports rejection, and never learns how the token was obtained.
-/// That leaves room for credential schemes beyond user name and password — notably the
-/// AccessKey/SecretKey signing used by Alibaba Cloud MSE — without touching the transport.
+/// That leaves room for credential schemes beyond user name and password — a token minted by a
+/// sidecar, or the AccessKey/SecretKey signing used by Alibaba Cloud MSE — without touching the
+/// transport.
 /// </para>
 /// <para>
-/// Implementations must be safe for concurrent use, because every request asks for the token.
+/// Supply an implementation through <see cref="NacosOptions.AuthProvider"/> when the token is
+/// obtained somewhere this client cannot reach. The client calls it for every request, so it must
+/// be safe for concurrent use, and it does not dispose it: the instance belongs to the caller.
 /// </para>
 /// </remarks>
-internal interface INacosAuthProvider : IDisposable
+public interface INacosAuthProvider : IDisposable
 {
     /// <summary>
     /// Gets a currently valid access token, logging in or refreshing when necessary.

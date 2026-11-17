@@ -67,6 +67,22 @@ stale hash costs an ordinary read rather than an empty answer. Snapshots are kep
 Set `Optional = true` to tolerate an unreachable server at startup. The client connects in the
 background and serves configuration and service lists from its local cache until the server returns.
 
+Against a server with authentication enabled, supply credentials (`UserName` and `Password`) and the
+client logs in and refreshes the token for you. When the token comes from somewhere else, hand it
+over instead — no login is sent:
+
+```csharp
+var options = new NacosOptions
+{
+    ServerAddresses = ["http://127.0.0.1:8848"],
+    AccessToken = tokenFromTheSidecar,   // or AuthProvider = myProvider
+};
+```
+
+The three sources are mutually exclusive. See
+[configuration.md](configuration.md#authentication) for the trade-offs, including who owns and
+refreshes the token.
+
 ## 3. React to configuration changes
 
 Both an `IAsyncEnumerable` and a callback style are available.
