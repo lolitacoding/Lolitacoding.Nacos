@@ -123,6 +123,51 @@ public sealed class NacosAuthProviderFactoryTests
     }
 
     [Fact]
+    public void Create_ReturnsAnOidcProviderWhenOidcIsConfigured()
+    {
+        NacosOptions options = new()
+        {
+            Oidc = new NacosOidcOptions
+            {
+                IssuerUri = "https://idp.example.com",
+                ClientId = "the-client",
+                ClientSecret = "the-secret",
+            },
+            ServerAddresses = [Server.Original],
+        };
+
+        INacosAuthProvider provider = Create(options);
+
+        provider.ShouldBeOfType<NacosOidcAuthProvider>();
+    }
+
+    [Fact]
+    public void Create_DoesNotNeedAServerForOidc()
+    {
+        // The token comes from the identity provider, so the Nacos server list plays no part in
+        // authentication.
+        NacosOptions options = new()
+        {
+            Oidc = new NacosOidcOptions
+            {
+                IssuerUri = "https://idp.example.com",
+                ClientId = "the-client",
+                ClientSecret = "the-secret",
+            },
+        };
+
+        INacosAuthProvider provider = NacosAuthProviderFactory.Create(
+            options,
+            [],
+            new HttpClient(),
+            TimeProvider.System,
+            NullLogger.Instance,
+            new Random(1234));
+
+        provider.ShouldBeOfType<NacosOidcAuthProvider>();
+    }
+
+    [Fact]
     public async Task AnonymousProvider_NeverReturnsAToken()
     {
         string? token = await AnonymousNacosAuthProvider.Instance

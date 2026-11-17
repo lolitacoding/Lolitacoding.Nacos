@@ -21,6 +21,7 @@ and `Naming`.
 | `Password` | `string?` | `null` | Must be set together with `UserName`. |
 | `AccessToken` | `string?` | `null` | A token obtained outside the client, presented on every request. No login is sent. Mutually exclusive with `UserName`/`Password` and `AuthProvider`. |
 | `AuthProvider` | `INacosAuthProvider?` | `null` | Supplies (and refreshes) the token. The client never disposes it. Mutually exclusive with `AccessToken` and `UserName`/`Password`. |
+| `Oidc` | `NacosOidcOptions?` | `null` | Obtains a token from an OpenID Connect identity provider with the OAuth2 client-credentials grant. Mutually exclusive with the other three sources. |
 | `RequestTimeout` | `TimeSpan` | 5 s | Timeout for a single request, and the budget a request waits for a connection when it arrives during a reconnect (see `docs/faq.md`). Must be positive. |
 | `ConnectionTimeout` | `TimeSpan` | 10 s | Timeout for establishing the connection and finishing the gRPC handshake. Must be positive. |
 | `HealthCheckInterval` | `TimeSpan` | 5 s | How long a connection may sit idle before it is probed. Mirrors the official client's keep-alive. |
@@ -43,7 +44,7 @@ and `Naming`.
 
 ### Authentication
 
-An auth-enabled server accepts exactly one source for the access token, and the three sources are
+An auth-enabled server accepts exactly one source for the access token, and the four sources are
 mutually exclusive; `Validate()` rejects a configuration that sets more than one.
 
 - **User name and password** — `UserName` and `Password` together. The client logs in over HTTP,
@@ -52,10 +53,14 @@ mutually exclusive; `Validate()` rejects a configuration that sets more than one
 - **A pre-issued token** — `AccessToken`. Nothing is logged in; the value is presented unchanged on
   every request. Use it when a sidecar, a platform secret or the application itself already minted
   a token. The client cannot refresh a token it did not mint, so a rejection reaches the caller.
+- **OpenID Connect** — `Oidc`, a `NacosOidcOptions`. The client obtains a token from the identity
+  provider with the OAuth2 client-credentials grant and refreshes it before it expires, using the
+  same randomised window as the password login. This is the official client's
+  `nacos.client.auth.oidc.*` family. Either `IssuerUri` (discovery) or `TokenEndpoint` is required.
 - **A caller-supplied provider** — `AuthProvider`, an `INacosAuthProvider`. Use it when the token
-  has to be obtained or refreshed by logic the client does not own, such as an OIDC token endpoint
-  or a credential file that is re-read periodically. Every connection shares the one instance, so
-  it must be safe for concurrent use; the client never disposes it.
+  has to be obtained or refreshed by logic the client does not own, such as a credential file that
+  is re-read periodically. Every connection shares the one instance, so it must be safe for
+  concurrent use; the client never disposes it.
 
 ```csharp
 // A token minted elsewhere: no login request, no refresh.
@@ -63,6 +68,18 @@ var options = new NacosOptions
 {
     ServerAddresses = ["http://127.0.0.1:8848"],
     AccessToken = Environment.GetEnvironmentVariable("NACOS_ACCESS_TOKEN"),
+};
+
+// OpenID Connect: the client mints and refreshes the token itself.
+var options = new NacosOptions
+{
+    ServerAddresses = ["http://127.0.0.1:8848"],
+    Oidc = new NacosOidcOptions
+    {
+        IssuerUri = "https://idp.example.com/realms/nacos",   // or TokenEndpoint
+        ClientId = "nacos-client",
+        ClientSecret = Environment.GetEnvironmentVariable("NACOS_OIDC_CLIENT_SECRET")!,
+    },
 };
 
 // A token the application refreshes itself.
@@ -79,6 +96,21 @@ var options = new NacosOptions
     AuthProvider = new MyAuthProvider(),
 };
 ```
+
+#### `NacosOidcOptions`
+
+| Property | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `IssuerUri` | `string?` | `null` | The identity provider's issuer. The token endpoint is read from `{issuer}/.well-known/openid-configuration` on the first token request. Required unless `TokenEndpoint` is set. |
+| `TokenEndpoint` | `string?` | `null` | The token endpoint. Setting it skips discovery. Must be an absolute `http`/`https` URL. |
+| `ClientId` | `string?` | `null` | **Required.** The OAuth2 client identifier. |
+| `ClientSecret` | `string?` | `null` | **Required.** The OAuth2 client secret. |
+| `Scope` | `string` | `"openid"` | Scopes to request, space-separated. An empty value omits the parameter. |
+
+Discovery is lazy: constructing a client does not contact the identity provider, so an unreachable
+provider surfaces when the first token is needed rather than at startup. A token whose
+`expires_in` is missing is assumed to last 300 seconds; one whose `expires_in` is present but not a
+positive number is reported as an authentication failure rather than cached.
 
 ### Address-server discovery
 

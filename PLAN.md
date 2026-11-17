@@ -613,14 +613,17 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **有意偏离**：保护只作用于推送路径，不守卫 `GetInstancesAsync` 的直接查询。Java 把守卫放在两种来源共用的 `processServiceInfo` 里，这里分开是为了保留「直接查询始终报告服务端当前状态」的既有契约——真实撤下仍能被观察到。
 - **验收**：Release 构建零警告零错误；单元测试 **999 个全绿**（新增 3 个：记账字段从 wire 透出、保护开启时忽略空推送、保护关闭时应用空推送）；`NacosNamingClientTests` 57 个全绿；`NamingIntegrationTests` 7 个全绿（首个测试新增 `CacheMillis > 0`、`LastRefTime > 0`，证明真实服务端确实填了这两个字段）。`PublicAPI.Unshipped.txt` 新增 4 个 `NacosServiceInfo` 属性与 `PushEmptyProtection`。文档更新 `configuration.md`（`PushEmptyProtection` 行）、`protocol-notes.md`（新鲜度字段与空推送保护两段）、`java-parity.md`（P3-20 / P3-23 标记完成）。
 
-#### P3-21 · 认证变体（🚧 S1 已完成）
+#### P3-21 · 认证变体（🚧 S1、S2 已完成）
 
 - **缺口**：Java 在用户名/密码之外还有三种认证：预签发 `accessToken`（2.x 的 `PropertyKeyConst.ACCESS_TOKEN`）、OIDC（`nacos.client.auth.oidc.*`）、RAM 角色签名（`accessKey` / `secretKey` / `ramRoleName`）。本库只有 `NacosOptions.UserName` / `Password`，且 `INacosAuthProvider` 是 internal——外部既无法把别处铸造的 token 交给客户端，也无法替换认证方式，OIDC / MSE 部署完全无法接入。
 - **S1 实现（预签发 token + 公开扩展点）**：新增 `NacosOptions.AccessToken`（静态 token，不发任何登录请求）与 `NacosOptions.AuthProvider`（`INacosAuthProvider`，由调用方提供并负责刷新/释放）。`INacosAuthProvider` 改为 public；`NacosAuthProviderFactory.Create` 的选择顺序变为「调用方 provider → 静态 token → 用户名/密码登录 → 匿名」。新增 internal `StaticNacosAuthProvider`：`Invalidate()` 不清空 token（预签发 token 无法在此刷新，拒绝应上抛，由 403 重试一次后冒泡）。
 - **互斥校验**：`NacosOptions.Validate()` 拒绝 `AccessToken` 与 `UserName`/`Password` 同时设置、`AuthProvider` 与 `AccessToken` 或凭据同时设置——三种来源各自唯一。客户端不 Dispose 调用方传入的 provider（所有权归调用方），文档已写明。
+- **S2 实现（OIDC）**：新增 `NacosOptions.Oidc`（`NacosOidcOptions`：`IssuerUri` / `TokenEndpoint` / `ClientId` / `ClientSecret` / `Scope`，默认 `openid`）。新增 internal `NacosOidcAuthProvider`，按 OAuth2 client-credentials 向身份提供方取 token：`TokenEndpoint` 已配置则直接使用，否则在**首次取 token 时**惰性读取 `{issuer}/.well-known/openid-configuration`（构造不做 IO）。刷新窗口沿用密码登录的随机 `[ttl/15, ttl/10]`；`expires_in` 缺失按 300 秒，存在但非正数则抛 `NacosAuthException` 而不缓存；`expires_in` 同时接受数字与字符串。被拒后强刷抑制 60 秒，期间保留旧 token。服务端 OIDC 插件读的仍是 `accessToken` gRPC 元数据，传输层零改动。
+- **S2 互斥**：`Validate()` 进一步拒绝 `Oidc` 与 `AccessToken`、`AuthProvider`、`UserName`/`Password` 的组合；`Oidc.Validate()` 要求 `ClientId`、`ClientSecret`，以及 `IssuerUri` 或 `TokenEndpoint` 至少其一，且 URL 必须是绝对 http/https。
 - **有意偏离**：Nacos 3.x 的 `PropertyKeyConst` 已无 `ACCESS_TOKEN`，Java 3.x 总是登录并把 token 存在 `NacosClientAuthServiceImpl`；这里的 `AccessToken` 等价于「token 已在身份上下文中」，2.x 的该属性映射到此选项。
-- **验收**：Release 构建零警告零错误；单元测试全绿（新增工厂选择/静态 token/空服务器列表/Invalidate 不改 token 共 4 个、`Validate()` 互斥 5 个、403 下静态 token 原样重试一次并抛出 1 个）；`AuthIntegrationTests` 新增「预签发 token 连接并发布/读取配置」与「服务器不接受的 token 抛 `NacosServerException`」两项，跑在真实 auth-enabled `v3.0.2` 容器上。`PublicAPI.Unshipped.txt` 新增 `INacosAuthProvider`（2 行）与 `AccessToken`、`AuthProvider`（各 2 行）。文档更新 `configuration.md`（选项表 + Authentication 段）、`quickstart.md`（预签发 token 示例）、`java-parity.md`（P3-21 标记 Partial，S1 完成）。
-- **后续**：S2 OIDC、S3 RAM 都作为 `INacosAuthProvider` 的实现接入，不改传输层。
+- **验收（S1）**：Release 构建零警告零错误；单元测试全绿（新增工厂选择/静态 token/空服务器列表/Invalidate 不改 token 共 4 个、`Validate()` 互斥 5 个、403 下静态 token 原样重试一次并抛出 1 个）；`AuthIntegrationTests` 新增「预签发 token 连接并发布/读取配置」与「服务器不接受的 token 抛 `NacosServerException`」两项，跑在真实 auth-enabled `v3.0.2` 容器上。`PublicAPI.Unshipped.txt` 新增 `INacosAuthProvider`（2 行）与 `AccessToken`、`AuthProvider`（各 2 行）。文档更新 `configuration.md`（选项表 + Authentication 段）、`quickstart.md`（预签发 token 示例）、`java-parity.md`（P3-21 标记 Partial，S1 完成）。
+- **验收（S2）**：Release 构建零警告零错误；新增 `NacosOidcAuthProviderTests` 12 个（发现→取 token 的 HTTP 契约、直连端点跳过发现、刷新窗口内复用、过期后刷新、被拒后抑制 60 秒并保留旧 token、凭据被拒、发现缺 `token_endpoint`、响应缺 `access_token`、`expires_in` 为 0、字符串型 `expires_in`、缺失时按 300 秒、不可达端点包装为 `NacosAuthException`）；工厂选择 2 个（OIDC 选中、空服务器列表也可用）；`Validate()` 的 OIDC 校验与互斥 10 个。`PublicAPI.Unshipped.txt` 新增 `NacosOidcOptions`（10 行）与 `NacosOptions.Oidc`（2 行）。文档更新 `configuration.md`（`Oidc` 行、`NacosOidcOptions` 表、Authentication 段）、`java-parity.md`（S2 完成）。集成测试限制：固定镜像 `nacos/nacos-server:v3.0.2` 不含 OIDC 插件，端到端无法用真实容器验证；OIDC 的客户端侧 HTTP 契约由进程内 stub 端点覆盖，文档记录该限制。
+- **后续**：S3 RAM 作为 `INacosAuthProvider` 的实现接入，不改传输层。
 
 #### P3-19 · 客户端配置指标（✅ 已完成）
 

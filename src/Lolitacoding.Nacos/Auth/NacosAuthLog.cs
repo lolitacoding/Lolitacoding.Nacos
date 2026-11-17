@@ -54,4 +54,41 @@ internal static partial class NacosAuthLog
         Level = LogLevel.Warning,
         Message = "The Nacos server {Server} rejected the access token: {Message}")]
     public static partial void TokenRejected(ILogger logger, string server, string message);
+
+    /// <summary>Logs that the OpenID Connect token endpoint was discovered.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="discoveryUrl">The discovery document that was read.</param>
+    /// <param name="tokenEndpoint">The endpoint it named.</param>
+    [LoggerMessage(
+        EventId = 1105,
+        Level = LogLevel.Debug,
+        Message = "Discovered the OpenID Connect token endpoint {TokenEndpoint} from {DiscoveryUrl}.")]
+    public static partial void OidcDiscovered(
+        ILogger logger,
+        string discoveryUrl,
+        string tokenEndpoint);
+
+    /// <summary>Logs that an OpenID Connect access token was obtained.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="tokenEndpoint">The endpoint that issued the token.</param>
+    /// <param name="ttlSeconds">The granted lifetime, in seconds.</param>
+    /// <param name="refreshWindowSeconds">The refresh window drawn for this token.</param>
+    [LoggerMessage(
+        EventId = 1106,
+        Level = LogLevel.Debug,
+        Message = "Obtained an OpenID Connect access token from {TokenEndpoint}; ttl {TtlSeconds}s, refreshing after {RefreshWindowSeconds}s.")]
+    public static partial void OidcTokenObtained(
+        ILogger logger,
+        string tokenEndpoint,
+        long ttlSeconds,
+        double refreshWindowSeconds);
+
+    /// <summary>Logs that a refresh after a rejected token was suppressed.</summary>
+    /// <param name="logger">The logger.</param>
+    /// <param name="windowSeconds">The width of the suppression window, in seconds.</param>
+    [LoggerMessage(
+        EventId = 1107,
+        Level = LogLevel.Warning,
+        Message = "An OpenID Connect token was rejected but a token was fetched less than {WindowSeconds}s ago; not fetching another.")]
+    public static partial void OidcRefreshThrottled(ILogger logger, long windowSeconds);
 }

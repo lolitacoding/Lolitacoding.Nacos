@@ -950,6 +950,18 @@ Lolitacoding.Nacos.NacosNamingOptions.HeartbeatInterval.set -> void
 Lolitacoding.Nacos.NacosNamingOptions.NacosNamingOptions() -> void
 Lolitacoding.Nacos.NacosNamingOptions.PushEmptyProtection.get -> bool
 Lolitacoding.Nacos.NacosNamingOptions.PushEmptyProtection.set -> void
+Lolitacoding.Nacos.NacosOidcOptions
+Lolitacoding.Nacos.NacosOidcOptions.ClientId.get -> string?
+Lolitacoding.Nacos.NacosOidcOptions.ClientId.set -> void
+Lolitacoding.Nacos.NacosOidcOptions.ClientSecret.get -> string?
+Lolitacoding.Nacos.NacosOidcOptions.ClientSecret.set -> void
+Lolitacoding.Nacos.NacosOidcOptions.IssuerUri.get -> string?
+Lolitacoding.Nacos.NacosOidcOptions.IssuerUri.set -> void
+Lolitacoding.Nacos.NacosOidcOptions.NacosOidcOptions() -> void
+Lolitacoding.Nacos.NacosOidcOptions.Scope.get -> string!
+Lolitacoding.Nacos.NacosOidcOptions.Scope.set -> void
+Lolitacoding.Nacos.NacosOidcOptions.TokenEndpoint.get -> string?
+Lolitacoding.Nacos.NacosOidcOptions.TokenEndpoint.set -> void
 Lolitacoding.Nacos.NacosOptions
 Lolitacoding.Nacos.NacosOptions.AI.get -> Lolitacoding.Nacos.NacosAIOptions!
 Lolitacoding.Nacos.NacosOptions.AI.set -> void
@@ -990,6 +1002,8 @@ Lolitacoding.Nacos.NacosOptions.Namespace.get -> string!
 Lolitacoding.Nacos.NacosOptions.Namespace.set -> void
 Lolitacoding.Nacos.NacosOptions.Naming.get -> Lolitacoding.Nacos.NacosNamingOptions!
 Lolitacoding.Nacos.NacosOptions.Naming.set -> void
+Lolitacoding.Nacos.NacosOptions.Oidc.get -> Lolitacoding.Nacos.NacosOidcOptions?
+Lolitacoding.Nacos.NacosOptions.Oidc.set -> void
 Lolitacoding.Nacos.NacosOptions.Optional.get -> bool
 Lolitacoding.Nacos.NacosOptions.Optional.set -> void
 Lolitacoding.Nacos.NacosOptions.Password.get -> string?

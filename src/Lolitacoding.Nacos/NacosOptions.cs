@@ -93,6 +93,23 @@ public sealed class NacosOptions
     public INacosAuthProvider? AuthProvider { get; set; }
 
     /// <summary>
+    /// Gets or sets the OpenID Connect settings used to obtain an access token from an identity
+    /// provider.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// When this is set the client obtains a token with the OAuth2 client-credentials grant and
+    /// refreshes it before it expires; no Nacos login request is sent. It is mutually exclusive
+    /// with <see cref="AccessToken"/>, <see cref="AuthProvider"/> and <see cref="UserName"/> and
+    /// <see cref="Password"/>.
+    /// </para>
+    /// <para>
+    /// This is the official client's <c>nacos.client.auth.oidc.*</c> family.
+    /// </para>
+    /// </remarks>
+    public NacosOidcOptions? Oidc { get; set; }
+
+    /// <summary>
     /// Gets or sets the timeout applied to a single request.
     /// </summary>
     /// <remarks>
@@ -271,6 +288,10 @@ public sealed class NacosOptions
     /// </summary>
     internal bool HasAccessToken => !string.IsNullOrWhiteSpace(AccessToken);
 
+    /// <summary>
+    /// Gets a value indicating whether OpenID Connect is configured.
+    /// </summary>
+    internal bool HasOidc => Oidc is not null;
     /// <summary>Gets a value indicating whether an address server is configured.</summary>
     internal bool HasEndpoint => !string.IsNullOrWhiteSpace(Endpoint);
 
@@ -340,11 +361,19 @@ public sealed class NacosOptions
                 "NacosOptions.AccessToken and NacosOptions.UserName/Password are mutually exclusive; a pre-issued token needs no login and the client cannot combine the two.");
         }
 
-        if (AuthProvider is not null && (HasAccessToken || HasCredentials))
+        if (AuthProvider is not null && (HasAccessToken || HasCredentials || HasOidc))
         {
             throw new NacosConfigurationException(
-                "NacosOptions.AuthProvider is mutually exclusive with NacosOptions.AccessToken and NacosOptions.UserName/Password; the provider is the only source of the token.");
+                "NacosOptions.AuthProvider is mutually exclusive with NacosOptions.AccessToken, NacosOptions.Oidc and NacosOptions.UserName/Password; the provider is the only source of the token.");
         }
+
+        if (HasOidc && (HasAccessToken || HasCredentials))
+        {
+            throw new NacosConfigurationException(
+                "NacosOptions.Oidc is mutually exclusive with NacosOptions.AccessToken and NacosOptions.UserName/Password; OpenID Connect is the only source of the token.");
+        }
+
+        Oidc?.Validate();
 
         if (RequestTimeout <= TimeSpan.Zero)
         {
@@ -968,6 +997,101 @@ public sealed class NacosNamingOptions
         {
             throw new NacosConfigurationException(
                 "NacosNamingOptions.FuzzyWatchResyncInterval must be greater than zero.");
+        }
+    }
+}
+
+/// <summary>
+/// Configures OpenID Connect authentication against an identity provider.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The client obtains an access token with the OAuth2 client-credentials grant and presents it to
+/// Nacos as the access token, which is what the official client's
+/// <c>nacos.client.auth.oidc.*</c> family does. The token is refreshed before it expires, with the
+/// same randomised window the user-name/password login uses so that a fleet does not refresh in
+/// lockstep.
+/// </para>
+/// <para>
+/// Either <see cref="IssuerUri"/> or <see cref="TokenEndpoint"/> is required. When only the issuer
+/// is given, the token endpoint is read from
+/// <c>{issuer}/.well-known/openid-configuration</c> the first time a token is needed; setting the
+/// endpoint directly skips discovery.
+/// </para>
+/// </remarks>
+public sealed class NacosOidcOptions
+{
+    /// <summary>
+    /// Gets or sets the issuer URI of the identity provider, used for OIDC discovery.
+    /// </summary>
+    public string? IssuerUri { get; set; }
+
+    /// <summary>
+    /// Gets or sets the OAuth2 client identifier.
+    /// </summary>
+    public string? ClientId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the OAuth2 client secret.
+    /// </summary>
+    public string? ClientSecret { get; set; }
+
+    /// <summary>
+    /// Gets or sets the OAuth2 scopes to request, space-separated.
+    /// </summary>
+    /// <remarks>
+    /// Defaults to <c>openid</c>, matching the official client. An empty value omits the parameter
+    /// from the token request.
+    /// </remarks>
+    public string Scope { get; set; } = "openid";
+
+    /// <summary>
+    /// Gets or sets the token endpoint, skipping OIDC discovery when it is set.
+    /// </summary>
+    public string? TokenEndpoint { get; set; }
+
+    /// <summary>
+    /// Validates the OpenID Connect settings.
+    /// </summary>
+    /// <exception cref="NacosConfigurationException">A required value is missing or malformed.</exception>
+    internal void Validate()
+    {
+        if (string.IsNullOrWhiteSpace(ClientId))
+        {
+            throw new NacosConfigurationException(
+                "NacosOidcOptions.ClientId is required when OpenID Connect is configured.");
+        }
+
+        if (string.IsNullOrWhiteSpace(ClientSecret))
+        {
+            throw new NacosConfigurationException(
+                "NacosOidcOptions.ClientSecret is required when OpenID Connect is configured.");
+        }
+
+        if (string.IsNullOrWhiteSpace(IssuerUri) && string.IsNullOrWhiteSpace(TokenEndpoint))
+        {
+            throw new NacosConfigurationException(
+                "NacosOidcOptions requires either IssuerUri (for discovery) or TokenEndpoint.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(IssuerUri))
+        {
+            ValidateAbsoluteUri(IssuerUri, nameof(IssuerUri));
+        }
+
+        if (!string.IsNullOrWhiteSpace(TokenEndpoint))
+        {
+            ValidateAbsoluteUri(TokenEndpoint, nameof(TokenEndpoint));
+        }
+    }
+
+    private static void ValidateAbsoluteUri(string value, string propertyName)
+    {
+        if (!Uri.TryCreate(value, UriKind.Absolute, out Uri? uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            throw new NacosConfigurationException(
+                $"NacosOidcOptions.{propertyName} must be an absolute http or https URL.");
         }
     }
 }
