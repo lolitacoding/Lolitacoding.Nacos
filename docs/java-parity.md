@@ -393,7 +393,7 @@ implementation is `EndpointServerListProvider`.
 
 All three original P2 rows are closed: P2-8 by P1-4, P2-9 and P2-10 by their own slices. The 3.3
 re-audit added two P2 rows, P2-16 and P2-17, and both are now closed. The P3 list is no longer closed
-by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-20 and P3-23 are now closed, and P3-19,
+by design alone: P3-11 to P3-13 remain non-goals, P3-18, P3-19, P3-20 and P3-23 are now closed, and
 P3-21 and P3-22 remain work items.
 
 ## 2026-11 re-audit against Nacos 3.3
@@ -401,8 +401,8 @@ P3-21 and P3-22 remain work items.
 The rows above were cut from the 3.2 surface. This pass re-read the same checkout at `1511b5a`
 (2026-10-14), which carries the 3.3 client: the composite `AiService` with its per-module
 sub-services, the HTTP transport for the AI registry, agent card registration types, conditional
-configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; three
-remain after the slices that followed: P3-19, P3-21 and P3-22.
+configuration reads, the RAD agent registry and the lock watchdog. Seven gaps were found; two
+remain after the slices that followed: P3-21 and P3-22.
 
 | # | Capability | Java entry point | Status here | Why it matters |
 | --- | --- | --- | --- | --- |
@@ -410,7 +410,7 @@ remain after the slices that followed: P3-19, P3-21 and P3-22.
 | P2-16 | A2A batch endpoint registration | `A2aService.registerAgentEndpoint(String, Collection<AgentEndpoint>)` → `BatchAgentEndpointRequest` | **Done** — `INacosAgentCardRegistry.RegisterAgentEndpointsAsync`, log event 8051 | Publishing one agent on several transports cost a round trip each, and the set could not be replaced atomically. |
 | P2-17 | Conditional configuration read | `ConfigService.getConfig(GetConfigRequest)` with `localMd5`, `getConfigWithResult` | **Done** — `INacosConfigClient.GetConfigConditionalAsync`, `NacosConfigResult`, log event 4031 | A large configuration was re-sent on every read even when the caller already held the content. |
 | P3-18 | Subscribed-service introspection | `NamingService.getSubscribeServices()` | **Done** — `INacosNamingClient.GetSubscribedServices()`, `NacosServiceSubscription` | Diagnostics and console parity only: a caller cannot enumerate what it subscribed to. |
-| P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Missing** — the request is dropped, so the server's one-second wait expires | The console's client-metrics page reports an error for a .NET client. |
+| P3-19 | Client configuration metrics over gRPC | `ClientConfigMetricRequest`/`Response`, `ClientWorker.getMetrics` | **Done** — the client answers the server's request from its listener table and snapshot store; no public API is involved | The console's client-metrics page reported an error for a .NET client; it now shows its listener count, version, snapshot directory and the requested cache/snapshot entries. |
 | P3-20 | `ServiceInfo` bookkeeping fields | `cacheMillis`, `lastRefTime`, `allIPs`, `reachProtectionThreshold` | **Done** — `NacosServiceInfo.CacheMillis` / `LastRefTime` / `AllIPs` / `ReachProtectionThreshold` | No functional loss; a caller cannot tell how old a list is, or which addresses the server considered. |
 | P3-21 | Pre-issued token, OIDC and RAM authentication | `PropertyKeyConst.ACCESS_TOKEN`, `nacos.client.auth.oidc.*`, `accessKey`/`secretKey`/`ramRoleName` | **Missing** — only username/password login (`NacosOptions.UserName`/`Password`); `INacosAuthProvider` exists but is internal, so there is no public hook either | An MSE or OIDC deployment cannot authenticate, and a token minted elsewhere cannot be handed to the client. |
 | P3-22 | Redo queue for failed registrations and subscriptions | `client/redo` (`RedoService`, `NamingRedoService`, the AI redo hooks) | **Missing** — a failure reaches the caller and only a reconnect replays | A caller must retry a transient failure; Java retries it in the background. |
@@ -564,14 +564,30 @@ expose its registration table without letting a caller mutate it.
 ### P3-19: client configuration metrics
 
 `MetricsControllerV3.getClientMetrics` (`GET /v3/admin/cs/metrics/ip`) sends a
-`ClientConfigMetricRequest` to **every** connection of an IP and waits one second. The Java client
-answers from `ClientWorker.getMetrics` with the cache and snapshot entries for the requested group
-keys. This client drops a server request it does not recognise
-(`NacosGrpcConnection.DispatchServerRequestAsync` logs it), so the server times out and the console
-page reports an error for that IP.
+`ClientConfigMetricRequest` to **every** connection of an IP and waits one second for each answer.
+The Java client answers from `ClientWorker.getMetrics` with the cache and snapshot entries for the
+requested group keys. This client now does the same, so the console's client-metrics page shows a
+.NET client instead of an error. Nothing is added to the public surface: the request arrives from
+the server and the answer is produced inside the configuration client.
 
-The fix is one handler: parse the request and answer with a `ClientConfigMetricResponse` carrying
-the cached MD5 and timestamp per key. It is diagnostic only, which is why it ranks below P3-18.
+The answer is a `ClientConfigMetricResponse` whose `metrics` map holds one JSON document per client
+instance, keyed by a random UUID. The document carries `listenConfigSize`, `clientVersion`,
+`snapshotDir`, `addressUrl`, `isFixedServer`, `serverUrls` and `metricValues`. The first six are
+scalars; `metricValues` is keyed by the request bean's `toString` form —
+`MetricsKey{type='cacheData', key='dataId+group+tenant'}` — because that is how the server matches an
+answer to the key it asked for. A missing entry is `null`, and `metricValues` itself is `null` when
+the request carried no key list, matching Java's split between a null and an empty list.
+
+`cacheData` is Java's per-listener cache, which this client does not keep separately, so it is
+answered from the snapshot for a key that is currently listened to. `snapshotData` answers for any
+key the snapshot store holds. Both report `content:md5`, the same shape Java uses.
+
+One part of the Java behaviour cannot be copied as-is. The server asks every connection it holds for
+the IP and fails the whole admin call if one stays silent for a second, and this client opens a
+separate connection per module. The configuration connection therefore reports the real document,
+while the naming, lock and AI connections answer with an empty `ClientConfigMetricResponse`. A
+module that has no configuration state still has to answer, or the console page breaks for a client
+that happens to use service discovery as well.
 
 Two related differences are worth recording even though they change nothing today. The setup request
 here advertises the SDK ability table (`fuzzyWatch`, `lock`, `mcp`, `radWatchV1`); Java advertises one

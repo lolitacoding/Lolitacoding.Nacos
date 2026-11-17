@@ -398,6 +398,39 @@ public sealed class PayloadCodecTests
             .ShouldBe("ConfigChangeBatchListenResponse");
     }
 
+    [Fact]
+    public void Decode_ClientConfigMetricRequest_ReadsTheRequestedMetricKeys()
+    {
+        // The server asks for these values by name and matches the answers by the bean's toString,
+        // so both the wire fields and that string form are part of the contract.
+        const string Json = """
+            {"headers":{},"requestId":"1","metricsKeys":[
+              {"type":"cacheData","key":"application.json+DEFAULT_GROUP+public"},
+              {"type":"snapshotData","key":"application.json+DEFAULT_GROUP+public"}],
+             "module":"config"}
+            """;
+
+        var payload = new Payload
+        {
+            Metadata = new Metadata { Type = "ClientConfigMetricRequest" },
+            Body = new Google.Protobuf.WellKnownTypes.Any
+            {
+                Value = Google.Protobuf.ByteString.CopyFromUtf8(Json),
+            },
+        };
+
+        ClientConfigMetricRequest request = PayloadCodec.DecodeRequest<ClientConfigMetricRequest>(payload);
+
+        request.Module.ShouldBe("config");
+        request.MetricsKeys.ShouldNotBeNull();
+        request.MetricsKeys!.Count.ShouldBe(2);
+        request.MetricsKeys[0].Type.ShouldBe(ClientConfigMetricKey.CacheData);
+        request.MetricsKeys[0].Key.ShouldBe("application.json+DEFAULT_GROUP+public");
+        request.MetricsKeys[0].ToString().ShouldBe(
+            "MetricsKey{type='cacheData', key='application.json+DEFAULT_GROUP+public'}");
+        request.MetricsKeys[1].Type.ShouldBe(ClientConfigMetricKey.SnapshotData);
+    }
+
     private static TResponse? DecodeResponse<TResponse>(string json)
         where TResponse : NacosResponse
     {

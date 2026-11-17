@@ -18,6 +18,9 @@ internal static class NacosHttp
     /// <summary>The admin config endpoint of the v3 HTTP API.</summary>
     private const string ConfigPath = "/nacos/v3/admin/cs/config";
 
+    /// <summary>The admin config metrics endpoint of the v3 HTTP API.</summary>
+    private const string ConfigMetricsPath = "/nacos/v3/admin/cs/metrics";
+
     /// <summary>The admin prompt endpoint of the v3 HTTP API.</summary>
     private const string PromptPath = "/nacos/v3/admin/ai/prompt";
 
@@ -123,6 +126,61 @@ internal static class NacosHttp
             && content.ValueKind == JsonValueKind.String
             ? content.GetString()
             : null;
+    }
+
+    /// <summary>
+    /// Reads the configuration metrics a client reports to the server's admin API.
+    /// </summary>
+    /// <param name="http">The HTTP client.</param>
+    /// <param name="baseAddress">The server base address.</param>
+    /// <param name="ip">The client IP the server keys its connections by.</param>
+    /// <param name="dataId">The configuration to ask about, or <see langword="null"/> for none.</param>
+    /// <param name="group">The group of that configuration.</param>
+    /// <param name="accessToken">The access token, when the server requires authentication.</param>
+    /// <param name="ct">A token that cancels the request.</param>
+    /// <returns>
+    /// The <c>data</c> object, keyed by client identifier and holding one JSON document per client.
+    /// </returns>
+    /// <remarks>
+    /// The server asks every connection held for that IP for its metrics and merges the answers, so
+    /// the reply is empty until at least one client at that address answers. Asking about a
+    /// configuration adds the <c>cacheData</c> and <c>snapshotData</c> keys to the request.
+    /// </remarks>
+    public static async Task<JsonElement> GetConfigMetricsAsync(
+        HttpClient http,
+        string baseAddress,
+        string ip,
+        string? dataId = null,
+        string? group = null,
+        string? accessToken = null,
+        CancellationToken ct = default)
+    {
+        string url = string.Concat(
+            baseAddress, ConfigMetricsPath, "/ip?ip=", Uri.EscapeDataString(ip));
+
+        if (!string.IsNullOrEmpty(dataId))
+        {
+            url = string.Concat(url, "&dataId=", Uri.EscapeDataString(dataId));
+        }
+
+        if (!string.IsNullOrEmpty(group))
+        {
+            url = string.Concat(url, "&groupName=", Uri.EscapeDataString(group));
+        }
+
+        using HttpResponseMessage response = await SendAsync(
+            http, HttpMethod.Get, url, accessToken, content: null, ct);
+
+        response.EnsureSuccessStatusCode();
+
+        string body = await response.Content.ReadAsStringAsync(ct);
+        EnsureSucceeded(body);
+
+        using JsonDocument document = JsonDocument.Parse(body);
+
+        return document.RootElement.TryGetProperty("data", out JsonElement data)
+            ? data.Clone()
+            : default;
     }
 
     /// <summary>

@@ -613,6 +613,14 @@ v0.1 已完成 Config / Naming / DI / Configuration / ServiceDiscovery / Aspire�
 - **有意偏离**：保护只作用于推送路径，不守卫 `GetInstancesAsync` 的直接查询。Java 把守卫放在两种来源共用的 `processServiceInfo` 里，这里分开是为了保留「直接查询始终报告服务端当前状态」的既有契约——真实撤下仍能被观察到。
 - **验收**：Release 构建零警告零错误；单元测试 **999 个全绿**（新增 3 个：记账字段从 wire 透出、保护开启时忽略空推送、保护关闭时应用空推送）；`NacosNamingClientTests` 57 个全绿；`NamingIntegrationTests` 7 个全绿（首个测试新增 `CacheMillis > 0`、`LastRefTime > 0`，证明真实服务端确实填了这两个字段）。`PublicAPI.Unshipped.txt` 新增 4 个 `NacosServiceInfo` 属性与 `PushEmptyProtection`。文档更新 `configuration.md`（`PushEmptyProtection` 行）、`protocol-notes.md`（新鲜度字段与空推送保护两段）、`java-parity.md`（P3-20 / P3-23 标记完成）。
 
+#### P3-19 · 客户端配置指标（✅ 已完成）
+
+- **缺口**：`MetricsControllerV3.getClientMetrics`（`GET /v3/admin/cs/metrics/ip`）向该 IP 的**每条**连接发 `ClientConfigMetricRequest`，每条只等 1 秒；任一连接不回应，整个管理调用就 500。Java 的 `ClientWorker.getMetrics` 从 `cacheMap` 与快照应答；本客户端把不认识的推送丢弃并记日志，控制台的客户端指标页因此对 .NET 客户端报错。
+- **实现**：配置连接识别请求后由 `NacosConfigClient.GetClientMetricsAsync`（internal）组装 `ClientConfigMetricPayload`：`listenConfigSize`、`clientVersion`、`snapshotDir`、`addressUrl`（`ServerList.Source ?? ""`）、`isFixedServer`（`!ServerList.IsDynamic`）、`serverUrls`（Java `List.toString()` 形式）、`metricValues`。`metricValues` 以请求 bean 的 `toString` 形式 `MetricsKey{type='...', key='...'}` 为键，值为 `content:md5`；`cacheData` 只对当前监听的键从快照读（本客户端没有独立的监听缓存），`snapshotData` 对任意键读快照；缺失为 `null`。字段始终写入：请求无键列表时为 `null`，空列表为 `{}`。响应 `metrics` 以每实例随机 UUID 为键，便于同一 IP 后多个客户端区分。
+- **跨连接空应答**：服务端会合并同一 IP 上每条连接的答案，任一沉默即超时；因此命名、锁、AI 三条连接分别返回空 `ClientConfigMetricResponse`，只有配置连接返回真实文档。
+- **公共面**：无。消息类型与应答方法都是 internal，`PublicAPI.Unshipped.txt` 不变。
+- **验收**：Release 构建零警告零错误；单元测试 **1008 个全绿**（新增 7 个：4 个配置指标语义、1 个协议解码、锁与 AI 连接的空应答各 1）；`NacosNamingClientTests` 59 个全绿；`ConfigIntegrationTests` 9 个全绿（新增 `ClientMetrics_AreServedToTheServerAdminEndpoint`，真实 `v3.0.2` 容器 + 管理端 `/nacos/v3/admin/cs/metrics/ip`，断言监听数、版本、快照目录、固定服务器标记与 `cacheData` 的 `content:md5`）；`NamingIntegrationTests` 7 个全绿。文档更新 `protocol-notes.md`（服务器发起消息表 + 配置指标契约）、`java-parity.md`（P3-19 标记完成，仅剩 P3-21 / P3-22）。
+
 #### P3-18 · 订阅内省（✅ 已完成）
 
 - **缺口**：Java 的 `NamingService.getSubscribeServices()` 让调用方枚举本进程当前订阅了哪些服务（`InstancesChangeNotifier.getSubscribeServices` 把订阅表按 `ServiceInfo.fromKey` 报出）。本客户端没有对应入口，长生命周期进程无法在不重复订阅的前提下报告自己维持着哪些服务。

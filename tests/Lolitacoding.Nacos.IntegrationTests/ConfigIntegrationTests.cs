@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Lolitacoding.Nacos.Client;
 using Lolitacoding.Nacos.Config;
 using Microsoft.Extensions.Logging;
@@ -243,6 +244,109 @@ public sealed class ConfigIntegrationTests
 
         events.Current.Kind.ShouldBe(NacosConfigWatchKind.Added);
     }
+
+    [Fact]
+    public async Task ClientMetrics_AreServedToTheServerAdminEndpoint()
+    {
+        // The console's client-metrics page asks the server, and the server turns round and asks
+        // every connection it holds for that client IP. This is the only end-to-end path that
+        // exercises the client's server-initiated metrics handler.
+        await using NacosContainer container = await NacosContainer.StartAsync(NacosIntegrationImages.V3Image);
+
+        string cacheDirectory = CreateCacheDirectory();
+
+        try
+        {
+            await using NacosClientFactory client = CreateClient(
+                container,
+                options =>
+                {
+                    // The server keys its connections by the client IP the handshake reports, so the
+                    // test has to name the address it will query.
+                    options.LocalClientIp = "127.0.0.1";
+                    options.LocalCacheDirectory = cacheDirectory;
+                });
+
+            await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+            string dataId = NacosHttp.UniqueId("config-metrics-it");
+            var key = new NacosConfigKey(dataId, "DEFAULT_GROUP");
+            string content = NacosHttp.ConfigContent("metrics");
+
+            await client.Config.PublishConfigAsync(
+                key, content, "text", ct: TestContext.Current.CancellationToken);
+
+            await NacosEventually.BecomesAsync(
+                () => client.Config.GetConfigAsync(key, TestContext.Current.CancellationToken),
+                result => result.Content == content,
+                TestContext.Current.CancellationToken);
+
+            await using IAsyncDisposable handle = await client.Config.AddListenerAsync(
+                key, (_, _) => Task.CompletedTask, TestContext.Current.CancellationToken);
+
+            string accessToken = await container.CreateAccessTokenAsync(
+                TestContext.Current.CancellationToken);
+
+            using var http = new HttpClient();
+
+            JsonElement metrics = await NacosEventually.BecomesAsync(
+                () => NacosHttp.GetConfigMetricsAsync(
+                    http,
+                    container.HttpAddress,
+                    "127.0.0.1",
+                    dataId,
+                    "DEFAULT_GROUP",
+                    accessToken,
+                    TestContext.Current.CancellationToken),
+                data => data.ValueKind == JsonValueKind.Object
+                    && data.EnumerateObject().Any(),
+                TestContext.Current.CancellationToken);
+
+            JsonElement document = metrics.EnumerateObject().Single().Value;
+            document.ValueKind.ShouldBe(JsonValueKind.String);
+
+            using JsonDocument parsed = JsonDocument.Parse(document.GetString()!);
+            JsonElement root = parsed.RootElement;
+
+            root.GetProperty("listenConfigSize").GetString().ShouldBe("1");
+            root.GetProperty("clientVersion").GetString().ShouldStartWith("Nacos-DotNet/");
+            root.GetProperty("snapshotDir").GetString().ShouldNotBeNullOrWhiteSpace();
+            root.GetProperty("isFixedServer").GetBoolean().ShouldBeTrue();
+
+            string serverUrls = root.GetProperty("serverUrls").GetString()!;
+            serverUrls.ShouldContain(new Uri(container.HttpAddress).Authority);
+
+            // The server builds the metric key from the coordinates it was asked about, with the
+            // blank namespace normalised to the default one, so the key has three segments.
+            string metricKey = string.Concat(
+                "MetricsKey{type='cacheData', key='", dataId, "+DEFAULT_GROUP+public'}");
+
+            JsonElement values = root.GetProperty("metricValues");
+            values.GetProperty(metricKey).GetString().ShouldBe(
+                string.Concat(content, ":", Md5Hex(content)));
+        }
+        finally
+        {
+            TryDelete(cacheDirectory);
+        }
+    }
+
+    /// <summary>Computes the lowercase MD5 the configuration protocol uses as its hash.</summary>
+    /// <param name="content">The content to hash.</param>
+    /// <returns>The hash as lowercase hexadecimal.</returns>
+    /// <remarks>
+    /// MD5 is not a choice here: the protocol exchanges MD5 hashes, and the test recomputes the
+    /// server's checksum to prove the reported value is the content's hash.
+    /// </remarks>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Security",
+        "CA5351:Do Not Use Broken Cryptographic Algorithms",
+        Justification = "MD5 is mandated by the Nacos change-detection protocol; this recomputes a checksum for an assertion.")]
+    private static string Md5Hex(string content) =>
+        Convert.ToHexString(
+            System.Security.Cryptography.MD5.HashData(
+                System.Text.Encoding.UTF8.GetBytes(content)))
+            .ToLowerInvariant();
 
     [Fact]
     public async Task Listen_SurvivesAServerRestart()

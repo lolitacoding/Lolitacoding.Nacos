@@ -288,6 +288,37 @@ public sealed class NacosLockClientTests
     }
 
     [Fact]
+    public async Task ServerRequest_AnswersAConfigurationMetricsQueryWithAnEmptyResult()
+    {
+        // The server asks every connection it holds for a client IP for configuration metrics and
+        // merges the answers. A connection that stays silent makes the whole admin call time out,
+        // so this module has to answer even though it has nothing to report.
+        var server = new LockTestServer();
+        await using NacosLockClient client = server.CreateClient();
+
+        server.OnOperation = _ => LockTest.Success(1);
+
+        await client.AcquireAsync(new NacosLockKey("order-42"), ct: TestContext.Current.CancellationToken);
+
+        server.Stream.Push(TestPayload.ForRequest(new ClientConfigMetricRequest
+        {
+            RequestId = "metrics-1",
+        }));
+
+        await LockTest.WaitForAsync(
+            () => server.Stream.Written.Any(
+                payload => PayloadCodec.ReadTypeName(payload) == "ClientConfigMetricResponse"),
+            TestContext.Current.CancellationToken);
+
+        Payload written = server.Stream.Written.Last(
+            payload => PayloadCodec.ReadTypeName(payload) == "ClientConfigMetricResponse");
+        ClientConfigMetricResponse response = PayloadCodec.Decode<ClientConfigMetricResponse>(written)!;
+
+        response.RequestId.ShouldBe("metrics-1");
+        response.Metrics.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task AcquireAsync_WithdrawsTheQueueEntryWhenTheWaitRunsOut()
     {
         var server = new LockTestServer();

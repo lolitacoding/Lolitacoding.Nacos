@@ -75,6 +75,35 @@ public sealed class NacosMcpClientTests
     }
 
     [Fact]
+    public async Task ServerRequest_AnswersAConfigurationMetricsQueryWithAnEmptyResult()
+    {
+        // The server asks every connection it holds for a client IP for configuration metrics and
+        // merges the answers. A connection that stays silent makes the whole admin call time out,
+        // so the AI module has to answer even though it has nothing to report.
+        var server = new AITestServer();
+        await using NacosAIClient client = server.CreateClient();
+
+        server.OnQuery = _ => AITest.Detail(new NacosMcpServerDetail { Name = "weather" });
+        await client.Mcp.GetServerAsync("weather", ct: TestContext.Current.CancellationToken);
+
+        server.Stream.Push(TestPayload.ForRequest(new ClientConfigMetricRequest
+        {
+            RequestId = "metrics-1",
+        }));
+
+        await AITestServer.WaitForAsync(
+            () => server.Stream.Written.Any(
+                payload => PayloadCodec.ReadTypeName(payload) == "ClientConfigMetricResponse"));
+
+        Payload written = server.Stream.Written.Last(
+            payload => PayloadCodec.ReadTypeName(payload) == "ClientConfigMetricResponse");
+        ClientConfigMetricResponse response = PayloadCodec.Decode<ClientConfigMetricResponse>(written)!;
+
+        response.RequestId.ShouldBe("metrics-1");
+        response.Metrics.ShouldBeEmpty();
+    }
+
+    [Fact]
     public async Task GetServerAsync_AsksForTheNamedVersionInTheConfiguredNamespace()
     {
         var server = new AITestServer();

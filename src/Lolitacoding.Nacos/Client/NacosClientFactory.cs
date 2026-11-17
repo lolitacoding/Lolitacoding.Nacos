@@ -280,7 +280,9 @@ internal sealed class NacosClientFactory : IAsyncDisposable
     /// <param name="request">The pushed request.</param>
     /// <param name="ct">A token that cancels the work.</param>
     /// <returns>The response the server expects, or <see langword="null"/> when none is due.</returns>
-    private Task<NacosResponse?> OnConfigServerRequestAsync(NacosRequest request, CancellationToken ct)
+    private async Task<NacosResponse?> OnConfigServerRequestAsync(
+        NacosRequest request,
+        CancellationToken ct)
     {
         switch (request)
         {
@@ -289,23 +291,26 @@ internal sealed class NacosClientFactory : IAsyncDisposable
                 // know the client received the notification, and holding the acknowledgement until
                 // after a round trip would delay every other message on the stream.
                 _ = FetchChangedConfigAsync(notification, ct);
-                return Task.FromResult<NacosResponse?>(
-                    new ConfigChangeNotifyResponse { RequestId = notification.RequestId });
+                return new ConfigChangeNotifyResponse { RequestId = notification.RequestId };
 
             case ConfigFuzzyWatchSyncRequest sync:
                 // A diff only updates local state, so it is applied inline: it writes to channels
                 // and never blocks, which keeps the acknowledgement immediate.
                 _config.OnFuzzyWatchSync(sync);
-                return Task.FromResult<NacosResponse?>(
-                    new ConfigFuzzyWatchSyncResponse { RequestId = sync.RequestId });
+                return new ConfigFuzzyWatchSyncResponse { RequestId = sync.RequestId };
 
             case ConfigFuzzyWatchChangeNotifyRequest change:
                 _config.OnFuzzyWatchChange(change);
-                return Task.FromResult<NacosResponse?>(
-                    new ConfigFuzzyWatchChangeNotifyResponse { RequestId = change.RequestId });
+                return new ConfigFuzzyWatchChangeNotifyResponse { RequestId = change.RequestId };
+
+            case ClientConfigMetricRequest metrics:
+                // The requested values are read from the snapshot, so the answer is awaited. The
+                // server is blocked on this reply, so there is no other work on this stream to
+                // keep flowing while it is built.
+                return await _config.GetClientMetricsAsync(metrics, ct).ConfigureAwait(false);
 
             default:
-                return Task.FromResult<NacosResponse?>(null);
+                return null;
         }
     }
 
@@ -337,6 +342,13 @@ internal sealed class NacosClientFactory : IAsyncDisposable
                 _naming.OnFuzzyWatchChange(change);
                 return Task.FromResult<NacosResponse?>(
                     new NamingFuzzyWatchChangeNotifyResponse { RequestId = change.RequestId });
+
+            case ClientConfigMetricRequest:
+                // The server asks every connection it holds for a client IP for configuration
+                // metrics and merges the answers. Only the configuration stream has data, so this
+                // one answers with an empty result: leaving it unanswered makes the server wait for
+                // a reply that never comes, time out, and fail the whole admin call.
+                return Task.FromResult<NacosResponse?>(new ClientConfigMetricResponse());
 
             default:
                 return Task.FromResult<NacosResponse?>(null);

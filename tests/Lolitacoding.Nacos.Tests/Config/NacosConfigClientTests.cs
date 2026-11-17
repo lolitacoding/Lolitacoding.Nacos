@@ -1173,6 +1173,154 @@ public sealed class NacosConfigClientTests
         throw new TimeoutException($"Event {eventId} was not logged within the timeout.");
     }
 
+    [Fact]
+    public async Task ClientMetrics_ReportTheSummaryTheServerAsksFor()
+    {
+        using Harness harness = CreateHarness(snapshots: true);
+
+        ClientConfigMetricResponse response = await harness.Client.GetClientMetricsAsync(
+            new ClientConfigMetricRequest(), TestContext.Current.CancellationToken);
+
+        // One document per client instance, keyed by the identifier the server uses to keep several
+        // clients behind one IP apart.
+        response.Metrics.Count.ShouldBe(1);
+
+        string clientId = response.Metrics.Keys.Single();
+        Guid.TryParse(clientId, out _).ShouldBeTrue();
+
+        using JsonDocument document = ReadMetricDocument(response);
+        JsonElement root = document.RootElement;
+
+        root.GetProperty("listenConfigSize").GetString().ShouldBe("0");
+        root.GetProperty("clientVersion").GetString().ShouldStartWith("Nacos-DotNet/");
+        root.GetProperty("snapshotDir").GetString().ShouldNotBeNullOrWhiteSpace();
+        root.GetProperty("addressUrl").GetString().ShouldBeEmpty();
+        root.GetProperty("isFixedServer").GetBoolean().ShouldBeTrue();
+        root.GetProperty("serverUrls").GetString().ShouldBe("[127.0.0.1:8848]");
+        root.GetProperty("metricValues").EnumerateObject().ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task ClientMetrics_ReportTheLocalCopyForListenedAndSnapshottedConfigurations()
+    {
+        // cacheData is Java's per-listener cache, which this client does not keep separately, so it
+        // is answered from the snapshot for a key that is actually listened to. snapshotData answers
+        // for any key the snapshot store holds.
+        using Harness harness = CreateHarness(ListenThenQuery("hello"), snapshots: true);
+
+        await harness.ConnectAsync(TestContext.Current.CancellationToken);
+
+        await using IAsyncDisposable handle = await harness.Client.AddListenerAsync(
+            Key, (_, _) => Task.CompletedTask, TestContext.Current.CancellationToken);
+
+        const string GroupKey = "application.json+DEFAULT_GROUP+public";
+        var request = new ClientConfigMetricRequest
+        {
+            MetricsKeys =
+            [
+                new ClientConfigMetricKey { Type = ClientConfigMetricKey.CacheData, Key = GroupKey },
+                new ClientConfigMetricKey { Type = ClientConfigMetricKey.SnapshotData, Key = GroupKey },
+            ],
+        };
+
+        ClientConfigMetricResponse response = await harness.Client.GetClientMetricsAsync(
+            request, TestContext.Current.CancellationToken);
+
+        using JsonDocument document = ReadMetricDocument(response);
+        JsonElement values = document.RootElement.GetProperty("metricValues");
+
+        string expected = string.Concat("hello:", NacosMd5.Compute("hello"));
+        values.GetProperty(
+            "MetricsKey{type='cacheData', key='application.json+DEFAULT_GROUP+public'}")
+            .GetString().ShouldBe(expected);
+        values.GetProperty(
+            "MetricsKey{type='snapshotData', key='application.json+DEFAULT_GROUP+public'}")
+            .GetString().ShouldBe(expected);
+    }
+
+    [Fact]
+    public async Task ClientMetrics_ReturnNullForConfigurationsTheClientDoesNotHold()
+    {
+        using Harness harness = CreateHarness(ListenThenQuery("hello"), snapshots: true);
+
+        // A read writes a snapshot but does not register a listener, so the two metrics have to
+        // disagree for this configuration.
+        await harness.GetAsync(Key, TestContext.Current.CancellationToken);
+
+        var request = new ClientConfigMetricRequest
+        {
+            MetricsKeys =
+            [
+                new ClientConfigMetricKey
+                {
+                    Type = ClientConfigMetricKey.CacheData,
+                    Key = "application.json+DEFAULT_GROUP+public",
+                },
+                new ClientConfigMetricKey
+                {
+                    Type = ClientConfigMetricKey.SnapshotData,
+                    Key = "application.json+DEFAULT_GROUP+public",
+                },
+                new ClientConfigMetricKey
+                {
+                    Type = ClientConfigMetricKey.SnapshotData,
+                    Key = "missing.json+DEFAULT_GROUP+public",
+                },
+                new ClientConfigMetricKey
+                {
+                    Type = "somethingElse",
+                    Key = "application.json+DEFAULT_GROUP+public",
+                },
+                new ClientConfigMetricKey { Type = ClientConfigMetricKey.CacheData, Key = "not a key" },
+            ],
+        };
+
+        ClientConfigMetricResponse response = await harness.Client.GetClientMetricsAsync(
+            request, TestContext.Current.CancellationToken);
+
+        using JsonDocument document = ReadMetricDocument(response);
+        JsonElement values = document.RootElement.GetProperty("metricValues");
+
+        // A listened-but-unread configuration has no cache entry, while the snapshot from the read
+        // is still there.
+        values.GetProperty(
+            "MetricsKey{type='cacheData', key='application.json+DEFAULT_GROUP+public'}")
+            .ValueKind.ShouldBe(JsonValueKind.Null);
+        values.GetProperty(
+            "MetricsKey{type='snapshotData', key='application.json+DEFAULT_GROUP+public'}")
+            .GetString().ShouldNotBeNull();
+
+        values.GetProperty(
+            "MetricsKey{type='snapshotData', key='missing.json+DEFAULT_GROUP+public'}")
+            .ValueKind.ShouldBe(JsonValueKind.Null);
+        values.GetProperty(
+            "MetricsKey{type='somethingElse', key='application.json+DEFAULT_GROUP+public'}")
+            .ValueKind.ShouldBe(JsonValueKind.Null);
+        values.GetProperty("MetricsKey{type='cacheData', key='not a key'}")
+            .ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    [Fact]
+    public async Task ClientMetrics_ReportNullValuesWhenTheServerAsksForNoKeys()
+    {
+        // Java distinguishes a null list from an empty one: the field is still written, holding
+        // null. An empty list produces an empty object instead.
+        using Harness harness = CreateHarness();
+
+        ClientConfigMetricResponse response = await harness.Client.GetClientMetricsAsync(
+            new ClientConfigMetricRequest { MetricsKeys = null },
+            TestContext.Current.CancellationToken);
+
+        using JsonDocument document = ReadMetricDocument(response);
+        document.RootElement.GetProperty("metricValues").ValueKind.ShouldBe(JsonValueKind.Null);
+    }
+
+    /// <summary>Reads the document a metrics response carries for its single client.</summary>
+    /// <param name="response">The response to read.</param>
+    /// <returns>The parsed document, which the caller disposes.</returns>
+    private static JsonDocument ReadMetricDocument(ClientConfigMetricResponse response) =>
+        JsonDocument.Parse(response.Metrics.Values.Single());
+
     private static Harness CreateHarness(
         Func<Payload, Payload>? handler = null,
         string @namespace = "public",

@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
+using System.Globalization;
+using System.Text.Json;
 using System.Threading.Channels;
 using Lolitacoding.Nacos.Internal;
+using Lolitacoding.Nacos.Protocol;
 using Lolitacoding.Nacos.Protocol.Messages;
 using Lolitacoding.Nacos.Transport;
 using Microsoft.Extensions.Logging;
@@ -38,6 +41,15 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
     private readonly NacosConfigSnapshotStore? _snapshots;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<NacosConfigClient> _logger;
+
+    /// <summary>
+    /// The identifier this client reports in its metrics, one per client instance.
+    /// </summary>
+    /// <remarks>
+    /// The server keys a client's metrics by this value so several clients behind one IP do not
+    /// overwrite each other. Java uses a random UUID per worker; the same shape is used here.
+    /// </remarks>
+    private readonly string _clientUuid = Guid.NewGuid().ToString();
 
     /// <summary>
     /// Registrations keyed by configuration, so a second listener for the same configuration
@@ -908,6 +920,141 @@ internal sealed class NacosConfigClient : INacosConfigClient, IDisposable
             ct).ConfigureAwait(false);
 
         NacosConfigLog.ChangeDelivered(_logger, key.ToString(), deliveredTo);
+    }
+
+    /// <summary>
+    /// Builds the answer to a server request for this client's configuration metrics.
+    /// </summary>
+    /// <param name="request">The request, carrying the individual values to report.</param>
+    /// <param name="ct">A token that cancels the work.</param>
+    /// <returns>The response the server expects.</returns>
+    /// <remarks>
+    /// <para>
+    /// This is the official Java client's <c>handleClientMetricsRequest</c>. The response holds one
+    /// entry keyed by this client's identifier, whose value is a JSON document: the server merges
+    /// the outer maps from every connection behind an IP without parsing the documents.
+    /// </para>
+    /// <para>
+    /// The per-configuration values are read from the snapshot, because that is where this client's
+    /// local copy lives — there is no separate in-memory content cache. Java's <c>cacheData</c> is
+    /// only present for a configuration the worker is listening to, and the same rule is applied
+    /// here so the two metrics keep their Java meanings: <c>cacheData</c> reports a listened
+    /// configuration's local copy, <c>snapshotData</c> reports whatever snapshot exists for the
+    /// coordinates. Both are <see langword="null"/> when nothing is stored.
+    /// </para>
+    /// </remarks>
+    internal async Task<ClientConfigMetricResponse> GetClientMetricsAsync(
+        ClientConfigMetricRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        Dictionary<string, string?>? values = null;
+
+        if (request.MetricsKeys is { } keys)
+        {
+            values = new Dictionary<string, string?>(keys.Count, StringComparer.Ordinal);
+
+            foreach (ClientConfigMetricKey key in keys)
+            {
+                // Java uses putIfAbsent: a repeated key contributes once, and the first answer wins.
+                string name = key.ToString();
+                if (!values.ContainsKey(name))
+                {
+                    values[name] = await ReadMetricValueAsync(key, ct).ConfigureAwait(false);
+                }
+            }
+        }
+
+        var payload = new ClientConfigMetricPayload
+        {
+            ListenConfigSize = _listeners.Count.ToString(CultureInfo.InvariantCulture),
+            ClientVersion = _connection.ClientVersion,
+            SnapshotDir = _snapshots?.SnapshotDirectory ?? string.Empty,
+            AddressUrl = _connection.ServerList.Source ?? string.Empty,
+            IsFixedServer = !_connection.ServerList.IsDynamic,
+            ServerUrls = FormatServerUrls(_connection.ServerList.Items),
+            MetricValues = values,
+        };
+
+        string document = JsonSerializer.Serialize(
+            payload, NacosJsonContext.Default.ClientConfigMetricPayload);
+
+        var response = new ClientConfigMetricResponse();
+        response.Metrics[_clientUuid] = document;
+
+        return response;
+    }
+
+    /// <summary>
+    /// Reads one requested per-configuration value.
+    /// </summary>
+    /// <param name="metric">The requested type and configuration.</param>
+    /// <param name="ct">A token that cancels the read.</param>
+    /// <returns>The value in Java's <c>content:md5</c> form, or <see langword="null"/>.</returns>
+    private async Task<string?> ReadMetricValueAsync(
+        ClientConfigMetricKey metric,
+        CancellationToken ct)
+    {
+        if (metric.Type is not (ClientConfigMetricKey.CacheData or ClientConfigMetricKey.SnapshotData))
+        {
+            // An unknown type is answered with null rather than an error: the server merges the
+            // map and a missing value is exactly what an absent answer would produce anyway.
+            return null;
+        }
+
+        if (!NacosFuzzyPattern.TryParseGroupKey(
+            metric.Key, out string dataId, out string group, out string? tenant))
+        {
+            return null;
+        }
+
+        var key = new NacosConfigKey(
+            dataId,
+            group,
+            string.IsNullOrEmpty(tenant) ? _options.Namespace : tenant);
+
+        if (metric.Type == ClientConfigMetricKey.CacheData
+            && !_listeners.ContainsKey(key.ToString()))
+        {
+            // A configuration this client is not listening to has no cache entry, which is the same
+            // shape Java's cacheMap has: it only holds listened keys.
+            return null;
+        }
+
+        if (_snapshots is null)
+        {
+            return null;
+        }
+
+        (string Content, string? ContentType, string? EncryptedDataKey)? snapshot =
+            await _snapshots.LoadAsync(key, ct).ConfigureAwait(false);
+
+        return snapshot is null
+            ? null
+            : string.Concat(snapshot.Value.Content, ":", NacosMd5.Compute(snapshot.Value.Content));
+    }
+
+    /// <summary>
+    /// Formats the server list the way Java's <c>List.toString()</c> does.
+    /// </summary>
+    /// <param name="servers">The servers to format.</param>
+    /// <returns>A string such as <c>[127.0.0.1:8848]</c>.</returns>
+    private static string FormatServerUrls(IReadOnlyList<NacosServerAddress> servers)
+    {
+        if (servers.Count == 0)
+        {
+            return "[]";
+        }
+
+        var formatted = new string[servers.Count];
+        for (int i = 0; i < servers.Count; i++)
+        {
+            formatted[i] = string.Create(
+                CultureInfo.InvariantCulture, $"{servers[i].Host}:{servers[i].Port}");
+        }
+
+        return string.Concat("[", string.Join(", ", formatted), "]");
     }
 
     /// <summary>

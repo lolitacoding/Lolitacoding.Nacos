@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Lolitacoding.Nacos.Protocol.Messages;
 
 /// <summary>
@@ -382,4 +384,116 @@ internal sealed class ConfigFuzzyWatchChangeNotifyRequest : NacosRequest
 /// </summary>
 internal sealed class ConfigFuzzyWatchChangeNotifyResponse : NacosResponse
 {
+}
+
+/// <summary>
+/// Asks the client to report its configuration metrics.
+/// <c>metadata.type = "ClientConfigMetricRequest"</c>.
+/// </summary>
+/// <remarks>
+/// This is a server-initiated request: the console's client-metrics endpoint asks every connection
+/// held by one client IP and merges the answers. It is the one place the server asks the client for
+/// state instead of the other way round.
+/// </remarks>
+internal sealed class ClientConfigMetricRequest : NacosRequest
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ClientConfigMetricRequest"/> class.
+    /// </summary>
+    public ClientConfigMetricRequest() => Module = NacosModule.Config;
+
+    /// <summary>
+    /// Gets or sets the individual values the server asked for, or <see langword="null"/> when it
+    /// asked for none.
+    /// </summary>
+    /// <remarks>
+    /// The server always sends a list, empty when it only wants the summary fields. A null is still
+    /// accepted because the wire can carry one, and Java distinguishes it: a null list reports a
+    /// null <c>metricValues</c> rather than an empty object.
+    /// </remarks>
+    public List<ClientConfigMetricKey>? MetricsKeys { get; set; } = [];
+}
+
+/// <summary>
+/// One value the server asked a client to report.
+/// </summary>
+internal sealed class ClientConfigMetricKey
+{
+    /// <summary>The type asking for the content the client holds for a listened configuration.</summary>
+    public const string CacheData = "cacheData";
+
+    /// <summary>The type asking for the configuration's on-disk snapshot.</summary>
+    public const string SnapshotData = "snapshotData";
+
+    /// <summary>Gets or sets the value type, one of <see cref="CacheData"/> or <see cref="SnapshotData"/>.</summary>
+    public string? Type { get; set; }
+
+    /// <summary>Gets or sets the configuration, as the protocol's group key.</summary>
+    public string? Key { get; set; }
+
+    /// <summary>
+    /// Returns the key in the form Java uses as the <c>metricValues</c> object key.
+    /// </summary>
+    /// <returns>The Java <c>MetricsKey.toString()</c> form.</returns>
+    /// <remarks>
+    /// The server's console reads <c>metricValues</c> by this exact string, so it is a wire format
+    /// rather than a diagnostic convenience: Java serialises a map keyed by the bean, and Jackson
+    /// falls back to <c>toString()</c> for a key that is not a string.
+    /// </remarks>
+    public override string ToString() => string.Concat(
+        "MetricsKey{type='", Type, "', key='", Key, "'}");
+}
+
+/// <summary>
+/// Carries the metrics a client reports.
+/// <c>metadata.type = "ClientConfigMetricResponse"</c>.
+/// </summary>
+internal sealed class ClientConfigMetricResponse : NacosResponse
+{
+    /// <summary>
+    /// Gets or sets the metrics, keyed by the client's identifier and holding one JSON document
+    /// per client.
+    /// </summary>
+    /// <remarks>
+    /// The value is a JSON string rather than a nested object because that is what Java puts on the
+    /// wire: it serialises its metric map and stores the result under the client UUID, and the
+    /// server merges the outer maps without ever parsing the inner document.
+    /// </remarks>
+    public Dictionary<string, string> Metrics { get; set; } = new(StringComparer.Ordinal);
+}
+
+/// <summary>
+/// The document a client serialises into <see cref="ClientConfigMetricResponse.Metrics"/>.
+/// </summary>
+internal sealed class ClientConfigMetricPayload
+{
+    /// <summary>Gets or sets the number of configurations the client is listening to.</summary>
+    public string? ListenConfigSize { get; set; }
+
+    /// <summary>Gets or sets the client version string.</summary>
+    public string? ClientVersion { get; set; }
+
+    /// <summary>Gets or sets the directory that holds the client's snapshots.</summary>
+    public string? SnapshotDir { get; set; }
+
+    /// <summary>Gets or sets the address server URL, or an empty string for a fixed list.</summary>
+    public string? AddressUrl { get; set; }
+
+    /// <summary>Gets or sets a value indicating whether the server list is fixed.</summary>
+    public bool IsFixedServer { get; set; }
+
+    /// <summary>Gets or sets the servers the client currently knows, formatted like a Java list.</summary>
+    public string? ServerUrls { get; set; }
+
+    /// <summary>
+    /// Gets or sets the requested per-configuration values, keyed by
+    /// <see cref="ClientConfigMetricKey"/>'s Java form.
+    /// </summary>
+    /// <remarks>
+    /// Always emitted, including as <see langword="null"/>: Java writes the field whether or not it
+    /// holds anything, and a reader that distinguishes "asked for nothing" from "no list at all"
+    /// relies on that.
+    /// </remarks>
+    [JsonIgnore(Condition = JsonIgnoreCondition.Never)]
+    public Dictionary<string, string?>? MetricValues { get; set; }
 }

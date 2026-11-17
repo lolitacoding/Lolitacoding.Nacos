@@ -171,6 +171,12 @@ internal sealed class NacosGrpcConnection : IAsyncDisposable
     /// <summary>Gets the client version string reported during the handshake.</summary>
     public string ClientVersion { get; }
 
+    /// <summary>
+    /// Gets the server list this connection dials, for diagnostics such as the client-metrics
+    /// document.
+    /// </summary>
+    internal NacosServerList ServerList => _servers;
+
     /// <summary>Gets the UTC timestamp of the last successfully answered request, in ticks.</summary>
     internal long LastActivityTicks { get; private set; }
 

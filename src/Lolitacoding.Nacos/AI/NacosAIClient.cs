@@ -241,7 +241,13 @@ internal sealed class NacosAIClient : INacosAIClient, IDisposable
     /// The reply, or <see langword="null"/> when no handler recognises the message.
     /// </returns>
     private Task<NacosResponse?> OnServerRequestAsync(NacosRequest request, CancellationToken ct) =>
-        _agent.Watch.OnServerRequestAsync(request, ct);
+        request is ClientConfigMetricRequest
+            // The server asks every connection it holds for a client IP for configuration metrics
+            // and merges the answers. This module has none to report, so it answers with an empty
+            // result: staying silent makes the server wait for a reply that never comes, time out,
+            // and fail the whole admin call.
+            ? Task.FromResult<NacosResponse?>(new ClientConfigMetricResponse())
+            : _agent.Watch.OnServerRequestAsync(request, ct);
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()

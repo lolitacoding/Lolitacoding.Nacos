@@ -375,9 +375,20 @@ internal sealed class NacosLockClient : INacosLockClient, IDisposable
     /// produced inline: there is no work to do that could hold the stream up.
     /// </remarks>
     private Task<NacosResponse?> OnServerRequestAsync(NacosRequest request, CancellationToken ct) =>
-        request is LockNotificationRequest notification
-            ? Task.FromResult<NacosResponse?>(HandleNotification(notification))
-            : Task.FromResult<NacosResponse?>(null);
+        request switch
+        {
+            LockNotificationRequest notification =>
+                Task.FromResult<NacosResponse?>(HandleNotification(notification)),
+
+            // The server asks every connection it holds for a client IP for configuration metrics
+            // and merges the answers. This module has none to report, so it answers with an empty
+            // result: staying silent makes the server wait for a reply that never comes, time out,
+            // and fail the whole admin call.
+            ClientConfigMetricRequest =>
+                Task.FromResult<NacosResponse?>(new ClientConfigMetricResponse()),
+
+            _ => Task.FromResult<NacosResponse?>(null),
+        };
 
     /// <summary>
     /// Completes the waiter a lock notification is addressed to.

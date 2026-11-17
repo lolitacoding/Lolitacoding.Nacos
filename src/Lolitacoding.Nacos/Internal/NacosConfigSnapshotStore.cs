@@ -79,6 +79,12 @@ internal sealed class NacosConfigSnapshotStore
     }
 
     /// <summary>
+    /// Gets the directory that holds the snapshots, as reported to the server's client-metrics
+    /// endpoint.
+    /// </summary>
+    internal string SnapshotDirectory => _rootDirectory;
+
+    /// <summary>
     /// Writes a snapshot, replacing any snapshot for the same configuration.
     /// </summary>
     /// <param name="key">The configuration coordinates.</param>

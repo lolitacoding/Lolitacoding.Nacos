@@ -163,6 +163,8 @@ A domain push is answered by the feature that owns it before the real work happe
 - `AgentDiscoveryNotifyRequest` → `AgentDiscoveryNotifyResponse`, and the watch it names is read
   again. A hint for a watch the client does not own is answered with `accepted: false` instead of
   being ignored, because the server re-delivers what it is not told to stop sending.
+- `ClientConfigMetricRequest` → `ClientConfigMetricResponse`. Every module answers, including the
+  ones that hold no configuration state; see *Client metrics* under *Configuration specifics*.
 
 The first non-null response any handler produces is the one written back, exactly as the official
 client does, and the remaining handlers still run. A handler that returns `null` — one that only
@@ -210,6 +212,32 @@ split the Java client makes. It is not marked as served from the local cache: th
 server was unreachable, and here the server answered. The listener path sends the held hash as well,
 so a repeated notification can also be answered with `304`; that is treated as "unchanged" and
 dropped rather than reported as a failed fetch.
+
+### Client metrics
+
+The console's client-metrics page asks the server, and the server asks the client. `GET
+/v3/admin/cs/metrics/ip` takes a client IP and sends `ClientConfigMetricRequest` to **every**
+connection held for it, waiting one second for each answer and failing the whole admin call if any
+stays silent. The request carries `metricsKeys`, each a `{type, key}` pair where the key is the
+server group key `dataId+group[+tenant]` (percent-encoded; a blank namespace is normalised to
+`public`).
+
+The answer is a `ClientConfigMetricResponse` whose `metrics` map holds one JSON document per client
+instance, keyed by a random UUID so several clients behind one address stay distinct. The document
+carries `listenConfigSize`, `clientVersion`, `snapshotDir`, `addressUrl`, `isFixedServer`,
+`serverUrls` and `metricValues`.
+
+`metricValues` is keyed by the request bean's `toString` form, `MetricsKey{type='cacheData',
+key='...'}` — the server matches an answer to a key by that string, so it is part of the wire
+contract. `cacheData` is Java's per-listener cache; this client does not keep one, so it answers from
+the snapshot only for a key it is currently listening to. `snapshotData` answers for any key the
+snapshot store holds. Both values are `content:md5`, and a missing entry is `null`. The field is
+written even when null: a request without a key list gets `metricValues: null`, while an empty list
+gets `{}`.
+
+Because the server fails the call when any connection stays silent, the naming, lock and AI
+connections answer with an empty `ClientConfigMetricResponse`; only the configuration connection
+reports data.
 
 ### Configuration fuzzy watch
 
