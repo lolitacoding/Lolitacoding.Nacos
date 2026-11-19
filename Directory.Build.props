@@ -32,8 +32,8 @@
     <Company>Lolitacoding</Company>
     <Product>Lolitacoding.Nacos</Product>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/lolitacoding/Lolitacoding.Nacos</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/lolitacoding/Lolitacoding.Nacos</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/lolitacoding/nacos-dotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/lolitacoding/nacos-dotnet</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>

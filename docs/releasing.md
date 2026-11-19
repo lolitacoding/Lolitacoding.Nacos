@@ -60,7 +60,7 @@ nuget.org supports GitHub OIDC trusted publishing, which removes the long-lived 
 already grants `id-token: write`, so the switch is a policy plus one step:
 
 1. On nuget.org, add a trusted publishing policy for owner `lolitacoding`, repository
-   `Lolitacoding.Nacos` and workflow file `ci.yml`.
+   `nacos-dotnet` and workflow file `ci.yml`.
 2. Add a repository variable `NUGET_USER` holding the nuget.org account name.
 3. Replace the push step with a login step and use the key it returns:
 

@@ -2,7 +2,7 @@
 
 Lolitacoding 的官网，源码就在本仓库的 `site/` 下，由 GitHub Pages 从 `main` 分支发布：
 
-<https://lolitacoding.github.io/Lolitacoding.Nacos/>
+<https://lolitacoding.github.io/nacos-dotnet/>
 
 单页、手写 HTML/CSS，没有构建步骤、没有框架、没有外部字体或 CDN。改完直接推送，
 `.github/workflows/pages.yml` 会把 `site/` 作为静态站点上传，一两分钟后线上更新。

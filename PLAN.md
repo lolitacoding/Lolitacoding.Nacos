@@ -17,7 +17,7 @@
 
 ## 2. 命名与仓库结构
 
-仓库名：`Lolitacoding.Nacos`（一个服务一个仓库）。NuGet 前缀 `Lolitacoding.*`。
+仓库名：`nacos-dotnet`（一个服务一个仓库；Aspire 相关项目后续拆分到独立的 Aspire 仓库）。NuGet 前缀 `Lolitacoding.*`。
 
 ```
 Lolitacoding.Nacos/

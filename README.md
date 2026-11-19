@@ -3,7 +3,7 @@
 Modern **.NET 11** client SDK for [Nacos](https://nacos.io) 3.x — configuration center,
 service registration & discovery, distributed locking, and the AI registry.
 
-[![CI](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml/badge.svg)](https://github.com/lolitacoding/Lolitacoding.Nacos/actions/workflows/ci.yml)
+[![CI](https://github.com/lolitacoding/nacos-dotnet/actions/workflows/ci.yml/badge.svg)](https://github.com/lolitacoding/nacos-dotnet/actions/workflows/ci.yml)
 
 ## Why another Nacos client?
 
@@ -407,7 +407,7 @@ builder.Services.AddOpenTelemetry()
 ## Website
 
 The project site lives in [`site/`](site/) and is published by GitHub Pages from `main`:
-<https://lolitacoding.github.io/Lolitacoding.Nacos/>. It is plain HTML and CSS with no build step —
+<https://lolitacoding.github.io/nacos-dotnet/>. It is plain HTML and CSS with no build step —
 see [`site/README.md`](site/README.md) for the layout and how a change reaches the site.
 
 ## Building
