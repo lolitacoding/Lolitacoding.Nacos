@@ -148,7 +148,10 @@ internal sealed class NacosClientFactory : IAsyncDisposable
         else
         {
             servers = new NacosServerList(
-                NacosServerAddress.ParseAll(options.ServerAddresses, options.ContextPath));
+                NacosServerAddress.ParseAll(
+                    options.ServerAddresses,
+                    options.ContextPath,
+                    options.GrpcPortOffset));
         }
 
         INacosAuthProvider authProvider = NacosAuthProviderFactory.Create(

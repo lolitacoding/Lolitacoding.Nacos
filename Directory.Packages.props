@@ -34,7 +34,9 @@
   </ItemGroup>
 
   <ItemGroup Label="Aspire integration">
-    <PackageVersion Include="Aspire.Hosting" Version="13.6.5" />
+    <PackageVersion Include="Aspire.Hosting" Version="17.0.0" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="17.0.0" />
+    <PackageVersion Include="Aspire.Hosting.Dotnet" Version="17.0.0" />
   </ItemGroup>
 
   <ItemGroup Label="Optional configuration parsers">
@@ -52,7 +54,7 @@
 
   <ItemGroup Label="Transitive dependencies pinned past a security advisory">
     <!-- Aspire.Hosting brings in StreamJsonRpc, which resolves MessagePack, and NuGet's audit reports
-         some of those releases as vulnerable (GHSA-qhrr-8q5h-9q3h). Aspire 13.6.5 requires 2.5.307
+         some of those releases as vulnerable (GHSA-qhrr-8q5h-9q3h). Aspire 17.0.0 requires 2.5.307
          or later, so the pin tracks that floor; central transitive pinning is what lifts it into
          every project that would otherwise have resolved the flagged one. -->
     <PackageVersion Include="MessagePack" Version="2.5.307" />

@@ -991,6 +991,8 @@ Lolitacoding.Nacos.NacosOptions.EndpointRefreshInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosOptions.EndpointRefreshInterval.set -> void
 Lolitacoding.Nacos.NacosOptions.EndpointServerListName.get -> string!
 Lolitacoding.Nacos.NacosOptions.EndpointServerListName.set -> void
+Lolitacoding.Nacos.NacosOptions.GrpcPortOffset.get -> int
+Lolitacoding.Nacos.NacosOptions.GrpcPortOffset.set -> void
 Lolitacoding.Nacos.NacosOptions.HealthCheckInterval.get -> System.TimeSpan
 Lolitacoding.Nacos.NacosOptions.HealthCheckInterval.set -> void
 Lolitacoding.Nacos.NacosOptions.HealthCheckTimeout.get -> System.TimeSpan

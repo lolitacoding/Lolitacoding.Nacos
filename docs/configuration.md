@@ -15,7 +15,8 @@ and `Naming`.
 
 | Property | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `ServerAddresses` | `IList<string>` | empty | **Required unless `Endpoint` is set.** One or more `host:port` or `http://host:port` values. Multiple addresses enable failover. The gRPC endpoint is the HTTP port + 1000. |
+| `ServerAddresses` | `IList<string>` | empty | **Required unless `Endpoint` is set.** One or more `host:port` or `http://host:port` values. Multiple addresses enable failover. The gRPC endpoint is the HTTP port plus `GrpcPortOffset`. |
+| `GrpcPortOffset` | `int` | `1000` | Offset from a server's main port to its client gRPC port. Matches the server's `nacos.server.grpc.port.offset`. Set it when the two ports are published independently, such as an Aspire resource that maps each container port to a random host port. |
 | `Namespace` | `string` | `"public"` | The namespace (tenant) all operations default to. An empty value is normalised to `public`. Must be ASCII. |
 | `UserName` | `string?` | `null` | Credential for an auth-enabled server. Must be set together with `Password`. |
 | `Password` | `string?` | `null` | Must be set together with `UserName`. |

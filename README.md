@@ -219,7 +219,8 @@ IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(ar
 IResourceBuilder<NacosResource> nacos = builder.AddNacos("nacos")
     .WithDataVolume();
 
-builder.AddProject<Projects.Sample_AspNetCore>("sample-api")
+// Aspire 17 adds a C# project by path; the generic AddProject<TProject> is obsolete.
+builder.AddDotnetProject("sample-api", "../Sample.AspNetCore/Sample.AspNetCore.csproj")
     .WithReference(nacos)
     .WaitFor(nacos);
 
@@ -231,11 +232,14 @@ The referenced service consumes the injected connection string through the match
 ```csharp
 using Lolitacoding.Aspire.Nacos;
 
-builder.AddNacosClient(options => options.Optional = true);
+builder.AddNacosClient(configure: options => options.Optional = true);
 ```
 
 `AddNacosClient` throws at startup when the connection string is missing, so a misconfigured
-reference fails fast. See the [Aspire guide](docs/aspire.md) for the options `AddNacos` exposes.
+reference fails fast. The host ports are not pinned: Aspire assigns a free port to each endpoint,
+and the client helper derives `NacosOptions.GrpcPortOffset` from the injected `NACOS_PORT` and
+`NACOS_GRPCPORT` values. See the [Aspire guide](docs/aspire.md) for the ports and the options
+`AddNacos` exposes.
 
 ### Distributed locking
 

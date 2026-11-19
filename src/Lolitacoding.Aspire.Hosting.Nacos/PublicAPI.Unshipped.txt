@@ -4,8 +4,13 @@ Lolitacoding.Aspire.Hosting.Nacos.NacosContainerImageTags
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.ConnectionStringExpression.get -> Aspire.Hosting.ApplicationModel.ReferenceExpression!
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.ConsoleEndpoint.get -> Aspire.Hosting.ApplicationModel.EndpointReference!
+Lolitacoding.Aspire.Hosting.Nacos.NacosResource.ConsoleUri.get -> Aspire.Hosting.ApplicationModel.EndpointReferenceExpression!
+Lolitacoding.Aspire.Hosting.Nacos.NacosResource.GetConnectionProperties() -> System.Collections.Generic.IEnumerable<System.Collections.Generic.KeyValuePair<string!, Aspire.Hosting.ApplicationModel.ReferenceExpression!>>!
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.GetConnectionStringAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.GrpcEndpoint.get -> Aspire.Hosting.ApplicationModel.EndpointReference!
+Lolitacoding.Aspire.Hosting.Nacos.NacosResource.GrpcHost.get -> Aspire.Hosting.ApplicationModel.EndpointReferenceExpression!
+Lolitacoding.Aspire.Hosting.Nacos.NacosResource.GrpcPort.get -> Aspire.Hosting.ApplicationModel.EndpointReferenceExpression!
+Lolitacoding.Aspire.Hosting.Nacos.NacosResource.GrpcServerEndpoint.get -> Aspire.Hosting.ApplicationModel.EndpointReference!
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.Host.get -> Aspire.Hosting.ApplicationModel.EndpointReferenceExpression!
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.HttpEndpoint.get -> Aspire.Hosting.ApplicationModel.EndpointReference!
 Lolitacoding.Aspire.Hosting.Nacos.NacosResource.NacosResource(string! name) -> void
@@ -16,5 +21,9 @@ const Lolitacoding.Aspire.Hosting.Nacos.NacosContainerImageTags.Registry = "dock
 const Lolitacoding.Aspire.Hosting.Nacos.NacosContainerImageTags.Tag = "latest" -> string!
 static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.AddNacos(this Aspire.Hosting.IDistributedApplicationBuilder! builder, string! name, int? httpPort = null, int? grpcPort = null, int? grpcServerPort = null, int? consolePort = null) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!
 static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.WithAuthentication(this Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>! builder) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!
+static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.WithConsolePort(this Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>! builder, int port) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!
 static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.WithDataBindMount(this Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>! builder, string! source) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!
 static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.WithDataVolume(this Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>! builder, string? name = null) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!
+static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.WithGrpcPort(this Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>! builder, int port) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!
+static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.WithGrpcServerPort(this Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>! builder, int port) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!
+static Lolitacoding.Aspire.Hosting.Nacos.NacosBuilderExtensions.WithHttpPort(this Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>! builder, int port) -> Aspire.Hosting.ApplicationModel.IResourceBuilder<Lolitacoding.Aspire.Hosting.Nacos.NacosResource!>!

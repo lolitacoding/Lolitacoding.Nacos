@@ -331,6 +331,7 @@ internal sealed class NacosEndpointServerListProvider : IAsyncDisposable
 
         return NacosServerAddress.ParseAll(
             lines,
-            _options.EndpointContextPath ?? _options.ContextPath);
+            _options.EndpointContextPath ?? _options.ContextPath,
+            _options.GrpcPortOffset);
     }
 }

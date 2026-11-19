@@ -45,6 +45,34 @@ public sealed class NacosServerAddressTests
     }
 
     [Fact]
+    public void Parse_HonoursAConfiguredGrpcPortOffset()
+    {
+        // A deployment that publishes the gRPC port on a different offset, or that maps the two
+        // ports independently, supplies the difference instead of relying on the default 1000.
+        NacosServerAddress address = NacosServerAddress.Parse(
+            "http://10.0.0.5:8848", grpcPortOffset: 1111);
+
+        address.GrpcBaseAddress.Port.ShouldBe(9959);
+        address.ToGrpcAddress().ShouldBe("http://10.0.0.5:9959");
+    }
+
+    [Fact]
+    public void Parse_AcceptsANegativeOffsetThatStillDerivesAValidPort()
+    {
+        NacosServerAddress address = NacosServerAddress.Parse(
+            "http://10.0.0.5:8848", grpcPortOffset: -1000);
+
+        address.GrpcBaseAddress.Port.ShouldBe(7848);
+    }
+
+    [Fact]
+    public void Parse_RejectsAnOffsetThatDerivesAPortOutOfRange()
+    {
+        Should.Throw<FormatException>(() => NacosServerAddress.Parse(
+            "http://10.0.0.5:65535", grpcPortOffset: 1000));
+    }
+
+    [Fact]
     public void Parse_DefaultsTheSchemeAndPort()
     {
         NacosServerAddress address = NacosServerAddress.Parse("nacos.example.com");
@@ -85,6 +113,15 @@ public sealed class NacosServerAddressTests
 
         address.BuildHttpUri("/v3/client/ai/skills").AbsoluteUri
             .ShouldBe("https://nacos.example.com:8848/v3/client/ai/skills");
+    }
+
+    [Fact]
+    public void ParseAll_AppliesTheGrpcPortOffset()
+    {
+        IReadOnlyList<NacosServerAddress> addresses = NacosServerAddress.ParseAll(
+            ["nacos.example.com:8848"], grpcPortOffset: 1111);
+
+        addresses[0].GrpcBaseAddress.Port.ShouldBe(9959);
     }
 
     [Fact]

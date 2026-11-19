@@ -28,7 +28,8 @@ IDistributedApplicationBuilder builder = DistributedApplication.CreateBuilder(ar
 IResourceBuilder<NacosResource> nacos = builder.AddNacos("nacos")
     .WithDataVolume();
 
-builder.AddProject<Projects.MyApi>("my-api")
+// Aspire 17 adds a C# project by path; the generic AddProject<TProject> is obsolete.
+builder.AddDotnetProject("my-api", "../MyApi/MyApi.csproj")
     .WithReference(nacos)   // injects ConnectionStrings__nacos
     .WaitFor(nacos);        // starts only once Nacos reports ready
 
@@ -44,11 +45,17 @@ readiness health check succeeds.
 ```csharp
 using Lolitacoding.Aspire.Nacos;
 
-builder.AddNacosClient(options => options.Optional = true);
+builder.AddNacosClient(configure: options => options.Optional = true);
 ```
 
 `AddNacosClient` reads `ConnectionStrings:nacos`, applies it to `NacosOptions.ServerAddresses`, then
-runs the optional delegate so it can override any value:
+runs the optional delegate so it can override any value. It also reads the `NACOS_PORT` and
+`NACOS_GRPCPORT` connection properties that the hosting resource injects and sets
+`NacosOptions.GrpcPortOffset` to the difference between them, because Aspire publishes each
+container port on its own host port. When those properties are absent the default offset of `1000`
+is kept, so a plain connection string still works.
+
+For example:
 
 ```csharp
 builder.AddNacosClient(
@@ -119,38 +126,53 @@ wait queue and reentrancy belong to the 3.3 lock service. See
 
 ## 4. Ports
 
-`AddNacos` publishes four fixed host ports:
+`AddNacos` does not pin host ports. Each endpoint is published on a free port that Aspire picks,
+and the dashboard shows the address that was assigned. The ports inside the container are fixed:
 
-| Endpoint | Container port | Default host port | What it is |
-| --- | --- | --- | --- |
-| `http` | 8848 | 8848 | Server API; what a Nacos client connects to. |
-| `grpc` | 9848 | 9848 | Client gRPC (main port + 1000). |
-| `grpc-server` | 9849 | 9849 | Server-to-server gRPC (main port + 1001). |
-| `console` | 8080 | 8080 | Web console. |
+| Endpoint | Container port | What it is |
+| --- | --- | --- |
+| `http` | 8848 | Server API; what a Nacos client connects to. |
+| `grpc` | 9848 | Client gRPC (main port + 1000 inside the container). |
+| `grpc-server` | 9849 | Server-to-server gRPC (main port + 1001). |
+| `console` | 8080 | Web console. |
 
-The server ports are not random because a Nacos client derives the gRPC port from the HTTP address
-it was given: it adds `1000` to the main port. If the HTTP endpoint were mapped to an arbitrary port,
-the derived gRPC port would not match the published one and clients could not connect. `AddNacos`
-therefore keeps the offsets in place and lets you move the whole set with `httpPort`:
+A Nacos client normally derives the gRPC port by adding `1000` to the main port, which would be
+wrong once the two are published independently. The resource therefore also injects `NACOS_PORT`
+and `NACOS_GRPCPORT`, and `AddNacosClient` sets `NacosOptions.GrpcPortOffset` to the difference
+between them. Nothing else is needed when both packages are used together.
+
+A client that reads only the connection string — a non-.NET process, or one that does not use
+`Lolitacoding.Aspire.Nacos` — has to be told the offset. Either configure
+`NacosOptions.GrpcPortOffset` explicitly, or pin the ports at a known distance. Every port
+argument and `With*Port` helper pins exactly the endpoint it names, so pinning all three is
+explicit:
 
 ```csharp
-// 18848 / 19848 / 19849.
-builder.AddNacos("nacos", httpPort: 18848);
+// 18848 / 19848 / 19849; the console still gets a free port.
+builder.AddNacos(
+    "nacos",
+    httpPort: 18848,
+    grpcPort: 19848,
+    grpcServerPort: 19849);
 ```
 
-Override `grpcPort` and `grpcServerPort` independently only if something else manages the client's
-port derivation.
+Each port can also be set after `AddNacos`:
+
+```csharp
+builder.AddNacos("nacos")
+    .WithHttpPort(18848)
+    .WithGrpcPort(19848)
+    .WithGrpcServerPort(19849)
+    .WithConsolePort(18080);
+```
+
+`WithHttpPort` changes only the main port; the gRPC port stays wherever Aspire published it, so a
+client that derives it must be given the offset. Use `WithGrpcPort` as well when the two need to be
+a known distance apart.
 
 The console is a separate application in Nacos 3.x, configured by `nacos.console.port` and listening
 on `8080`; in 2.x it was part of the server and served under the main port's context path. Its host
-port is independent of `httpPort`, so a moved server keeps the console at `8080`; override it with
-`consolePort`:
-
-```csharp
-builder.AddNacos("nacos", httpPort: 18848, consolePort: 18080);
-```
-
-The dashboard's `console` link opens `http://localhost:8080` and is the one that shows the UI. The
+port is independent of the API, so the dashboard's `console` link is the one that opens the UI. The
 `http` link points at the API root, which answers 404 by design, so use it for API calls only.
 
 ## 5. Run the sample
@@ -162,6 +184,6 @@ dotnet run --project samples/Sample.Aspire.AppHost
 ```
 
 The AppHost starts Nacos, waits for it to become ready, then starts the API and passes it the Nacos
-address. Open the console from the dashboard's `console` link (http://localhost:8080) to inspect
-configurations and services; the `http` link is the API root, which answers 404 by design. See
-`Program.cs` in both projects for the full wiring.
+address. Open the console from the dashboard's `console` link to inspect configurations and
+services; the `http` link is the API root, which answers 404 by design. See `Program.cs` in both
+projects for the full wiring.

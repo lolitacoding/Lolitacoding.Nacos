@@ -475,12 +475,13 @@ service:
 // AppHost.
 builder.AddNacos("nacos").WithDataVolume();
 
-builder.AddProject<Projects.MyApi>("my-api")
+// Aspire 17 adds a C# project by path; the generic AddProject<TProject> is obsolete.
+builder.AddDotnetProject("my-api", "../MyApi/MyApi.csproj")
     .WithReference(nacos)
     .WaitFor(nacos);
 
 // MyApi.
-builder.AddNacosClient(options => options.Optional = true);
+builder.AddNacosClient(configure: options => options.Optional = true);
 ```
 
 The AppHost runs a standalone `nacos/nacos-server` container, waits for its readiness check, and

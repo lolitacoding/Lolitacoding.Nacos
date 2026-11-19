@@ -137,6 +137,32 @@ public sealed class NacosEndpointServerListProviderTests
     }
 
     [Fact]
+    public async Task Seed_AppliesTheConfiguredGrpcPortOffset()
+    {
+        var clock = new FakeTimeProvider();
+        var handler = new StubHandler(_ => Body("10.0.0.1:8848"));
+        var list = new NacosServerList([], isDynamic: true);
+        using var client = new HttpClient(handler);
+        await using var provider = new NacosEndpointServerListProvider(
+            new NacosOptions
+            {
+                Endpoint = "address-server",
+                GrpcPortOffset = 1111,
+            },
+            list,
+            client,
+            clock,
+            NullLogger.Instance);
+
+        await provider.SeedAsync(TestContext.Current.CancellationToken);
+
+        // The address server publishes main ports, so the offset applies to the derived gRPC
+        // endpoint exactly as it does for a configured address.
+        list[0].Port.ShouldBe(8848);
+        list[0].GrpcBaseAddress.Port.ShouldBe(9959);
+    }
+
+    [Fact]
     public async Task Refresh_AppliesAChangeOnlyOncePerThirtySeconds()
     {
         var clock = new FakeTimeProvider();

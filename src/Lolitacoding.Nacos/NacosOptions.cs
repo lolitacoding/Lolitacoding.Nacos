@@ -23,9 +23,28 @@ public sealed class NacosOptions
     /// <remarks>
     /// Multiple addresses enable failover: the client rotates through them when a server
     /// becomes unreachable. The gRPC endpoint is derived from each address by adding
-    /// <see cref="NacosConstants.GrpcPortOffset"/> to the port.
+    /// <see cref="GrpcPortOffset"/> to the port.
     /// </remarks>
     public IList<string> ServerAddresses { get; set; } = [];
+
+    /// <summary>
+    /// Gets or sets the offset added to a server's main port to reach its client gRPC port.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Nacos serves the client gRPC transport on a port of its own and derives it from the main
+    /// port plus an offset: <c>1000</c> by default, matching the server's
+    /// <c>nacos.server.grpc.port.offset</c> setting. The official Java client reads the same
+    /// setting under the key <c>nacos.server.grpc.port.offset</c>.
+    /// </para>
+    /// <para>
+    /// A deployment that publishes the two ports independently — a container platform that maps
+    /// each one to a random host port, for example — sets this to the difference between the
+    /// published gRPC port and the published main port, so the client dials the port that was
+    /// actually published rather than the default one.
+    /// </para>
+    /// </remarks>
+    public int GrpcPortOffset { get; set; } = NacosConstants.GrpcPortOffset;
 
     /// <summary>
     /// Gets or sets the namespace (tenant) all operations default to.
@@ -360,8 +379,9 @@ public sealed class NacosOptions
                 }
 
                 // Parsing here turns a malformed address into a startup failure instead of a
-                // per-request one.
-                NacosServerAddress.Parse(address);
+                // per-request one. The configured offset is applied so an offset that derives an
+                // unusable gRPC port also fails at startup.
+                NacosServerAddress.Parse(address, ContextPath, GrpcPortOffset);
             }
         }
 

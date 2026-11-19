@@ -61,6 +61,35 @@ public sealed class NacosClientFactoryTests
     }
 
     [Fact]
+    public async Task Create_AppliesTheConfiguredGrpcPortOffset()
+    {
+        var channels = new FakeNacosChannelFactory(address =>
+            new FakeNacosChannel(address, FakeServerCheck.Responding(), new FakeNacosDuplexStream()));
+
+        var options = new NacosOptions
+        {
+            ServerAddresses = ["127.0.0.1:8848"],
+            GrpcPortOffset = 1111,
+            ConnectionTimeout = TimeSpan.FromSeconds(5),
+        };
+
+        await using NacosClientFactory client = NacosClientFactory.Create(
+            options,
+            httpClient: null,
+            channelFactory: channels,
+            timeProvider: TimeProvider.System,
+            loggerFactory: NullLoggerFactory.Instance,
+            random: new Random(1234));
+
+        await client.ConnectAsync(TestContext.Current.CancellationToken);
+
+        // The offset reaches every address the factory hands to a channel, not only the ones the
+        // address parser sees during validation.
+        channels.RequestedAddresses.ShouldNotBeEmpty();
+        channels.RequestedAddresses.ShouldAllBe(address => address.GrpcBaseAddress.Port == 9959);
+    }
+
+    [Fact]
     public async Task Create_WithAnAddressServer_DialsThePublishedServerInsteadOfTheConfiguredOne()
     {
         // The endpoint is the authority on which nodes exist, so a client that has one does not

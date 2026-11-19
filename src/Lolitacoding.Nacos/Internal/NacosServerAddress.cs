@@ -6,9 +6,10 @@ namespace Lolitacoding.Nacos.Internal;
 /// A parsed, normalized Nacos server endpoint together with the derived gRPC endpoint.
 /// </summary>
 /// <remarks>
-/// Nacos exposes its main HTTP API on the configured port and reserves
-/// <c>port + 1000</c> for the gRPC transport that carries change notifications, so both are
-/// derived once at construction rather than parsed per request.
+/// Nacos exposes its main HTTP API on the configured port and reserves a separate port for the
+/// gRPC transport that carries change notifications. The gRPC port is the main port plus the
+/// configured offset (<c>1000</c> by default, the server's <c>nacos.server.grpc.port.offset</c>),
+/// so both are derived once at construction rather than parsed per request.
 /// </remarks>
 internal sealed class NacosServerAddress
 {
@@ -60,9 +61,20 @@ internal sealed class NacosServerAddress
     /// missing port implies <see cref="NacosConstants.DefaultPort"/>.
     /// </param>
     /// <param name="defaultContextPath">The context path applied when the address omits one.</param>
+    /// <param name="grpcPortOffset">
+    /// The offset added to the main port to reach the gRPC port. The default, <c>1000</c>, is the
+    /// server's <c>nacos.server.grpc.port.offset</c>; a deployment that publishes the two ports
+    /// independently supplies the difference between them.
+    /// </param>
     /// <returns>The parsed address.</returns>
-    /// <exception cref="FormatException">The address is not a usable server endpoint.</exception>
-    public static NacosServerAddress Parse(string address, string defaultContextPath = NacosConstants.DefaultContextPath)
+    /// <exception cref="FormatException">
+    /// The address is not a usable server endpoint, or the offset derives a gRPC port outside
+    /// the valid range.
+    /// </exception>
+    public static NacosServerAddress Parse(
+        string address,
+        string defaultContextPath = NacosConstants.DefaultContextPath,
+        int grpcPortOffset = NacosConstants.GrpcPortOffset)
     {
         if (string.IsNullOrWhiteSpace(address))
         {
@@ -107,10 +119,23 @@ internal sealed class NacosServerAddress
 
         var httpBase = new UriBuilder(uri.Scheme, host, port, contextPath).Uri;
 
-        // The SDK gRPC endpoint is always the main port plus the fixed offset, for plaintext and
-        // TLS alike: Nacos negotiates the two protocols on the same SDK gRPC port, so HTTPS does
-        // not move the endpoint to a different port.
-        int grpcPort = port + NacosConstants.GrpcPortOffset;
+        // The SDK gRPC endpoint is always the main port plus the configured offset, for plaintext
+        // and TLS alike: Nacos negotiates the two protocols on the same SDK gRPC port, so HTTPS
+        // does not move the endpoint to a different port.
+        long derivedGrpcPort = (long)port + grpcPortOffset;
+        if (derivedGrpcPort is < 1 or > 65535)
+        {
+            throw new FormatException(
+                string.Format(
+                    CultureInfo.InvariantCulture,
+                    "'{0}' derives the gRPC port {1} from the main port {2} and the offset {3}; it must be between 1 and 65535.",
+                    address,
+                    derivedGrpcPort,
+                    port,
+                    grpcPortOffset));
+        }
+
+        int grpcPort = (int)derivedGrpcPort;
         string grpcScheme = useTls ? Uri.UriSchemeHttps : Uri.UriSchemeHttp;
         var grpcBase = new UriBuilder(grpcScheme, host, grpcPort).Uri;
 
@@ -122,18 +147,22 @@ internal sealed class NacosServerAddress
     /// </summary>
     /// <param name="addresses">The configured addresses.</param>
     /// <param name="defaultContextPath">The context path applied to addresses that omit one.</param>
+    /// <param name="grpcPortOffset">
+    /// The offset added to each main port to reach its gRPC port.
+    /// </param>
     /// <returns>The parsed addresses.</returns>
     /// <exception cref="FormatException">One of the addresses is invalid.</exception>
     public static IReadOnlyList<NacosServerAddress> ParseAll(
         IEnumerable<string> addresses,
-        string defaultContextPath = NacosConstants.DefaultContextPath)
+        string defaultContextPath = NacosConstants.DefaultContextPath,
+        int grpcPortOffset = NacosConstants.GrpcPortOffset)
     {
         var result = new List<NacosServerAddress>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (string address in addresses)
         {
-            NacosServerAddress parsed = Parse(address, defaultContextPath);
+            NacosServerAddress parsed = Parse(address, defaultContextPath, grpcPortOffset);
             if (seen.Add(parsed.HttpBaseAddress.AbsoluteUri))
             {
                 result.Add(parsed);

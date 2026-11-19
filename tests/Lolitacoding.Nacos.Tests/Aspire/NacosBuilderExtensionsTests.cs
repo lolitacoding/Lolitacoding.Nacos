@@ -9,8 +9,9 @@ namespace Lolitacoding.Nacos.Tests.Aspire;
 /// produces, without starting a container.
 /// </summary>
 /// <remarks>
-/// The published host ports matter for Nacos specifically: a client derives the gRPC port from the
-/// main port, so these tests pin the fixed offsets between the endpoints.
+/// Host ports are left to Aspire by default, so these tests pin the container-side ports and the
+/// connection metadata a client uses to find the published gRPC port. A port argument or a
+/// <c>With*Port</c> helper pins exactly one endpoint and leaves the rest to Aspire.
 /// </remarks>
 public sealed class NacosBuilderExtensionsTests
 {
@@ -28,7 +29,7 @@ public sealed class NacosBuilderExtensionsTests
     }
 
     [Fact]
-    public void AddNacos_publishes_the_http_and_grpc_endpoints_at_fixed_offsets()
+    public void AddNacos_leaves_the_host_ports_to_aspire()
     {
         IResourceBuilder<NacosResource> nacos = DistributedApplication.CreateBuilder().AddNacos("nacos");
 
@@ -39,15 +40,16 @@ public sealed class NacosBuilderExtensionsTests
         endpoints.Keys.ShouldBe(
             new[] { "http", "grpc", "grpc-server", "console" }, ignoreOrder: true);
 
+        // The container ports are fixed; the host ports are assigned when the app starts.
         endpoints["http"].TargetPort.ShouldBe(8848);
-        endpoints["http"].Port.ShouldBe(8848);
+        endpoints["http"].Port.ShouldBeNull();
         endpoints["http"].UriScheme.ShouldBe("http");
 
         endpoints["grpc"].TargetPort.ShouldBe(9848);
-        endpoints["grpc"].Port.ShouldBe(9848);
+        endpoints["grpc"].Port.ShouldBeNull();
 
         endpoints["grpc-server"].TargetPort.ShouldBe(9849);
-        endpoints["grpc-server"].Port.ShouldBe(9849);
+        endpoints["grpc-server"].Port.ShouldBeNull();
     }
 
     [Fact]
@@ -62,16 +64,44 @@ public sealed class NacosBuilderExtensionsTests
             .Single(endpoint => endpoint.Name == "console");
 
         console.TargetPort.ShouldBe(8080);
-        console.Port.ShouldBe(8080);
+        console.Port.ShouldBeNull();
         console.UriScheme.ShouldBe("http");
 
         nacos.Resource.ConsoleEndpoint.EndpointName.ShouldBe("console");
     }
 
     [Fact]
-    public void AddNacos_shifts_every_port_with_a_custom_http_port()
+    public void AddNacos_pins_only_the_port_it_was_given()
     {
-        IResourceBuilder<NacosResource> nacos = DistributedApplication.CreateBuilder().AddNacos("nacos", httpPort: 18848);
+        // A port argument names one endpoint. Deriving the gRPC ports from the main one would take
+        // those host ports away from Aspire, which is what leaving them unset exists to avoid.
+        IResourceBuilder<NacosResource> nacos = DistributedApplication.CreateBuilder()
+            .AddNacos("nacos", httpPort: 18848);
+
+        Dictionary<string, EndpointAnnotation> endpoints = nacos.Resource.Annotations
+            .OfType<EndpointAnnotation>()
+            .ToDictionary(endpoint => endpoint.Name!);
+
+        endpoints["http"].Port.ShouldBe(18848);
+        endpoints["grpc"].Port.ShouldBeNull();
+        endpoints["grpc-server"].Port.ShouldBeNull();
+        endpoints["console"].Port.ShouldBeNull();
+
+        // The container keeps the ports the image listens on.
+        endpoints["http"].TargetPort.ShouldBe(8848);
+        endpoints["grpc"].TargetPort.ShouldBe(9848);
+        endpoints["grpc-server"].TargetPort.ShouldBe(9849);
+    }
+
+    [Fact]
+    public void Port_helpers_publish_each_endpoint_on_the_given_host_port()
+    {
+        IResourceBuilder<NacosResource> nacos = DistributedApplication.CreateBuilder()
+            .AddNacos("nacos")
+            .WithHttpPort(18848)
+            .WithGrpcPort(19848)
+            .WithGrpcServerPort(19849)
+            .WithConsolePort(18080);
 
         Dictionary<string, EndpointAnnotation> endpoints = nacos.Resource.Annotations
             .OfType<EndpointAnnotation>()
@@ -80,9 +110,13 @@ public sealed class NacosBuilderExtensionsTests
         endpoints["http"].Port.ShouldBe(18848);
         endpoints["grpc"].Port.ShouldBe(19848);
         endpoints["grpc-server"].Port.ShouldBe(19849);
+        endpoints["console"].Port.ShouldBe(18080);
 
-        // The console is not derived from the main port, so moving the server does not move it.
-        endpoints["console"].Port.ShouldBe(8080);
+        // Only the host side moves; the container keeps its own ports.
+        endpoints["http"].TargetPort.ShouldBe(8848);
+        endpoints["grpc"].TargetPort.ShouldBe(9848);
+        endpoints["grpc-server"].TargetPort.ShouldBe(9849);
+        endpoints["console"].TargetPort.ShouldBe(8080);
     }
 
     [Fact]
@@ -199,6 +233,44 @@ public sealed class NacosBuilderExtensionsTests
 
         expression.Endpoint.EndpointName.ShouldBe("http");
         expression.Property.ShouldBe(EndpointProperty.Url);
+    }
+
+    [Fact]
+    public void Connection_properties_expose_the_published_ports_and_urls()
+    {
+        // A client cannot assume the gRPC port is the main port plus 1000 when Aspire publishes
+        // each container port on its own host port, so the published port is part of the
+        // connection metadata.
+        IResourceBuilder<NacosResource> nacos = DistributedApplication.CreateBuilder().AddNacos("nacos");
+
+        Dictionary<string, ReferenceExpression> properties = nacos.Resource
+            .GetConnectionProperties()
+            .ToDictionary(pair => pair.Key, pair => pair.Value);
+
+        properties.Keys.ShouldBe(
+            new[] { "Host", "Port", "Uri", "GrpcHost", "GrpcPort", "ConsoleUri" },
+            ignoreOrder: true);
+
+        EndpointReferenceExpression grpcPort = properties["GrpcPort"].ValueProviders
+            .OfType<EndpointReferenceExpression>()
+            .ShouldHaveSingleItem();
+
+        grpcPort.Endpoint.EndpointName.ShouldBe("grpc");
+        grpcPort.Property.ShouldBe(EndpointProperty.Port);
+
+        EndpointReferenceExpression grpcHost = properties["GrpcHost"].ValueProviders
+            .OfType<EndpointReferenceExpression>()
+            .ShouldHaveSingleItem();
+
+        grpcHost.Endpoint.EndpointName.ShouldBe("grpc");
+        grpcHost.Property.ShouldBe(EndpointProperty.Host);
+
+        EndpointReferenceExpression uri = properties["Uri"].ValueProviders
+            .OfType<EndpointReferenceExpression>()
+            .ShouldHaveSingleItem();
+
+        uri.Endpoint.EndpointName.ShouldBe("http");
+        uri.Property.ShouldBe(EndpointProperty.Url);
     }
 
     [Fact]

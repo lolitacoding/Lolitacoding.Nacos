@@ -1,21 +1,23 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <Sdk Name="Aspire.AppHost.Sdk" Version="13.6.5" />
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsAspireHost>true</IsAspireHost>
     <IsAotCompatible>false</IsAotCompatible>
-    <!-- The sample uses the dashboard and DCP packages rather than the Aspire CLI bundle, which the
-         SDK reports as ASPIRE010. -->
-    <AspireUseCliBundle>false</AspireUseCliBundle>
-    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);ASPIRE010</MSBuildWarningsAsMessages>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- The library is not an orchestrated resource, so it is a plain compile reference. -->
+    <!-- Aspire 17 hosts are plain Microsoft.NET.Sdk projects; the AppHost and project-orchestration
+         packages are referenced explicitly instead of importing Aspire.AppHost.Sdk. -->
+    <PackageReference Include="Aspire.Hosting.AppHost" />
+    <PackageReference Include="Aspire.Hosting.Dotnet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The library is not an orchestrated resource, so it is a plain compile reference. The
+         service project is added with AddDotnetProject in Program.cs, which is the Aspire 17
+         replacement for AddProject<TProject>. -->
     <ProjectReference Include="..\..\src\Lolitacoding.Aspire.Hosting.Nacos\Lolitacoding.Aspire.Hosting.Nacos.csproj" IsAspireProjectResource="false" />
-    <ProjectReference Include="..\Sample.AspNetCore\Sample.AspNetCore.csproj" IsAspireProjectResource="true" />
   </ItemGroup>
 
 </Project>

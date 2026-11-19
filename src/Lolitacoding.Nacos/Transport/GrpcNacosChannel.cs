@@ -34,9 +34,9 @@ internal sealed class GrpcNacosChannel : INacosChannel
         ArgumentNullException.ThrowIfNull(address);
         RequestTimeout = requestTimeout;
 
-        // The gRPC port is derived by NacosServerAddress (always main + 1000, for TLS and
-        // plaintext alike), and the Nacos gRPC endpoint lives at the root, so no context path is
-        // appended here.
+        // The gRPC port is derived by NacosServerAddress (main port plus the configured offset,
+        // for TLS and plaintext alike), and the Nacos gRPC endpoint lives at the root, so no
+        // context path is appended here.
         var options = new GrpcChannelOptions
         {
             MaxReceiveMessageSize = 10 * 1024 * 1024,

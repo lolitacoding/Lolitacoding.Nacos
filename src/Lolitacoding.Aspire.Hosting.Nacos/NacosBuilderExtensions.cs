@@ -45,22 +45,22 @@ public static class NacosBuilderExtensions
     /// resource uses.
     /// </param>
     /// <param name="httpPort">
-    /// The host port for the HTTP endpoint. Defaults to <c>8848</c>. It is also the base from which
-    /// the gRPC ports are derived, because a Nacos client computes the gRPC port by adding
-    /// <c>1000</c> to the address it was given.
+    /// The host port for the HTTP endpoint. When <see langword="null"/> (the default) Aspire
+    /// assigns a free port. Naming a port here pins only this endpoint; the gRPC ports keep
+    /// whatever Aspire assigns unless they are given explicitly.
     /// </param>
     /// <param name="grpcPort">
-    /// The host port for the client gRPC endpoint. Defaults to <paramref name="httpPort"/> plus
-    /// <c>1000</c>; changing it independently of <paramref name="httpPort"/> will break clients
-    /// that discover the gRPC port from the HTTP address.
+    /// The host port for the client gRPC endpoint. When <see langword="null"/> (the default) Aspire
+    /// assigns a free port. The resource publishes the actual port, so it does not have to be a
+    /// fixed distance from <paramref name="httpPort"/>.
     /// </param>
     /// <param name="grpcServerPort">
-    /// The host port for the server gRPC endpoint. Defaults to <paramref name="httpPort"/> plus
-    /// <c>1001</c>.
+    /// The host port for the server gRPC endpoint. When <see langword="null"/> (the default) Aspire
+    /// assigns a free port.
     /// </param>
     /// <param name="consolePort">
-    /// The host port for the web console. Defaults to <c>8080</c>, which is the port the console
-    /// listens on inside the container.
+    /// The host port for the web console. When <see langword="null"/> (the default) Aspire assigns
+    /// a free port. The console always listens on <c>8080</c> inside the container.
     /// </param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> is null.</exception>
@@ -79,6 +79,14 @@ public static class NacosBuilderExtensions
     /// dashboard's link opens the UI rather than the API root, which answers 404.
     /// </para>
     /// <para>
+    /// No host port is fixed: Aspire publishes each endpoint on a free port and the dashboard shows
+    /// the address that was assigned. A Nacos client normally derives the gRPC port from the main
+    /// port, so the resource publishes the gRPC port as a connection property and
+    /// <c>Lolitacoding.Aspire.Nacos.AddNacosClient</c> uses the difference between the two. A client
+    /// that only has the connection string must either be told the offset or connect through a
+    /// fixed mapping set with <see cref="WithHttpPort"/> and <see cref="WithGrpcPort"/>.
+    /// </para>
+    /// <para>
     /// The container includes a health check against the readiness endpoint, so a resource added
     /// with <c>WaitFor</c> starts only once Nacos can serve requests.
     /// </para>
@@ -94,32 +102,30 @@ public static class NacosBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrEmpty(name);
 
-        int mainPort = httpPort ?? NacosPorts.Http;
-        int clientGrpcPort = grpcPort ?? mainPort + NacosPorts.ClientGrpcOffset;
-        int serverGrpcPort = grpcServerPort ?? mainPort + NacosPorts.ServerGrpcOffset;
-        int webConsolePort = consolePort ?? NacosPorts.Console;
-
+        // Every port argument pins exactly the endpoint it names. Nothing is derived: Aspire
+        // assigns a free host port to each endpoint that was left alone, and the resource publishes
+        // the ones it got so a client never has to guess an offset.
         var resource = new NacosResource(name);
 
         return builder.AddResource(resource)
             .WithImage(NacosContainerImageTags.Image, NacosContainerImageTags.Tag)
             .WithImageRegistry(NacosContainerImageTags.Registry)
             .WithHttpEndpoint(
-                port: mainPort,
+                port: httpPort,
                 targetPort: NacosPorts.Http,
                 name: NacosResource.HttpEndpointName)
             .WithEndpoint(
-                port: clientGrpcPort,
+                port: grpcPort,
                 targetPort: NacosPorts.Http + NacosPorts.ClientGrpcOffset,
                 name: NacosResource.GrpcEndpointName,
                 scheme: "tcp")
             .WithEndpoint(
-                port: serverGrpcPort,
+                port: grpcServerPort,
                 targetPort: NacosPorts.Http + NacosPorts.ServerGrpcOffset,
                 name: NacosResource.GrpcServerEndpointName,
                 scheme: "tcp")
             .WithHttpEndpoint(
-                port: webConsolePort,
+                port: consolePort,
                 targetPort: NacosPorts.Console,
                 name: NacosResource.ConsoleEndpointName)
             .WithEnvironment(NacosEnvironmentVariables.Mode, "standalone")
@@ -127,6 +133,85 @@ public static class NacosBuilderExtensions
             .WithEnvironment(NacosEnvironmentVariables.AuthIdentityKey, DevelopmentAuthIdentityKey)
             .WithEnvironment(NacosEnvironmentVariables.AuthIdentityValue, DevelopmentAuthIdentityValue)
             .WithHttpHealthCheck(ReadinessPath, endpointName: NacosResource.HttpEndpointName);
+    }
+
+    /// <summary>
+    /// Publishes the Nacos server API on a specific host port.
+    /// </summary>
+    /// <param name="builder">The Nacos resource builder.</param>
+    /// <param name="port">The host port to publish the HTTP endpoint on.</param>
+    /// <returns>The resource builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is null.</exception>
+    /// <remarks>
+    /// This changes only the HTTP port. The gRPC port keeps whatever Aspire assigned, so a client
+    /// that derives the gRPC port from the main port must be given the difference through
+    /// <c>NacosOptions.GrpcPortOffset</c>, or the two ports must be published explicitly with
+    /// <see cref="WithGrpcPort"/>.
+    /// </remarks>
+    public static IResourceBuilder<NacosResource> WithHttpPort(
+        this IResourceBuilder<NacosResource> builder,
+        int port)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return builder.WithEndpoint(
+            NacosResource.HttpEndpointName,
+            endpoint => endpoint.Port = port);
+    }
+
+    /// <summary>
+    /// Publishes the Nacos client gRPC endpoint on a specific host port.
+    /// </summary>
+    /// <param name="builder">The Nacos resource builder.</param>
+    /// <param name="port">The host port to publish the client gRPC endpoint on.</param>
+    /// <returns>The resource builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is null.</exception>
+    /// <remarks>
+    /// A client that only knows the HTTP address derives the gRPC port from it, so a port chosen
+    /// here has to match that derivation unless the client is configured with
+    /// <c>NacosOptions.GrpcPortOffset</c>.
+    /// </remarks>
+    public static IResourceBuilder<NacosResource> WithGrpcPort(
+        this IResourceBuilder<NacosResource> builder,
+        int port)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return builder.WithEndpoint(
+            NacosResource.GrpcEndpointName,
+            endpoint => endpoint.Port = port);
+    }
+
+    /// <summary>
+    /// Publishes the Nacos server-to-server gRPC endpoint on a specific host port.
+    /// </summary>
+    /// <param name="builder">The Nacos resource builder.</param>
+    /// <param name="port">The host port to publish the server gRPC endpoint on.</param>
+    /// <returns>The resource builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is null.</exception>
+    public static IResourceBuilder<NacosResource> WithGrpcServerPort(
+        this IResourceBuilder<NacosResource> builder,
+        int port)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return builder.WithEndpoint(
+            NacosResource.GrpcServerEndpointName,
+            endpoint => endpoint.Port = port);
+    }
+
+    /// <summary>
+    /// Publishes the Nacos web console on a specific host port.
+    /// </summary>
+    /// <param name="builder">The Nacos resource builder.</param>
+    /// <param name="port">The host port to publish the console on.</param>
+    /// <returns>The resource builder for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="builder"/> is null.</exception>
+    public static IResourceBuilder<NacosResource> WithConsolePort(
+        this IResourceBuilder<NacosResource> builder,
+        int port)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        return builder.WithEndpoint(
+            NacosResource.ConsoleEndpointName,
+            endpoint => endpoint.Port = port);
     }
 
     /// <summary>

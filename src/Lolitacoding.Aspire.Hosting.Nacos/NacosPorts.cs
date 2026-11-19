@@ -1,11 +1,13 @@
 namespace Lolitacoding.Aspire.Hosting.Nacos;
 
 /// <summary>
-/// The well-known Nacos server ports and the offsets between them.
+/// The ports a Nacos server listens on inside its container and the offsets between them.
 /// </summary>
 /// <remarks>
-/// A Nacos client derives the gRPC port from the main port it was given, so the two must stay a
-/// fixed distance apart for a published container to be reachable.
+/// These are container-side ports, not host ports. Aspire publishes each one on a free host port
+/// unless the caller pins it, so a client reads the published gRPC port instead of assuming it is
+/// the published main port plus an offset. The offsets describe the container's own layout and are
+/// what the image listens on.
 /// </remarks>
 internal static class NacosPorts
 {
