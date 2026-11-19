@@ -159,6 +159,13 @@ public sealed class PromptIntegrationTests
         await NacosHttp.PublishPromptAsync(
             http, container.HttpAddress, promptKey, FirstVersion, "Hello from 1.0.0", null, token, ct);
 
+        // The seed of a subscription is read once, so it must not race the publish: wait until the
+        // server serves the version, the way the read tests do, and only then subscribe.
+        await NacosEventually.BecomesAsync(
+            () => client.AI.Prompt.GetPromptAsync(promptKey, ct: ct),
+            value => value.Version == FirstVersion,
+            ct);
+
         await using IAsyncEnumerator<NacosPrompt?> changes =
             client.AI.Prompt.SubscribePromptAsync(promptKey, ct: ct).GetAsyncEnumerator(ct);
 
